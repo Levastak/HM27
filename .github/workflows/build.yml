@@ -81,16 +81,21 @@ jobs:
         working-directory: game
         run: |
           mkdir -p ../build/windows
-          "$GODOT" --headless --export-release "Windows" ../build/windows/HM27.exe 2>&1 | grep -vE "^\s*$" | tail -20
+          "$GODOT" --headless --verbose --export-release "Windows" ../build/windows/HM27.exe > ../build/export-windows.log 2>&1 || true
+          grep -iE "error|warn|dotnet|publish|\.NET|data_" ../build/export-windows.log | tail -40
           test -f ../build/windows/HM27.exe
+          ls -la ../build/windows
+          test -d ../build/windows/data_HM27_windows_x86_64 || { echo "::error::Нет сборки C# в Windows-версии"; exit 1; }
           cd ../build && cp ../README.md windows/README.md && (cd windows && zip -qr ../HM27-windows.zip .)
 
       - name: Экспорт macOS
         working-directory: game
         run: |
           mkdir -p ../build/macos
-          "$GODOT" --headless --export-release "macOS" ../build/macos/HM27.zip 2>&1 | grep -vE "^\s*$" | tail -20
+          "$GODOT" --headless --verbose --export-release "macOS" ../build/macos/HM27.zip > ../build/export-macos.log 2>&1 || true
+          grep -iE "error|warn|dotnet|publish|\.NET|data_" ../build/export-macos.log | tail -40
           test -f ../build/macos/HM27.zip
+          unzip -l ../build/macos/HM27.zip | grep -q "Contents/Resources/data_HM27" || { echo "::error::Нет сборки C# в macOS-версии"; exit 1; }
           mv ../build/macos/HM27.zip ../build/HM27-macos.zip
 
       - name: Артефакты
@@ -110,6 +115,6 @@ jobs:
             gh release create "$TAG" build/HM27-*.zip --title "HM27 $TAG" --notes-file docs/release-notes.md
           else
             gh release delete dev -y --cleanup-tag 2>/dev/null || true
-            gh release create dev build/HM27-*.zip --prerelease --target "$GITHUB_SHA" \
+            gh release create dev build/HM27-*.zip build/export-*.log --prerelease --target "$GITHUB_SHA" \
               --title "HM27 — свежая сборка ($SHORT)" --notes-file docs/release-notes.md
           fi
