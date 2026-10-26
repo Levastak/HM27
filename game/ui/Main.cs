@@ -20,6 +20,7 @@ public partial class Main : Control
     public override void _Ready()
     {
         I = this;
+        GetWindow().Title = "HM27 — Hockey Manager 27";
         Theme = Ui.MakeTheme();
         SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(new LogoCache());
