@@ -1,0 +1,260 @@
+namespace HM27.Core;
+
+/// <summary>Одна команда в матче.</summary>
+public sealed class MatchSide
+{
+    public TeamData Team;
+    public Lineup Lineup;
+    /// <summary>Индексы состава по умолчанию (база калибровки): отличие текущего состава от него — эффект решений тренера.</summary>
+    public double BaseOff, BaseDef;
+    /// <summary>GSAx вратарей по умолчанию (0,8 основного + 0,2 запасного): сила обороны клуба в модели уже включает их.</summary>
+    public double BaseGsax;
+    public int Goalie;
+    public bool B2B;
+}
+
+public sealed class GoalEvent
+{
+    public int Period { get; set; }          // 1–3, 4+ — овертайм
+    public int Sec { get; set; }             // секунда внутри периода
+    public string Team { get; set; }
+    public int Scorer { get; set; }
+    public int A1 { get; set; }
+    public int A2 { get; set; }
+    public string Kind { get; set; } = "ev"; // ev | pp | sh | so (победный буллит)
+}
+
+public sealed class MatchResult
+{
+    public int HomeGoals { get; set; }
+    public int AwayGoals { get; set; }
+    public string End { get; set; } = "REG";     // REG | OT | SO
+    public int HomeShots { get; set; }
+    public int AwayShots { get; set; }
+    public int HomeGoalie { get; set; }
+    public int AwayGoalie { get; set; }
+    public List<GoalEvent> Goals { get; set; } = new();
+    public double PHome { get; set; }            // шанс хозяев перед матчем (с ОТ и буллитами)
+    public double LamHome { get; set; }
+    public double LamAway { get; set; }
+    /// <summary>Кто был в составе (для «сыгранных матчей» в статистике).</summary>
+    public List<int> HomeDressed { get; set; } = new();
+    public List<int> AwayDressed { get; set; } = new();
+}
+
+/// <summary>Шансы до матча.</summary>
+public readonly record struct MatchOdds(double LamHome, double LamAway, double PHome, double PHomeReg, double PAwayReg, double PTie, double QOtHome);
+
+/// <summary>
+/// Движок уровня 1 «матч целиком» — модель прогнозов NHL-STATS.RU v4.4 (scripts/model.py), перенесённая в игру.
+/// Шансы считаются как в модели (Пуассон, доля ничьих ×1,35, ОТ 3 на 3, калибровка уверенности 1,33),
+/// затем исход разыгрывается, а счёт берётся из того же пуассоновского распределения.
+/// </summary>
+public static class MatchEngine
+{
+    public const double TIE_K = 1.35, OT_HOME = 0.517, OT_K = 0.45, SHARP = 1.33;
+    public const double HA = 0.02, HA_MULT = 1.015, B2B = 0.95, PO_TOT = 0.97;
+    /// <summary>Решения тренера: + голов своей команды и − голов соперника на единицу личного xG за матч сверх базы.</summary>
+    public const double K_FOR = 0.45, K_AGAINST = 0.35;
+    /// <summary>Защитник: ±голов за каждую минуту реального времени сверх 16 (модель, п. 5).</summary>
+    public const double D_K = 0.012, D_BASE = 16;
+    /// <summary>Вратарь: голы соперника × (1 − G_W × GSAx) / (1 − G_W × GSAx вратарей по умолчанию), в пределах ±15%.</summary>
+    public const double G_W = 0.8;
+    /// <summary>Доля голов в основное время без овертаймных (в базе — голы с ОТ).</summary>
+    public const double REG_SHARE = 0.97;
+
+    static double Pois(int k, double l)
+    {
+        double r = Math.Exp(-l);
+        for (int i = 1; i <= k; i++) r *= l / i;
+        return r;
+    }
+
+    /// <summary>Атакующий индекс состава: ожидаемый личный xG всех полевых за матч при их минутах.</summary>
+    public static double OffIndex(GameData data, Lineup l)
+    {
+        double s = 0;
+        foreach (var id in l.Skaters.Distinct())
+            if (data.PlayerById.TryGetValue(id, out var p)) s += p.Ixg60 * l.MinutesOf(id) / 60.0;
+        return s;
+    }
+
+    /// <summary>Индекс защиты: у защитников — «доверие» (реальное время сверх 16 минут) пропорционально их минутам.</summary>
+    public static double DefIndex(GameData data, Lineup l)
+    {
+        double s = 0;
+        foreach (var pair in l.D)
+            foreach (var id in pair)
+                if (id != 0 && data.PlayerById.TryGetValue(id, out var p))
+                    s += (p.IsDefense ? D_K * (p.Toi - D_BASE) : -0.06) * l.MinutesOf(id) / Math.Max(p.Toi, 12);
+        return s / 2;  // пара делит эффект
+    }
+
+    public static double GoalieFactor(GameData data, int goalie, double baseGsax)
+    {
+        double gs = goalie != 0 && data.PlayerById.TryGetValue(goalie, out var g) ? g.Gsax : -0.12;
+        return Math.Clamp((1 - G_W * gs) / (1 - G_W * baseGsax), 0.85, 1.15);
+    }
+
+    public static double GsaxOf(GameData data, int id) => id != 0 && data.PlayerById.TryGetValue(id, out var g) ? g.Gsax : -0.12;
+
+    public static MatchOdds Odds(GameData data, MatchSide home, MatchSide away, bool playoff = false, bool neutral = false)
+    {
+        double mu = Math.Log(data.League.GoalsPerGame * REG_SHARE);
+        double ha = neutral ? 0 : HA;
+        double bh = Math.Exp(mu + home.Team.Att + away.Team.Dfn + ha);
+        double ba = Math.Exp(mu + away.Team.Att + home.Team.Dfn - ha);
+
+        double dOffH = OffIndex(data, home.Lineup) - home.BaseOff, dOffA = OffIndex(data, away.Lineup) - away.BaseOff;
+        double dDefH = DefIndex(data, home.Lineup) - home.BaseDef, dDefA = DefIndex(data, away.Lineup) - away.BaseDef;
+        double adjH = Math.Clamp(K_FOR * dOffH - K_AGAINST * dOffA + dDefH - dDefA, -0.9, 0.9);
+        double adjA = Math.Clamp(K_FOR * dOffA - K_AGAINST * dOffH + dDefA - dDefH, -0.9, 0.9);
+
+        double lh = Math.Max(0.6, bh + adjH) * GoalieFactor(data, away.Goalie, away.BaseGsax);
+        double la = Math.Max(0.6, ba + adjA) * GoalieFactor(data, home.Goalie, home.BaseGsax);
+        if (home.B2B && !away.B2B) { lh *= B2B; la /= B2B; }
+        if (away.B2B && !home.B2B) { la *= B2B; lh /= B2B; }
+        if (playoff) { lh *= PO_TOT; la *= PO_TOT; }
+        else if (!neutral) { lh *= HA_MULT; la /= HA_MULT; }
+
+        double phr0 = 0, par0 = 0;
+        for (int i = 0; i < 13; i++)
+            for (int j = 0; j < 13; j++)
+            {
+                double p = Pois(i, lh) * Pois(j, la);
+                if (i > j) phr0 += p; else if (j > i) par0 += p;
+            }
+        double tie0 = 1 - phr0 - par0;
+        double tie = Math.Min(0.5, tie0 * TIE_K);
+        double phr = phr0 * (1 - tie) / (phr0 + par0), par = par0 * (1 - tie) / (phr0 + par0);
+        double q = Math.Clamp((neutral ? 0.5 : OT_HOME) + OT_K * (phr - par), 0.2, 0.8);
+        double ph = phr + tie * q;
+        double z = SHARP * Math.Log(ph / (1 - ph));
+        ph = 1 / (1 + Math.Exp(-z));
+        // v4.3: основное время согласовано с итоговой вероятностью
+        double phrF = Math.Min(1 - tie, Math.Max(0, ph - tie * q));
+        double parF = 1 - tie - phrF;
+        return new MatchOdds(lh, la, ph, phrF, parF, tie, q);
+    }
+
+    public static MatchResult Play(GameData data, MatchSide home, MatchSide away, Random rng, bool playoff = false)
+    {
+        var o = Odds(data, home, away, playoff);
+        var r = new MatchResult { PHome = o.PHome, LamHome = o.LamHome, LamAway = o.LamAway, HomeGoalie = home.Goalie, AwayGoalie = away.Goalie };
+        r.HomeDressed = home.Lineup.Skaters.Append(home.Goalie).Distinct().ToList();
+        r.AwayDressed = away.Lineup.Skaters.Append(away.Goalie).Distinct().ToList();
+
+        // 1. Исход основного времени
+        double u = rng.NextDouble();
+        int outcome = u < o.PHomeReg ? 1 : u < o.PHomeReg + o.PAwayReg ? -1 : 0;
+        // 2. Счёт основного времени из пуассоновского распределения в пределах исхода
+        (int hg, int ag) = SampleScore(o.LamHome, o.LamAway, outcome, rng);
+        r.HomeGoals = hg; r.AwayGoals = ag;
+
+        var events = new List<(int t, bool home)>();
+        for (int i = 0; i < hg; i++) events.Add((rng.Next(0, 3600), true));
+        for (int i = 0; i < ag; i++) events.Add((rng.Next(0, 3600), false));
+        events.Sort((a, b) => a.t.CompareTo(b.t));
+        foreach (var (t, isHome) in events)
+            r.Goals.Add(MakeGoal(data, isHome ? home : away, isHome ? away : home, t / 1200 + 1, t % 1200, rng));
+
+        // 3. Ничья → овертайм (в регулярке 3 на 3, 5 минут, потом буллиты; в плей-офф — до гола)
+        if (outcome == 0)
+        {
+            bool homeWins = rng.NextDouble() < o.QOtHome;
+            var w = homeWins ? home : away; var l = homeWins ? away : home;
+            bool decidedInOt = playoff || rng.NextDouble() < 0.62;
+            if (decidedInOt)
+            {
+                int period = 4, sec = rng.Next(5, playoff ? 1200 : 300);
+                if (playoff) while (rng.NextDouble() < 0.25) period++;   // длинные овертаймы плей-офф
+                r.End = "OT";
+                r.Goals.Add(MakeGoal(data, w, l, period, sec, rng, ot: true));
+            }
+            else
+            {
+                r.End = "SO";
+                r.Goals.Add(new GoalEvent { Period = 5, Sec = 0, Team = w.Team.Abbr, Kind = "so" });
+            }
+            if (homeWins) r.HomeGoals++; else r.AwayGoals++;
+        }
+
+        // 4. Броски в створ: около 29 на команду, больше у создающей моменты
+        r.HomeShots = Math.Max(r.HomeGoals + 8, (int)Math.Round(Normal(rng, 28.5 * Math.Pow(o.LamHome / 3.0, 0.6), 4.5)));
+        r.AwayShots = Math.Max(r.AwayGoals + 8, (int)Math.Round(Normal(rng, 28.5 * Math.Pow(o.LamAway / 3.0, 0.6), 4.5)));
+        return r;
+    }
+
+    static (int, int) SampleScore(double lh, double la, int outcome, Random rng)
+    {
+        var cells = new List<(int i, int j, double p)>();
+        double total = 0;
+        for (int i = 0; i < 11; i++)
+            for (int j = 0; j < 11; j++)
+            {
+                if (Math.Sign(i - j) != outcome) continue;
+                double p = Pois(i, lh) * Pois(j, la);
+                cells.Add((i, j, p)); total += p;
+            }
+        double u = rng.NextDouble() * total;
+        foreach (var c in cells) { u -= c.p; if (u <= 0) return (c.i, c.j); }
+        return (cells[^1].i, cells[^1].j);
+    }
+
+    static GoalEvent MakeGoal(GameData data, MatchSide side, MatchSide opp, int period, int sec, Random rng, bool ot = false)
+    {
+        var l = side.Lineup;
+        var ev = new GoalEvent { Period = period, Sec = sec, Team = side.Team.Abbr };
+        double kindU = rng.NextDouble();
+        int[] unit = null;
+        if (!ot && kindU < 0.21)
+        {
+            ev.Kind = "pp";
+            unit = rng.NextDouble() < 0.7 ? l.Pp1 : l.Pp2;
+            if (unit.Count(x => x != 0) < 3) unit = null;
+        }
+        else if (!ot && kindU < 0.235) ev.Kind = "sh";
+
+        IEnumerable<int> cands = unit != null ? unit.Where(x => x != 0) : l.Skaters.Distinct();
+        // Автор: пропорционально личному xG за 60 × минуты × реализация
+        ev.Scorer = Pick(cands, id =>
+        {
+            var p = data.PlayerById[id];
+            double mins = unit != null ? 1 : l.MinutesOf(id);
+            if (ot) mins *= l.UnitOf(id) is 0 or 10 ? 3 : 1;   // в ОТ играют лучшие
+            if (ev.Kind == "sh") mins *= p.IsDefense ? 1 : (l.UnitOf(id) is 2 or 3 ? 1.5 : 0.7);
+            return p.Ixg60 * p.Fin * mins;
+        }, rng);
+
+        // Передачи: без передач ~7%, одна ~27%, две ~66%; партнёры по звену — в 3 раза чаще
+        double au = rng.NextDouble();
+        int nA = au < 0.07 ? 0 : au < 0.34 ? 1 : 2;
+        int myUnit = l.UnitOf(ev.Scorer);
+        var aCands = cands.Where(x => x != ev.Scorer).ToList();
+        double AW(int id)
+        {
+            var p = data.PlayerById[id];
+            double mins = unit != null ? 1 : l.MinutesOf(id);
+            double same = unit != null ? 1 : (l.UnitOf(id) == myUnit ? 3 : 1);
+            return (p.Apg + 0.05) * mins * same;
+        }
+        if (nA >= 1 && aCands.Count > 0) { ev.A1 = Pick(aCands, AW, rng); aCands.Remove(ev.A1); }
+        if (nA >= 2 && aCands.Count > 0) ev.A2 = Pick(aCands, AW, rng);
+        return ev;
+    }
+
+    static int Pick(IEnumerable<int> ids, Func<int, double> w, Random rng)
+    {
+        var list = ids.Where(id => id != 0).Select(id => (id, w: Math.Max(1e-6, w(id)))).ToList();
+        if (list.Count == 0) return 0;
+        double u = rng.NextDouble() * list.Sum(x => x.w);
+        foreach (var (id, ww) in list) { u -= ww; if (u <= 0) return id; }
+        return list[^1].id;
+    }
+
+    static double Normal(Random rng, double mean, double sd)
+    {
+        double u1 = 1 - rng.NextDouble(), u2 = rng.NextDouble();
+        return mean + sd * Math.Sqrt(-2 * Math.Log(u1)) * Math.Cos(2 * Math.PI * u2);
+    }
+}

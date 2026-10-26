@@ -1,0 +1,11 @@
+# Godot
+game/.godot/
+game/.import/
+*.translation
+# .NET
+bin/
+obj/
+*.user
+# сборки
+build/
+*.zip

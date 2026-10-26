@@ -1,0 +1,165 @@
+using System;
+using System.Collections.Generic;
+using Godot;
+using HM27.Core;
+
+namespace HM27.UI;
+
+/// <summary>Корень игры: база, карьера, переключение экранов, сохранение.</summary>
+public partial class Main : Control
+{
+    public const string Version = "0.1.0";
+    const string SavePath = "user://career.json";
+
+    public static Main I { get; private set; }
+    public GameData Data { get; private set; }
+    public Career Career { get; private set; }
+
+    Control _screen;
+
+    public override void _Ready()
+    {
+        I = this;
+        Theme = Ui.MakeTheme();
+        SetAnchorsPreset(LayoutPreset.FullRect);
+        AddChild(new LogoCache());
+        AddChild(new ColorRect { Color = Ui.Bg, MouseFilter = MouseFilterEnum.Ignore }.Also(r => r.SetAnchorsPreset(LayoutPreset.FullRect)));
+
+        // Возврат из 3Д-арены: карьера уже в памяти
+        if (Match3D.RinkPreview.PendingCareer != null)
+        {
+            var c = Match3D.RinkPreview.PendingCareer;
+            Match3D.RinkPreview.PendingCareer = null;
+            Data = c.Data;
+            Resume(c);
+            return;
+        }
+        Data = GameData.Parse(FileAccess.GetFileAsString("res://data/hm27-data.json"));
+
+        // Параметры для автоматических снимков экранов: -- --screen=hub --team=MIN --tab=lines --shot=путь
+        var args = new System.Collections.Generic.Dictionary<string, string>();
+        foreach (var a in OS.GetCmdlineUserArgs())
+            if (a.StartsWith("--") && a.Contains('=')) args[a[2..a.IndexOf('=')]] = a[(a.IndexOf('=') + 1)..];
+        if (args.TryGetValue("screen", out var scr)) { DebugStart(scr, args); return; }
+
+        ShowMenu();
+    }
+
+    void DebugStart(string screen, System.Collections.Generic.Dictionary<string, string> args)
+    {
+        var team = args.GetValueOrDefault("team", "MIN");
+        if (screen != "menu" && screen != "clubs")
+        {
+            Career = Career.New(Data, team, 27);
+            ApplyAccent();
+            int days = int.Parse(args.GetValueOrDefault("days", "0"));
+            for (int i = 0; i < days; i++) Career.SimDay();
+            if (args.ContainsKey("sim")) Career.SimToEnd();
+        }
+        switch (screen)
+        {
+            case "menu": ShowMenu(); break;
+            case "clubs": ShowClubSelect(); break;
+            case "match":
+                Career.SimToUserGame();
+                var g = Career.UserGameToday();
+                ShowMatch(g);
+                if (args.ContainsKey("played")) (_screen as MatchScreen)?.PlayInstant();
+                break;
+            default: ShowHub(args.GetValueOrDefault("tab", "overview")); break;
+        }
+        if (args.TryGetValue("shot", out var shot)) Shooter.Arm(this, shot, int.Parse(args.GetValueOrDefault("frames", "12")));
+    }
+
+    void Show(Control c)
+    {
+        if (_screen != null) { RemoveChild(_screen); _screen.QueueFree(); }
+        _screen = c;
+        c.SetAnchorsPreset(LayoutPreset.FullRect);
+        AddChild(c);
+    }
+
+    public void ApplyAccent()
+    {
+        if (Career == null) return;
+        var t = Data.TeamByAbbr[Career.UserTeam];
+        var c = new Color(t.Colors[0]);
+        // слишком тёмный основной цвет (чёрный, тёмно-синий) — берём второй
+        if (c.Luminance < 0.12f && t.Colors.Count > 1 && new Color(t.Colors[1]).Luminance > 0.12f) c = new Color(t.Colors[1]);
+        if (c.Luminance < 0.12f) c = c.Lightened(0.35f);
+        Ui.Accent = c;
+        Theme = Ui.MakeTheme();
+    }
+
+    public void ShowMenu() => Show(new MenuScreen());
+    public void ShowClubSelect() => Show(new ClubSelectScreen());
+    public void ShowHub(string tab = "overview") => Show(new HubScreen(tab));
+    public void ShowMatch(ScheduledGame g) => Show(new MatchScreen(g));
+
+    public void ShowArena(ScheduledGame g)
+    {
+        Match3D.RinkPreview.Home = g.Home; Match3D.RinkPreview.Away = g.Away;
+        Match3D.RinkPreview.ReturnTo = () => { GetTree().ChangeSceneToFile("res://ui/Main.tscn"); };
+        Match3D.RinkPreview.PendingCareer = Career;
+        GetTree().ChangeSceneToFile("res://Match3D/RinkPreview.tscn");
+    }
+
+    public void NewCareer(string team)
+    {
+        Career = Career.New(Data, team, (int)(Time.GetUnixTimeFromSystem() % 1_000_000));
+        ApplyAccent();
+        Save();
+        ShowHub();
+    }
+
+    public bool HasSave => FileAccess.FileExists(SavePath);
+
+    public void LoadCareer()
+    {
+        try
+        {
+            Career = Career.FromJson(FileAccess.GetFileAsString(SavePath), Data);
+            ApplyAccent();
+            ShowHub();
+        }
+        catch (Exception e)
+        {
+            GD.PushError($"Сохранение не читается: {e.Message}");
+            ShowMenu();
+        }
+    }
+
+    /// <summary>После возврата из 3Д-арены карьера уже в памяти.</summary>
+    public void Resume(Career c)
+    {
+        Career = c;
+        ApplyAccent();
+        ShowHub();
+    }
+
+    public void Save()
+    {
+        if (Career == null) return;
+        using var f = FileAccess.Open(SavePath, FileAccess.ModeFlags.Write);
+        f?.StoreString(Career.ToJson());
+    }
+}
+
+public static class NodeExt
+{
+    public static T Also<T>(this T node, Action<T> act) { act(node); return node; }
+}
+
+/// <summary>Снимок окна через N кадров и выход — для проверки интерфейса без экрана.</summary>
+public partial class Shooter : Node
+{
+    string _path; int _frames;
+    public static void Arm(Node root, string path, int frames) => root.AddChild(new Shooter { _path = path, _frames = frames });
+    public override void _Process(double delta)
+    {
+        if (--_frames > 0) return;
+        GetViewport().GetTexture().GetImage().SavePng(_path);
+        GD.Print($"Кадр сохранён: {_path}");
+        GetTree().Quit();
+    }
+}

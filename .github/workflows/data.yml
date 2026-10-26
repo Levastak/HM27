@@ -1,0 +1,40 @@
+name: Обновление базы
+
+# Раз в неделю (и по кнопке) пересобирает game/data/hm27-data.json из свежих данных NHL-STATS.RU:
+# составы и звенья, травмы, статистика сезона, xG. Изменения коммитятся — это запускает новую сборку игры.
+on:
+  schedule:
+    - cron: "17 5 * * 1"   # понедельник, 08:17 по Москве
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Levastak/nhl-svodka
+          path: svodka
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Сборка базы
+        run: python3 data/build.py svodka game/data/hm27-data.json
+      - name: Коммит, если база изменилась
+        run: |
+          git config user.name "hm27-bot"
+          git config user.email "hm27-bot@users.noreply.github.com"
+          git add game/data/hm27-data.json
+          if git diff --cached --quiet; then echo "Без изменений"; exit 0; fi
+          git commit -m "База: данные на $(python3 -c 'import json;print(json.load(open("game/data/hm27-data.json"))["data_date"])')"
+          git push
+          # коммит от GITHUB_TOKEN сам сборку не запускает — запускаем явно
+          gh workflow run build.yml --ref main
+        env:
+          GH_TOKEN: ${{ github.token }}

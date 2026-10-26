@@ -1,0 +1,115 @@
+name: Сборка игры
+
+# На каждый пуш в main: проверка движка (критерии ТЗ 7.3), затем сборки Windows и macOS.
+# Готовые сборки — в релизе «dev» (перезаписывается). Тег v* — отдельный релиз с номером версии.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths: ["game/**", "core/**", ".github/workflows/build.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GODOT_VERSION: "4.7.2"
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+
+jobs:
+  check:
+    name: Проверка движка
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Критерии ТЗ 7.3 (10 сезонов)
+        run: dotnet run -c Release --project core/HM27.Check -- game/data/hm27-data.json 10
+
+  build:
+    name: Сборки Windows и macOS
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Godot из кеша
+        id: godot-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/godot
+            ~/.local/share/godot/export_templates
+          key: godot-${{ env.GODOT_VERSION }}-mono
+
+      - name: Скачать Godot и шаблоны экспорта
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        run: |
+          set -e
+          V="${GODOT_VERSION}-stable"
+          mkdir -p ~/godot && cd ~/godot
+          curl -sSL -o g.zip "https://github.com/godotengine/godot/releases/download/$V/Godot_v${V}_mono_linux_x86_64.zip"
+          unzip -q g.zip && rm g.zip
+          curl -sSL -o t.tpz "https://github.com/godotengine/godot/releases/download/$V/Godot_v${V}_mono_export_templates.tpz"
+          unzip -q t.tpz && rm t.tpz
+          mkdir -p ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable.mono
+          mv templates/* ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable.mono/
+          # Android/iOS/веб не нужны — экономим кеш
+          rm -f ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable.mono/{android_*,ios.zip,web_*}
+
+      - name: Сборка C# и импорт ресурсов
+        working-directory: game
+        run: |
+          GODOT=$(ls ~/godot/*/Godot_v*_mono_linux.x86_64)
+          echo "GODOT=$GODOT" >> "$GITHUB_ENV"
+          dotnet build -c Release
+          "$GODOT" --headless --import 2>&1 | tail -5 || true
+
+      - name: Экспорт Windows
+        working-directory: game
+        run: |
+          mkdir -p ../build/windows
+          "$GODOT" --headless --export-release "Windows" ../build/windows/HM27.exe 2>&1 | grep -vE "^\s*$" | tail -20
+          test -f ../build/windows/HM27.exe
+          cd ../build && cp ../README.md windows/README.md && (cd windows && zip -qr ../HM27-windows.zip .)
+
+      - name: Экспорт macOS
+        working-directory: game
+        run: |
+          mkdir -p ../build/macos
+          "$GODOT" --headless --export-release "macOS" ../build/macos/HM27.zip 2>&1 | grep -vE "^\s*$" | tail -20
+          test -f ../build/macos/HM27.zip
+          mv ../build/macos/HM27.zip ../build/HM27-macos.zip
+
+      - name: Артефакты
+        uses: actions/upload-artifact@v4
+        with:
+          name: HM27-builds
+          path: build/HM27-*.zip
+          retention-days: 14
+
+      - name: Релиз
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHORT=$(git rev-parse --short HEAD)
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+            gh release create "$TAG" build/HM27-*.zip --title "HM27 $TAG" --notes-file docs/release-notes.md
+          else
+            gh release delete dev -y --cleanup-tag 2>/dev/null || true
+            gh release create dev build/HM27-*.zip --prerelease --target "$GITHUB_SHA" \
+              --title "HM27 — свежая сборка ($SHORT)" --notes-file docs/release-notes.md
+          fi
