@@ -103,7 +103,7 @@ jobs:
         run: |
           mkdir -p ../build/linux
           "$GODOT" --headless --export-release "Linux" ../build/linux/HM27.x86_64 > ../build/export-linux.log 2>&1 || true
-          test -d ../build/linux/data_HM27_linux_x86_64 || { echo "::error::Нет сборки C# в Linux-версии"; exit 1; }
+          ls -d ../build/linux/data_HM27_* || { echo "::error::Нет сборки C# в Linux-версии"; exit 1; }
           cd ../build/linux && zip -qr ../HM27-linux.zip .
 
       - name: Артефакты
