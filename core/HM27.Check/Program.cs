@@ -100,6 +100,30 @@ Check("Плей-офф", playoffsOk, $"15 серий и чемпион в каж
     Check("Чувствительность: звенья", ptsTop > ptsBase - 2, $"больше времени первым звеньям: очки {ptsBase / 10:F1} → {ptsTop / 10:F1}");
 }
 
+// ---------------------------------------------------------------- 5. Путь игрока: «Дальше» → матч → следующий день, сохранение
+{
+    var c = Career.New(data, "CAR", 77);
+    int userGames = 0, guard = 0;
+    while (c.Phase != Phase.Finished && guard++ < 2000)
+    {
+        c.SimToUserGame();
+        var g = c.UserGameToday();
+        if (g != null) { c.Play(g); userGames++; c.SimDay(); }
+        else if (c.Phase != Phase.Finished) c.SimDay();
+        if (guard % 50 == 0)
+        {
+            // сохранение и загрузка посреди сезона не меняют состояние
+            var json = c.ToJson();
+            var back = Career.FromJson(json, data);
+            if (back.ToJson() != json) { Check("Сохранение", false, "после загрузки состояние отличается"); break; }
+            c = back;
+        }
+    }
+    int poGames = c.Games.Count(g => g.Playoff && (g.Home == "CAR" || g.Away == "CAR"));
+    Check("Путь игрока", c.Phase == Phase.Finished && userGames == 82 + poGames && c.Champion != null,
+        $"сыграно своих матчей {userGames} (82 + {poGames} в плей-офф), чемпион {c.Champion}; сохранение/загрузка каждые 50 шагов совпадают");
+}
+
 Console.WriteLine(fails.Count == 0 ? "\nВсе критерии выполнены." : $"\nНе выполнено: {string.Join(", ", fails)}");
 return fails.Count == 0 ? 0 : 1;
 

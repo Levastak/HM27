@@ -66,6 +66,7 @@ public partial class Main : Control
                 var g = Career.UserGameToday();
                 ShowMatch(g);
                 if (args.ContainsKey("played")) (_screen as MatchScreen)?.PlayInstant();
+                if (args.ContainsKey("live")) (_screen as MatchScreen)?.StartLive(double.Parse(args["live"]));
                 break;
             default: ShowHub(args.GetValueOrDefault("tab", "overview")); break;
         }

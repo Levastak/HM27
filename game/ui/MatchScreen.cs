@@ -142,6 +142,9 @@ public partial class MatchScreen : Control
         _clock = 0; _shown = 0;
     }
 
+    /// <summary>Для автоматических снимков: начать матч и перемотать часы.</summary>
+    public void StartLive(double atSec) { StartMatch(); _clock = atSec; }
+
     public void PlayInstant()
     {
         if (!_g.Played) { C.Play(_g); _fresh = true; }
