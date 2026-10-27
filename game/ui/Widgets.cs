@@ -100,6 +100,7 @@ public static class PlayerCard
 {
     public static void Show(Node parent, PlayerData p, Career c)
     {
+        if (Shell.I != null) { Shell.I.Go("player", null, p.Id.ToString()); return; }
         var t = c.Team(p.Team);
         var pop = new PopupPanel();
         pop.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 12, Ui.Line, 22));

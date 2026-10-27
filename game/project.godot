@@ -3,7 +3,7 @@ config_version=5
 [application]
 
 config/name="HM27"
-config/version="0.1.0"
+config/version="0.2.0"
 run/main_scene="res://ui/Main.tscn"
 config/features=PackedStringArray("4.7", "C#", "Forward Plus")
 boot_splash/bg_color=Color(0.043, 0.059, 0.078, 1)

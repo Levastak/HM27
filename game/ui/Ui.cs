@@ -4,16 +4,21 @@ using Godot;
 
 namespace HM27.UI;
 
-/// <summary>Визуальный стиль HM27: тёмная «арена», акцент — цвет клуба игрока. Шрифт Inter (OFL).</summary>
+/// <summary>
+/// Визуальный стиль HM27 в духе FM24: тёмно-серые панели, плотные таблицы, шапка в цветах клуба.
+/// Шрифт Inter (OFL), иконки Lucide (ISC).
+/// </summary>
 public static class Ui
 {
-    public static readonly Color Bg = new("0B0F14");
-    public static readonly Color Panel = new("121821");
-    public static readonly Color Panel2 = new("18202B");
-    public static readonly Color Line = new("243042");
-    public static readonly Color Text = new("E8EEF5");
-    public static readonly Color Muted = new("8A97A8");
-    public static readonly Color Dim = new("5B6778");
+    public static readonly Color Bg = new("1C2027");       // фон страниц
+    public static readonly Color Side = new("14171C");     // левое меню
+    public static readonly Color Panel = new("252A33");    // панели-виджеты
+    public static readonly Color Panel2 = new("2D333D");   // шапки панелей, кнопки
+    public static readonly Color Line = new("363D49");
+    public static readonly Color Text = new("ECEFF4");
+    public static readonly Color Muted = new("A0A8B5");
+    public static readonly Color Dim = new("6E7785");
+    public static readonly Color Gold = new("F2C14E");
     public static readonly Color Win = new("3FB97A");
     public static readonly Color Loss = new("E25B5B");
     public static readonly Color Otl = new("E2A93B");
@@ -47,7 +52,7 @@ public static class Ui
 
     public static Theme MakeTheme()
     {
-        var t = new Theme { DefaultFont = Regular, DefaultFontSize = 15 };
+        var t = new Theme { DefaultFont = Regular, DefaultFontSize = 13 };
         foreach (var type in new[] { "Label", "Button", "LineEdit", "CheckBox", "OptionButton", "ItemList", "TooltipLabel" })
             t.SetColor("font_color", type, Text);
         t.SetColor("font_hover_color", "Button", Colors.White);
@@ -75,7 +80,7 @@ public static class Ui
     public static StyleBoxFlat Box(Color bg, int radius = 8, Color? border = null, int pad = 12)
     {
         var s = new StyleBoxFlat { BgColor = bg };
-        s.SetCornerRadiusAll(radius);
+        s.SetCornerRadiusAll(Math.Min(radius, 4));   // FM: почти прямые углы
         if (border.HasValue) { s.BorderColor = border.Value; s.SetBorderWidthAll(1); }
         s.ContentMarginLeft = s.ContentMarginRight = pad;
         s.ContentMarginTop = s.ContentMarginBottom = Math.Max(4, pad - 4);
@@ -106,6 +111,47 @@ public static class Ui
         }
         if (onClick != null) b.Pressed += onClick;
         return b;
+    }
+
+    /// <summary>Иконка Lucide заданного цвета и размера.</summary>
+    public static TextureRect Icon(string name, int size = 18, Color? color = null)
+    {
+        return new TextureRect
+        {
+            Texture = Icons.Get(name, filled: false), CustomMinimumSize = new Vector2(size, size), ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered, Modulate = color ?? Muted, MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+    }
+
+    /// <summary>Характеристика 1–20 (как в FM) из перцентиля 1–99.</summary>
+    public static int Attr20(int pct) => Math.Clamp((int)Math.Round(1 + (pct - 1) * 19 / 98.0), 1, 20);
+
+    public static Color AttrColor(int v20) => v20 >= 16 ? new Color("5DD879") : v20 >= 11 ? new Color("B7E06A") : v20 >= 6 ? new Color("E8C25A") : new Color("E0705A");
+
+    public static Label Attr(int pct, int size = 13)
+    {
+        int v = Attr20(pct);
+        return L(v.ToString(), size, AttrColor(v), Bold, HorizontalAlignment.Center);
+    }
+
+    /// <summary>Звёзды способностей (0,5–5), как оценка тренеров в FM.</summary>
+    public static Control Stars(int ovrPct, int size = 13)
+    {
+        double st = Math.Clamp(Math.Round(ovrPct / 20.0 * 2) / 2, 0.5, 5);
+        var h = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+        h.AddThemeConstantOverride("separation", 1);
+        for (int i = 1; i <= 5; i++)
+        {
+            bool full = st >= i, half = !full && st >= i - 0.5;
+            var r = new TextureRect
+            {
+                Texture = half ? Icons.Get("star-half", true) : Icons.Get("star", full), CustomMinimumSize = new Vector2(size, size),
+                ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+                Modulate = full || half ? Gold : new Color(Dim, 0.6f), MouseFilter = Control.MouseFilterEnum.Ignore,
+            };
+            h.AddChild(r);
+        }
+        return h;
     }
 
     public static Color ReadableOn(Color bg) => bg.Luminance > 0.55f ? new Color("0B0F14") : Colors.White;

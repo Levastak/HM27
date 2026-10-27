@@ -21,7 +21,10 @@ public partial class HubScreen : Control
         ("stats", "Статистика"), ("playoffs", "Плей-офф"),
     };
 
-    public HubScreen(string tab) { _tab = tab; }
+    readonly bool _embedded;
+    string _calTeam;
+
+    public HubScreen(string tab, bool embedded = false) { _tab = tab; _embedded = embedded; }
     public HubScreen() { _tab = "overview"; }
 
     public override void _Ready() => Build();
@@ -29,6 +32,27 @@ public partial class HubScreen : Control
     void Build()
     {
         Ui.Clear(this);
+        if (_embedded)
+        {
+            // внутри оболочки FM24: только страница
+            SizeFlagsHorizontal = SizeFlags.ExpandFill; SizeFlagsVertical = SizeFlags.ExpandFill;
+            _content = Ui.Expand(new MarginContainer(), true, true);
+            foreach (var (k, v) in new[] { ("margin_left", 18), ("margin_right", 18), ("margin_top", 14), ("margin_bottom", 14) })
+                _content.AddThemeConstantOverride(k, v);
+            _content.SetAnchorsPreset(LayoutPreset.FullRect);
+            AddChild(_content);
+            if (_tab.StartsWith("calendar:")) { _calTeam = _tab[9..]; _tab = "calendar"; }
+            _content.AddChild(_tab switch
+            {
+                "calendar" => Calendar(),
+                "table" => TableView(0),
+                "stats" => StatsView(0, false),
+                "stats-mine" => StatsView(0, true),
+                "playoffs" => PlayoffsView(),
+                _ => Overview(),
+            });
+            return;
+        }
         var root = Ui.V(0);
         root.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(root);
@@ -223,25 +247,27 @@ public partial class HubScreen : Control
     }
 
     // ------------------------------------------------------------------ календарь
-    Control Calendar()
+    Control Calendar() => Calendar(_calTeam ?? C.UserTeam);
+
+    Control Calendar(string team)
     {
         var v = Ui.V(12);
-        v.AddChild(Ui.L("Календарь клуба", 24, Ui.Text, Ui.Bold));
+        v.AddChild(Ui.L(team == C.UserTeam ? "Календарь клуба" : $"Календарь: {C.Team(team).Name}", 20, Ui.Text, Ui.Bold));
         var t = new Table(new[] { "Дата", "", "Соперник", "Результат / шанс", "" }, new[] { 140, 30, 0, 170, 50 });
         int lastMonth = 0;
-        foreach (var g in C.TeamGames(C.UserTeam).OrderBy(g => g.Date))
+        foreach (var g in C.TeamGames(team).OrderBy(g => g.Date))
         {
             if (g.Date.Month != lastMonth)
             {
                 lastMonth = g.Date.Month;
                 t.Add(new Control[] { Ui.L(MonthName(g.Date), 13, Ui.AccentBright, Ui.Semi) });
             }
-            if (g.Played) t.Add(ResultCells(g, C.UserTeam).Select((c, i) => i == 0 ? Ui.L(Ui.Date(g.Date), 13, Ui.Muted) : c).ToArray(), false, () => Main.I.ShowMatch(g));
+            if (g.Played) t.Add(ResultCells(g, team).Select((c, i) => i == 0 ? Ui.L(Ui.Date(g.Date), 13, Ui.Muted) : c).ToArray(), false, () => Main.I.ShowMatch(g));
             else
             {
-                bool home = g.Home == C.UserTeam;
+                bool home = g.Home == team;
                 double p = home ? C.Preview(g).PHome : 1 - C.Preview(g).PHome;
-                bool b2b = C.PlayedYesterday(C.UserTeam, g.Date);
+                bool b2b = C.PlayedYesterday(team, g.Date);
                 t.Add(new Control[] { Ui.L(Ui.Date(g.Date), 13, g.Date == C.Today ? Ui.Text : Ui.Muted), Ui.L(home ? "" : "@", 13, Ui.Muted), TeamCell(home ? g.Away : g.Home),
                     Ui.H(8, Ui.Bar(p, Ui.AccentBright, 80, 6), Ui.L(Ui.Pct(p), 13, Ui.Muted)), Ui.L(b2b ? "2-й день" : "", 11, Ui.Otl) }, g.Date == C.Today);
             }
@@ -256,7 +282,7 @@ public partial class HubScreen : Control
     Control TableView(int mode)
     {
         var v = Ui.V(14);
-        var head = Ui.H(16, Ui.Expand(Ui.L("Турнирная таблица", 24, Ui.Text, Ui.Bold)));
+        var head = Ui.H(16, Ui.Expand(Ui.L("Турнирная таблица", 20, Ui.Text, Ui.Bold)));
         head.AddChild(new Segmented(new[] { "Дивизионы", "Конференции", "Лига", "Уайлд-кард" }, mode, k => Swap(TableView(k))));
         v.AddChild(head);
         var groups = new List<(string, List<StandingRow>, int cut)>();
@@ -290,7 +316,7 @@ public partial class HubScreen : Control
             {
                 i++;
                 t.Add(new Control[] { Ui.L($"{i}", 13, Ui.Muted), TeamCell(r.Team, 20), Ui.L($"{r.Gp}", 13), Ui.L($"{r.W}", 13), Ui.L($"{r.L}", 13), Ui.L($"{r.Otl}", 13),
-                    Ui.L($"{r.Pts}", 14, Ui.Text, Ui.Bold), Ui.L(r.Gp == 0 ? "—" : $"{r.PtsPct:.000}", 13, Ui.Muted), Ui.L($"{r.Gf}-{r.Ga}", 13, Ui.Muted), Ui.L(r.Streak, 12, Ui.Muted) }, r.Team == C.UserTeam);
+                    Ui.L($"{r.Pts}", 14, Ui.Text, Ui.Bold), Ui.L(r.Gp == 0 ? "—" : $"{r.PtsPct:.000}", 13, Ui.Muted), Ui.L($"{r.Gf}-{r.Ga}", 13, Ui.Muted), Ui.L(r.Streak, 12, Ui.Muted) }, r.Team == C.UserTeam, () => Shell.I?.Go("club", null, r.Team));
                 if (cut > 0 && i == cut) t.AddChild(Ui.Rule(new Color(Ui.Accent, 0.6f), 2));
             }
             grid.AddChild(Ui.Expand(Section(title, t)));
@@ -310,10 +336,13 @@ public partial class HubScreen : Control
     Control StatsView(int mode, bool mine)
     {
         var v = Ui.V(14);
-        var head = Ui.H(16, Ui.Expand(Ui.L("Статистика сезона", 24, Ui.Text, Ui.Bold)));
-        var mineBox = new CheckBox { Text = "Только мой клуб", ButtonPressed = mine, FocusMode = FocusModeEnum.None };
-        mineBox.Toggled += on => Swap(StatsView(mode, on));
-        head.AddChild(mineBox);
+        var head = Ui.H(16, Ui.Expand(Ui.L(mine ? "Статистика клуба" : "Статистика лиги", 20, Ui.Text, Ui.Bold)));
+        if (!_embedded)
+        {
+            var mineBox = new CheckBox { Text = "Только мой клуб", ButtonPressed = mine, FocusMode = FocusModeEnum.None };
+            mineBox.Toggled += on => Swap(StatsView(mode, on));
+            head.AddChild(mineBox);
+        }
         head.AddChild(new Segmented(new[] { "Очки", "Голы", "Передачи", "Вратари", "Плей-офф" }, mode, k => Swap(StatsView(k, mine))));
         v.AddChild(head);
         bool po = mode == 4;
@@ -361,7 +390,7 @@ public partial class HubScreen : Control
     Control PlayoffsView()
     {
         var v = Ui.V(16);
-        v.AddChild(Ui.L(C.Phase == Phase.Regular ? "Плей-офф: расклад, если бы сезон закончился сегодня" : "Плей-офф Кубка Стэнли 2027", 24, Ui.Text, Ui.Bold));
+        v.AddChild(Ui.L(C.Phase == Phase.Regular ? "Плей-офф: расклад, если бы сезон закончился сегодня" : "Плей-офф Кубка Стэнли 2027", 20, Ui.Text, Ui.Bold));
         if (C.Phase == Phase.Regular)
         {
             v.AddChild(Ui.L("Топ-3 каждого дивизиона и две «уайлд-кард» в конференции. Подробно — вкладка «Таблица» → «Уайлд-кард».", 14, Ui.Muted));

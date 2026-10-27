@@ -154,7 +154,7 @@ def main(src, out_path):
         b = bio.get(nm) or [None, None, None, None]
         k = nkey(nm)
         p = dict(id=pid, name=nm, name_ru=RU.get(nm, nm), team=t, pos=pos, num=nums.get(nm) or nums.get(f"{nm}|{pos[0]}"),
-                 h=b[0], w=b[1], born=b[2], country=b[3])
+                 h=b[0], w=b[1], born=b[2], country=b[3], head=hs)
         if pos == "G":
             pg, px = (gsx.get(k) or [0.0, 0.0])
             c = gxg.get(k) or {}

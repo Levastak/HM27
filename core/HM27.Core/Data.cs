@@ -91,6 +91,8 @@ public sealed class PlayerData
     [JsonPropertyName("w")] public int? Weight { get; set; }
     [JsonPropertyName("born")] public string Born { get; set; }
     [JsonPropertyName("country")] public string Country { get; set; }
+    /// <summary>Путь к фото на assets.nhle.com/mugs/nhl/{head}.png (фото не входят в игру, скачиваются при показе).</summary>
+    [JsonPropertyName("head")] public string Head { get; set; }
     /// <summary>Личный xG за матч (полевые).</summary>
     [JsonPropertyName("ixg_pg")] public double IxgPg { get; set; }
     /// <summary>Личный xG за 60 минут, гармонизированный по времени (используется движком).</summary>
@@ -104,6 +106,8 @@ public sealed class PlayerData
     /// <summary>Вратари: сейвы сверх ожидаемого на единицу xG против (+ — лучше среднего).</summary>
     [JsonPropertyName("gsax")] public double Gsax { get; set; }
     [JsonPropertyName("r")] public Dictionary<string, int> R { get; set; } = new();
+    /// <summary>Реальная статистика НХЛ в текущем сезоне на дату базы: gp, g, a, pts, pm, toi; у вратарей gp, w, l, otl, sv, gaa.</summary>
+    [JsonPropertyName("stats")] public Dictionary<string, double> Stats { get; set; } = new();
 
     [JsonIgnore] public bool IsGoalie => Pos == "G";
     [JsonIgnore] public bool IsDefense => Pos == "D";

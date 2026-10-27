@@ -87,6 +87,7 @@ public sealed class Career
     public List<int> Injured { get; set; } = new();
     /// <summary>Сколько стартов подряд у основного вратаря (ИИ даёт отдых).</summary>
     public Dictionary<string, int> GoalieStreak { get; set; } = new();
+    public List<Message> Messages { get; set; } = new();
 
     [JsonIgnore] public GameData Data { get; private set; }
 
@@ -108,6 +109,7 @@ public sealed class Career
             c.BaseGsax[t.Abbr] = 0.8 * MatchEngine.GsaxOf(data, l.G1) + 0.2 * MatchEngine.GsaxOf(data, l.G2);
             c.Table[t.Abbr] = new StandingRow { Team = t.Abbr };
         }
+        InboxWriter.Welcome(c);
         return c;
     }
 
@@ -166,6 +168,7 @@ public sealed class Career
         Record(g);
         foreach (var (side, abbr) in new[] { (h, g.Home), (a, g.Away) })
             GoalieStreak[abbr] = side.Goalie == Lineups[abbr].G1 ? GoalieStreak.GetValueOrDefault(abbr) + 1 : 0;
+        if (g.Home == UserTeam || g.Away == UserTeam) InboxWriter.AfterUserGame(this, g);
         return r;
     }
 
@@ -199,6 +202,7 @@ public sealed class Career
         }
         Today = Today.AddDays(1);
         if (Phase == Phase.Playoffs) SchedulePlayoffDay();
+        InboxWriter.Periodic(this);
     }
 
     /// <summary>Симулировать до ближайшего матча клуба игрока (сам матч не играется).</summary>
@@ -321,6 +325,7 @@ public sealed class Career
         }
         Today = Today.AddDays(3);
         SchedulePlayoffDay();
+        InboxWriter.PlayoffsStart(this);
     }
 
     void AddSeries(int round, string conf, string a, string b, int slot)
@@ -372,6 +377,8 @@ public sealed class Career
     }
 
     // ------------------------------------------------------------------ удобства для интерфейса
+    public int Unread => Messages.Count(m => !m.Read);
+
     public string Short(int id) => id != 0 && Data.PlayerById.TryGetValue(id, out var p) ? p.LastRu : "—";
     public TeamData Team(string abbr) => Data.TeamByAbbr[abbr];
     public IEnumerable<PlayerData> Roster(string abbr) => Data.Roster(abbr);

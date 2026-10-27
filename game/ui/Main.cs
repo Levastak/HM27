@@ -8,7 +8,7 @@ namespace HM27.UI;
 /// <summary>Корень игры: база, карьера, переключение экранов, сохранение.</summary>
 public partial class Main : Control
 {
-    public const string Version = "0.1.0";
+    public const string Version = "0.2.0";
     const string SavePath = "user://career.json";
 
     public static Main I { get; private set; }
@@ -101,7 +101,10 @@ public partial class Main : Control
                 if (args.ContainsKey("played")) (_screen as MatchScreen)?.PlayInstant();
                 if (args.ContainsKey("live")) (_screen as MatchScreen)?.StartLive(double.Parse(args["live"]));
                 break;
-            default: ShowHub(args.GetValueOrDefault("tab", "overview")); break;
+            default:
+                if (args.TryGetValue("read", out var rd) && rd == "all") foreach (var m in Career.Messages) m.Read = true;
+                ShowHub(args.GetValueOrDefault("tab", "overview"), args.GetValueOrDefault("arg"));
+                break;
         }
         if (args.TryGetValue("shot", out var shot)) Shooter.Arm(this, shot, int.Parse(args.GetValueOrDefault("frames", "12")));
     }
@@ -128,7 +131,18 @@ public partial class Main : Control
 
     public void ShowMenu() => Show(new MenuScreen());
     public void ShowClubSelect() => Show(new ClubSelectScreen());
-    public void ShowHub(string tab = "overview") => Show(new HubScreen(tab));
+    /// <summary>Экраны карьеры — в FM-оболочке. Старые имена вкладок переводятся в разделы оболочки.</summary>
+    public void ShowHub(string tab = "overview", string arg = null)
+    {
+        var (page, sub) = tab switch
+        {
+            "lines" => ("lines", (string)null), "calendar" => ("schedule", null), "table" => ("comp", "table"), "stats" => ("comp", "stats"),
+            "playoffs" => ("comp", "playoffs"), "squad" => ("squad", null), "inbox" => ("inbox", null), "player" => ("player", null), "club" => ("club", null),
+            _ => ("home", null),
+        };
+        if (_screen is Shell sh && sh.IsInsideTree()) sh.Go(page, sub, arg);
+        else Show(new Shell(page, sub, arg));
+    }
     public void ShowMatch(ScheduledGame g) => Show(new MatchScreen(g));
 
     public void ShowArena(ScheduledGame g)

@@ -32,7 +32,7 @@ public partial class LinesView : HBoxContainer
         var left = Ui.V(14);
         AddChild(Ui.Expand(Ui.Scroll(left), true, true));
 
-        var head = Ui.H(10, Ui.Expand(Ui.V(2, Ui.L("Состав и звенья", 24, Ui.Text, Ui.Bold),
+        var head = Ui.H(10, Ui.Expand(Ui.V(2, Ui.L("Звенья на матч", 20, Ui.Text, Ui.Bold),
             Ui.L(_sel == 0 ? "Щёлкните игрока, затем того, с кем его поменять (в звене или в списке справа)." : $"Выбран: {C.Data.PlayerById[_sel].NameRu}. Теперь щёлкните, с кем поменять.", 13, _sel == 0 ? Ui.Muted : Ui.AccentBright))));
         head.AddChild(Ui.B("Авто-состав", () => { Set(Lineup.Auto(C.Data, C.UserTeam, C.Injured.ToHashSet())); }));
         head.AddChild(Ui.B("Как в НХЛ", () => { Set(Lineup.FromTeam(C.Data, C.Team(C.UserTeam), C.Injured.ToHashSet())); }));
@@ -114,7 +114,7 @@ public partial class LinesView : HBoxContainer
                 h.AddChild(Ui.Expand(Ui.L(p.NameRu, 14, inj ? Ui.Loss : inLineup.Contains(p.Id) ? Ui.Text : Ui.Muted)));
                 h.AddChild(Ui.L(where, 11, inj ? Ui.Loss : Ui.Dim).Also(l => l.CustomMinimumSize = new Vector2(70, 0)));
                 h.AddChild(Ui.L(Ui.PosRu(p.Pos), 11, Ui.Muted).Also(l => l.CustomMinimumSize = new Vector2(24, 0)));
-                h.AddChild(Ui.Rating(p.Ovr, 12, 30));
+                h.AddChild(Ui.Stars(p.Ovr, 10));
                 var card = Ui.Card(h, p.Id == _sel ? new Color(Ui.Accent, 0.25f) : Ui.Panel2, 8, p.Id == _sel ? Ui.Accent : null);
                 card.MouseFilter = MouseFilterEnum.Stop;
                 card.MouseDefaultCursorShape = CursorShape.PointingHand;
@@ -146,11 +146,11 @@ public partial class LinesView : HBoxContainer
             var h = Ui.H(6);
             h.AddChild(Ui.L(p.Num?.ToString() ?? "", 12, Ui.Dim));
             h.AddChild(Ui.Expand(Ui.L(compact ? p.LastRu : p.NameRu, compact ? 13 : 14, Ui.Text, Ui.Semi).Also(l => { l.ClipText = true; l.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis; })));
-            h.AddChild(Ui.Rating(p.Ovr, 12, 30));
+            h.AddChild(Ui.Stars(p.Ovr, 11));
             v.AddChild(h);
             if (!compact)
             {
-                string sub = p.IsGoalie ? $"сейвы сверх ожидаемого {p.Gsax * 100:+0.0;-0.0}%" : $"{Ui.PosRu(p.Pos)} · атака {p.Rating("att")} · пас {p.Rating("pas")}";
+                string sub = p.IsGoalie ? $"вратарь {Ui.Attr20(p.Rating("gk"))} · сейвы сверх ожидаемого {p.Gsax * 100:+0.0;-0.0}%" : $"{Ui.PosRu(p.Pos)} · атака {Ui.Attr20(p.Rating("att"))} · пас {Ui.Attr20(p.Rating("pas"))} · оборона {Ui.Attr20(p.Rating("dfn"))}";
                 v.AddChild(Ui.L(sub + (off ? " · не своя позиция" : ""), 11, off ? Ui.Otl : Ui.Muted));
             }
         }
