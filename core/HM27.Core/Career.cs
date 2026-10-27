@@ -27,6 +27,9 @@ public sealed class SkaterLine
     public int A { get; set; }
     public int Ppg { get; set; }
     public int Gwg { get; set; }
+    public double RatingSum { get; set; }
+    public int Rated { get; set; }
+    public double AvgRating => Rated == 0 ? 0 : RatingSum / Rated;
     public int Pts => G + A;
 }
 
@@ -39,6 +42,9 @@ public sealed class GoalieLine
     public int Sa { get; set; }
     public int Ga { get; set; }
     public int So { get; set; }
+    public double RatingSum { get; set; }
+    public int Rated { get; set; }
+    public double AvgRating => Rated == 0 ? 0 : RatingSum / Rated;
     public double SvPct => Sa == 0 ? 0 : 1 - Ga / (double)Sa;
     public double Gaa => Gp == 0 ? 0 : Ga / (double)Gp;
 }
@@ -85,6 +91,8 @@ public sealed class Career
     public List<Series> Bracket { get; set; } = new();
     public string Champion { get; set; }
     public List<int> Injured { get; set; } = new();
+    /// <summary>Травмы: кто, с какого дня, до какого (включительно — не играет), что.</summary>
+    public List<Injury> Injuries { get; set; } = new();
     /// <summary>Сколько стартов подряд у основного вратаря (ИИ даёт отдых).</summary>
     public Dictionary<string, int> GoalieStreak { get; set; } = new();
     public List<Message> Messages { get; set; } = new();
@@ -98,6 +106,9 @@ public sealed class Career
         c.Games = ScheduleMaker.Make(data, data.Season, seed);
         c.Today = c.Games.Min(g => g.Date);
         c.Injured = data.Teams.SelectMany(t => t.Injured).Distinct().ToList();
+        var irng = new Random(seed * 31 + 7);
+        foreach (var id in c.Injured)
+            c.Injuries.Add(new Injury { Id = id, From = c.Today.AddDays(-irng.Next(3, 30)), Until = c.Today.AddDays(irng.Next(5, 45)), Kind = InjuryModel.Kinds[irng.Next(InjuryModel.Kinds.Length)] });
         var inj = c.Injured.ToHashSet();
         foreach (var t in data.Teams)
         {
@@ -147,6 +158,9 @@ public sealed class Career
             int st = GoalieStreak.GetValueOrDefault(abbr);
             if (l.G2 != 0 && (b2b || st >= 5)) goalie = l.G2;
         }
+        if (goalie == 0) goalie = l.G1 != 0 ? l.G1 : l.G2;
+        if (goalie == 0)   // все вратари в лазарете — выходит кто есть (экстренный вратарь)
+            goalie = Data.Roster(abbr).Where(p => p.IsGoalie).OrderByDescending(p => p.Gsax).Select(p => p.Id).FirstOrDefault();
         return new MatchSide
         {
             Team = Data.TeamByAbbr[abbr], Lineup = l, BaseOff = BaseOff[abbr], BaseDef = BaseDef[abbr], BaseGsax = BaseGsax[abbr], Goalie = goalie, B2B = b2b,
@@ -161,11 +175,27 @@ public sealed class Career
     public MatchResult Play(ScheduledGame g)
     {
         if (g.Played) return g.Result;
-        foreach (var t in new[] { g.Home, g.Away }) Lineups[t].Repair(Data, t, Injured.ToHashSet());
+        var inj = Injured.ToHashSet();
+        foreach (var t in new[] { g.Home, g.Away })
+        {
+            if (t == UserTeam) Lineups[t].Repair(Data, t, inj);
+            else
+            {
+                // ИИ ставит звенья как в НХЛ, с поправкой на травмы (вернувшиеся из лазарета — снова в составе)
+                var keep = Lineups[t];
+                var l = Lineup.FromTeam(Data, Data.TeamByAbbr[t], inj);
+                l.Tempo = keep.Tempo; l.EarlyPull = keep.EarlyPull;
+                Lineups[t] = l;
+            }
+        }
         var h = Side(g.Home, g.Date); var a = Side(g.Away, g.Date);
         var r = MatchEngine.Play(Data, h, a, RngFor(g), g.Playoff);
         g.Result = r;
+        bool mine = g.Home == UserTeam || g.Away == UserTeam;
+        Chronicle.Build(Data, g, h, a, r, new Random(unchecked(Seed * 7919 + g.Id * 31 + 1)));
+        if (!mine) r.Events = new();   // хронику храним только для своих матчей — сохранение не раздувается
         Record(g);
+        InjuryModel.AfterGame(this, g, new Random(unchecked(Seed * 104729 + g.Id)));
         foreach (var (side, abbr) in new[] { (h, g.Home), (a, g.Away) })
             GoalieStreak[abbr] = side.Goalie == Lineups[abbr].G1 ? GoalieStreak.GetValueOrDefault(abbr) + 1 : 0;
         if (g.Home == UserTeam || g.Away == UserTeam) InboxWriter.AfterUserGame(this, g);
@@ -201,6 +231,7 @@ public sealed class Career
             if (Phase == Phase.Finished) return;
         }
         Today = Today.AddDays(1);
+        InjuryModel.Heal(this);
         if (Phase == Phase.Playoffs) SchedulePlayoffDay();
         InboxWriter.Periodic(this);
     }
@@ -246,8 +277,9 @@ public sealed class Career
 
         foreach (var id in r.HomeDressed.Concat(r.AwayDressed))
         {
-            if (Data.PlayerById.TryGetValue(id, out var p) && p.IsGoalie) continue;
-            Get(sk, id).Gp++;
+            if (!Data.PlayerById.TryGetValue(id, out var p) || p.IsGoalie) continue;
+            var line = Get(sk, id); line.Gp++;
+            if (r.Ratings.TryGetValue(id, out var rt)) { line.RatingSum += rt; line.Rated++; }
         }
         foreach (var e in r.Goals.Where(e => e.Kind != "so" && e.Scorer != 0))
         {
@@ -264,11 +296,13 @@ public sealed class Career
         {
             if (goalie == 0) return;
             var x = Get(gk, goalie); x.Gp++; x.Sa += sa; x.Ga += ga;
+            if (r.Ratings.TryGetValue(goalie, out var rt)) { x.RatingSum += rt; x.Rated++; }
             if (won) x.W++; else if (end == "REG" || g.Playoff) x.L++; else x.Otl++;
             if (shutout) x.So++;
         }
-        int hGa = r.AwayGoals - (r.End == "SO" && !homeWon ? 1 : 0);
-        int aGa = r.HomeGoals - (r.End == "SO" && homeWon ? 1 : 0);
+        // голы в пустые ворота и победный буллит вратарю не засчитываются
+        int hGa = r.AwayGoals - (r.End == "SO" && !homeWon ? 1 : 0) - r.Goals.Count(e => e.Team == g.Away && e.Kind == "en");
+        int aGa = r.HomeGoals - (r.End == "SO" && homeWon ? 1 : 0) - r.Goals.Count(e => e.Team == g.Home && e.Kind == "en");
         G(r.HomeGoalie, r.AwayShots, hGa, homeWon, r.End, hGa == 0);
         G(r.AwayGoalie, r.HomeShots, aGa, !homeWon, r.End, aGa == 0);
     }

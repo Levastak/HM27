@@ -40,6 +40,22 @@ public sealed class MatchResult
     /// <summary>Кто был в составе (для «сыгранных матчей» в статистике).</summary>
     public List<int> HomeDressed { get; set; } = new();
     public List<int> AwayDressed { get; set; } = new();
+    /// <summary>Оценки игроков за матч (6,0–10,0), как в FM.</summary>
+    public Dictionary<int, double> Ratings { get; set; } = new();
+    /// <summary>Хроника матча: броски, сейвы, удаления — постановка, согласованная с итогом движка.</summary>
+    public List<MatchEvent> Events { get; set; } = new();
+    /// <summary>Вратарь снят раньше обычного (стиль игры), и это что-то изменило.</summary>
+    public string PullNote { get; set; }
+}
+
+public sealed class MatchEvent
+{
+    public int T { get; set; }              // секунда матча от начала (ОТ — после 3600)
+    public string Team { get; set; }
+    public string Kind { get; set; }        // shot (сейв) | miss | block | goal | pen | pp_end
+    public int P1 { get; set; }             // бросающий / нарушитель / автор
+    public int P2 { get; set; }             // вратарь / заблокировавший
+    public string Note { get; set; }        // тип броска или нарушения
 }
 
 /// <summary>Шансы до матча.</summary>
@@ -62,6 +78,13 @@ public static class MatchEngine
     public const double G_W = 0.8;
     /// <summary>Доля голов в основное время без овертаймных (в базе — голы с ОТ).</summary>
     public const double REG_SHARE = 0.97;
+    /// <summary>Темп игры: каждый шаг ±7% к голам обеих команд. Меньше голов — больше овертаймов, это помогает слабому.</summary>
+    public const double TEMPO_K = 0.07;
+    /// <summary>
+    /// Раннее снятие вратаря при −1 в концовке: +3,5% сравнять и +7% пропустить в пустые (против средних по НХЛ).
+    /// Аналитика НХЛ: тренеры снимают вратаря слишком поздно, раннее снятие в среднем приносит очки.
+    /// </summary>
+    public const double PULL_TIE = 0.035, PULL_EN = 0.07, PULL_TIE2 = 0.008, PULL_EN2 = 0.06;
 
     static double Pois(int k, double l)
     {
@@ -116,6 +139,8 @@ public static class MatchEngine
         if (away.B2B && !home.B2B) { la *= B2B; lh /= B2B; }
         if (playoff) { lh *= PO_TOT; la *= PO_TOT; }
         else if (!neutral) { lh *= HA_MULT; la /= HA_MULT; }
+        double tempo = (1 + TEMPO_K * home.Lineup.Tempo) * (1 + TEMPO_K * away.Lineup.Tempo);
+        lh *= tempo; la *= tempo;
 
         double phr0 = 0, par0 = 0;
         for (int i = 0; i < 13; i++)
@@ -141,22 +166,45 @@ public static class MatchEngine
     {
         var o = Odds(data, home, away, playoff);
         var r = new MatchResult { PHome = o.PHome, LamHome = o.LamHome, LamAway = o.LamAway, HomeGoalie = home.Goalie, AwayGoalie = away.Goalie };
-        r.HomeDressed = home.Lineup.Skaters.Append(home.Goalie).Distinct().ToList();
-        r.AwayDressed = away.Lineup.Skaters.Append(away.Goalie).Distinct().ToList();
+        r.HomeDressed = home.Lineup.Skaters.Append(home.Goalie).Where(x => x != 0).Distinct().ToList();
+        r.AwayDressed = away.Lineup.Skaters.Append(away.Goalie).Where(x => x != 0).Distinct().ToList();
 
         // 1. Исход основного времени
         double u = rng.NextDouble();
         int outcome = u < o.PHomeReg ? 1 : u < o.PHomeReg + o.PAwayReg ? -1 : 0;
         // 2. Счёт основного времени из пуассоновского распределения в пределах исхода
         (int hg, int ag) = SampleScore(o.LamHome, o.LamAway, outcome, rng);
+        // 2а. Раннее снятие вратаря (стиль игры проигрывающей команды). Без этой настройки случайность не тратится.
+        int lateTie = 0, lateEn = 0;   // +1 хозяевам / −1 гостям
+        if (outcome != 0)
+        {
+            var trail = outcome > 0 ? away : home;
+            int diff = Math.Abs(hg - ag);
+            if (trail.Lineup.EarlyPull && diff <= 2)
+            {
+                double u2 = rng.NextDouble();
+                double pt = diff == 1 ? PULL_TIE : PULL_TIE2, pe = diff == 1 ? PULL_EN : PULL_EN2;
+                if (u2 < pt && diff == 1) { if (outcome > 0) { ag++; lateTie = -1; } else { hg++; lateTie = 1; } outcome = 0; r.PullNote = "tie"; }
+                else if (u2 < pt + pe) { if (outcome > 0) { hg++; lateEn = 1; } else { ag++; lateEn = -1; } r.PullNote = "en"; }
+            }
+        }
         r.HomeGoals = hg; r.AwayGoals = ag;
 
         var events = new List<(int t, bool home)>();
-        for (int i = 0; i < hg; i++) events.Add((rng.Next(0, 3600), true));
-        for (int i = 0; i < ag; i++) events.Add((rng.Next(0, 3600), false));
+        int hgN = hg - (lateTie == 1 ? 1 : 0) - (lateEn == 1 ? 1 : 0), agN = ag - (lateTie == -1 ? 1 : 0) - (lateEn == -1 ? 1 : 0);
+        for (int i = 0; i < hgN; i++) events.Add((rng.Next(0, 3600), true));
+        for (int i = 0; i < agN; i++) events.Add((rng.Next(0, 3600), false));
+        int tTie = lateTie != 0 ? rng.Next(3480, 3590) : -1, tEn = lateEn != 0 ? rng.Next(3500, 3598) : -1;
+        if (lateTie != 0) events.Add((tTie, lateTie == 1));
+        if (lateEn != 0) events.Add((tEn, lateEn == 1));
         events.Sort((a, b) => a.t.CompareTo(b.t));
         foreach (var (t, isHome) in events)
-            r.Goals.Add(MakeGoal(data, isHome ? home : away, isHome ? away : home, t / 1200 + 1, t % 1200, rng));
+        {
+            var ge = MakeGoal(data, isHome ? home : away, isHome ? away : home, t / 1200 + 1, t % 1200, rng);
+            if (t == tEn) ge.Kind = "en";
+            if (t == tTie) ge.Kind = "ev6";   // с шестым полевым
+            r.Goals.Add(ge);
+        }
 
         // 3. Ничья → овертайм (в регулярке 3 на 3, 5 минут, потом буллиты; в плей-офф — до гола)
         if (outcome == 0)

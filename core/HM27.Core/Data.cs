@@ -78,6 +78,12 @@ public sealed class RecordData
     [JsonPropertyName("pts")] public int Pts { get; set; }
 }
 
+public sealed class RoleFit
+{
+    [JsonPropertyName("n")] public string Name { get; set; }
+    [JsonPropertyName("v")] public int V { get; set; }
+}
+
 public sealed class PlayerData
 {
     [JsonPropertyName("id")] public int Id { get; set; }
@@ -108,6 +114,13 @@ public sealed class PlayerData
     [JsonPropertyName("r")] public Dictionary<string, int> R { get; set; } = new();
     /// <summary>Реальная статистика НХЛ в текущем сезоне на дату базы: gp, g, a, pts, pm, toi; у вратарей gp, w, l, otl, sv, gaa.</summary>
     [JsonPropertyName("stats")] public Dictionary<string, double> Stats { get; set; } = new();
+    /// <summary>Сырые показатели для характеристик (за 60 минут, доли, км/ч) — показываются в аналитике.</summary>
+    [JsonPropertyName("x")] public Dictionary<string, double?> X { get; set; } = new();
+    /// <summary>Пригодность к ролям (1–99), по убыванию.</summary>
+    [JsonPropertyName("roles")] public List<RoleFit> Roles { get; set; } = new();
+    /// <summary>Характеристики-оценки: нет данных (нет трекинга EDGE, мало вбрасываний и т. п.).</summary>
+    [JsonPropertyName("est")] public List<string> Est { get; set; } = new();
+    public double Xv(string k) => X != null && X.TryGetValue(k, out var v) && v.HasValue ? v.Value : double.NaN;
 
     [JsonIgnore] public bool IsGoalie => Pos == "G";
     [JsonIgnore] public bool IsDefense => Pos == "D";

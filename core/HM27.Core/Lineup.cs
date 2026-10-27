@@ -12,6 +12,13 @@ public sealed class Lineup
     public int G2 { get; set; }
     public int[] Pp1 { get; set; } = new int[5];
     public int[] Pp2 { get; set; } = new int[5];
+    /// <summary>Звенья меньшинства: 2 нападающих + 2 защитника.</summary>
+    public int[] Pk1 { get; set; } = new int[4];
+    public int[] Pk2 { get; set; } = new int[4];
+    /// <summary>Темп игры: −1 закрытый (−7% голов у обеих команд), 0 обычный, +1 открытый (+7%).</summary>
+    public int Tempo { get; set; }
+    /// <summary>Снимать вратаря раньше обычного, когда проигрываем 1–2 шайбы в концовке.</summary>
+    public bool EarlyPull { get; set; }
     public double[] FMin { get; set; } = { 20, 17, 14, 9 };
     public double[] DMin { get; set; } = { 24, 20, 16 };
     /// <summary>Во втором матче за два дня в воротах запасной.</summary>
@@ -24,7 +31,8 @@ public sealed class Lineup
     {
         F = F.Select(a => (int[])a.Clone()).ToList(),
         D = D.Select(a => (int[])a.Clone()).ToList(),
-        G1 = G1, G2 = G2, Pp1 = (int[])Pp1.Clone(), Pp2 = (int[])Pp2.Clone(),
+        G1 = G1, G2 = G2, Pp1 = (int[])Pp1.Clone(), Pp2 = (int[])Pp2.Clone(), Pk1 = (int[])Pk1.Clone(), Pk2 = (int[])Pk2.Clone(),
+        Tempo = Tempo, EarlyPull = EarlyPull,
         FMin = (double[])FMin.Clone(), DMin = (double[])DMin.Clone(), BackupOnB2B = BackupOnB2B,
     };
 
@@ -140,6 +148,20 @@ public sealed class Lineup
         }
         if (Pp1.Count(x => x != 0) < 5) Pp1 = Build(Array.Empty<int>());
         if (Pp2.Count(x => x != 0) < 5) Pp2 = Build(Pp1);
+        // меньшинство: лучшие в обороне (2 нападающих + 2 защитника)
+        int[] Pk(IEnumerable<int> exclude)
+        {
+            var ex = exclude.ToHashSet();
+            double D(PlayerData p) => p.Rating("dfn") + 0.5 * p.Rating("blk") + 0.3 * p.Rating("tka");
+            var f = dressed.Where(p => !p.IsDefense && !ex.Contains(p.Id)).OrderByDescending(D).Take(2);
+            var d = dressed.Where(p => p.IsDefense && !ex.Contains(p.Id)).OrderByDescending(D).Take(2);
+            return f.Concat(d).Select(p => p.Id).Concat(Enumerable.Repeat(0, 4)).Take(4).ToArray();
+        }
+        var dressedIds = dressed.Select(p => p.Id).ToHashSet();
+        Pk1 = (Pk1 ?? new int[4]).Select(x => dressedIds.Contains(x) ? x : 0).ToArray();
+        Pk2 = (Pk2 ?? new int[4]).Select(x => dressedIds.Contains(x) ? x : 0).ToArray();
+        if (Pk1.Length != 4 || Pk1.Count(x => x != 0) < 4) Pk1 = Pk(Array.Empty<int>());
+        if (Pk2.Length != 4 || Pk2.Count(x => x != 0) < 4) Pk2 = Pk(Pk1);
     }
 
     /// <summary>Полностью автоматический состав: лучшие по общему рейтингу на свои позиции.</summary>
@@ -177,6 +199,8 @@ public sealed class Lineup
         foreach (var line in F) for (int s = 0; s < line.Length; s++) line[s] = Map(line[s]);
         foreach (var pair in D) for (int s = 0; s < pair.Length; s++) pair[s] = Map(pair[s]);
         for (int s = 0; s < 5; s++) { Pp1[s] = Map(Pp1[s]); Pp2[s] = Map(Pp2[s]); }
+        for (int s = 0; s < Pk1.Length; s++) Pk1[s] = Map(Pk1[s]);
+        for (int s = 0; s < Pk2.Length; s++) Pk2[s] = Map(Pk2[s]);
         G1 = Map(G1); G2 = Map(G2);
     }
 }

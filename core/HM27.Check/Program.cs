@@ -100,6 +100,39 @@ Check("Плей-офф", playoffsOk, $"15 серий и чемпион в каж
     Check("Чувствительность: звенья", ptsTop > ptsBase - 2, $"больше времени первым звеньям: очки {ptsBase / 10:F1} → {ptsTop / 10:F1}");
 }
 
+// ---------------------------------------------------------------- 4б. Новые механики: травмы, оценки, темп, снятие вратаря
+{
+    var c = Career.New(data, "MIN", 4242); c.SimToEnd();
+    var reg = c.Games.Where(g => !g.Playoff).ToList();
+    double lost = 0;
+    foreach (var g in reg)
+        foreach (var t in new[] { g.Home, g.Away })
+            lost += c.Injuries.Count(i => data.PlayerById[i.Id].Team == t && i.From < g.Date && i.Until >= g.Date);
+    double perTeam = lost / 32;
+    Check("Травмы", perTeam is >= 150 and <= 400, $"пропущено игроко-матчей за сезон: {perTeam:F0} на клуб (НХЛ ~200–300), новых травм {c.Injuries.Count}");
+    var avg = c.Skaters.Values.Where(x => x.Rated > 0).Sum(x => x.RatingSum) / c.Skaters.Values.Sum(x => x.Rated);
+    var gavg = c.Goalies.Values.Where(x => x.Rated > 0).Sum(x => x.RatingSum) / c.Goalies.Values.Sum(x => x.Rated);
+    Check("Оценки за матч", avg is >= 6.5 and <= 7.1 && gavg is >= 6.4 and <= 7.3, $"средняя оценка полевых {avg:F2}, вратарей {gavg:F2} (как в FM: 6,5–7,1)");
+    int userGames = c.Games.Count(g => g.Home == "MIN" || g.Away == "MIN");
+    var mine = c.Games.First(g => g.Home == "MIN" || g.Away == "MIN");
+    Check("Хроника матча", mine.Result.Events.Count > 60 && mine.Result.Events.Count(e => e.Kind == "goal") == mine.Result.Goals.Count(e => e.Kind != "so")
+        && c.Games.Where(g => g.Home != "MIN" && g.Away != "MIN").All(g => g.Result.Events.Count == 0),
+        $"событий в своём матче: {mine.Result.Events.Count} (голы совпадают со счётом), чужие матчи без хроники");
+
+    double ptsBase = 0, ptsPull = 0, gBase = 0, gClosed = 0, ties = 0, tiesClosed = 0, n = 0;
+    for (int s = 0; s < 12; s++)
+    {
+        var a = Career.New(data, "SJS", 9000 + s); a.SimToEnd();
+        var b = Career.New(data, "SJS", 9000 + s); b.Lineups["SJS"].EarlyPull = true; b.SimToEnd();
+        var d = Career.New(data, "SJS", 9000 + s); d.Lineups["SJS"].Tempo = -1; d.SimToEnd();
+        ptsBase += a.Table["SJS"].Pts; ptsPull += b.Table["SJS"].Pts;
+        foreach (var g in a.Games.Where(g => !g.Playoff && (g.Home == "SJS" || g.Away == "SJS"))) { gBase += g.Result.HomeGoals + g.Result.AwayGoals; if (g.Result.End != "REG") ties++; n++; }
+        foreach (var g in d.Games.Where(g => !g.Playoff && (g.Home == "SJS" || g.Away == "SJS"))) { gClosed += g.Result.HomeGoals + g.Result.AwayGoals; if (g.Result.End != "REG") tiesClosed++; }
+    }
+    Check("Раннее снятие вратаря", ptsPull >= ptsBase - 12 && ptsPull <= ptsBase + 48, $"«Сан-Хосе», 12 сезонов: очков {ptsBase / 12:F1} → {ptsPull / 12:F1} за сезон (аналитика: раннее снятие слегка выгодно)");
+    Check("Закрытый темп", gClosed < gBase && tiesClosed >= ties * 0.97, $"голов в матчах «Сан-Хосе» {gBase / n:F2} → {gClosed / n:F2}, овертаймов {100 * ties / n:F1}% → {100 * tiesClosed / n:F1}%");
+}
+
 // ---------------------------------------------------------------- 5. Путь игрока: «Дальше» → матч → следующий день, сохранение
 {
     var c = Career.New(data, "CAR", 77);

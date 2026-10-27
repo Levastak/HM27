@@ -146,6 +146,10 @@ def extended(fw, dm, gk, extra):
             off_r = d["off_xga"] / off_t * 3600 if d["off_xga"] else on_r
             rel = (on_r - off_r) * d["toi"] / (d["toi"] + K_TOI)
             x["xga_rel"] = round(rel, 3)
+            # игровое влияние: доля xG при нём на льду минус без него (все ситуации), сжато
+            on_x = d["on_xgf"] + d["on_xga"]; off_x = d["off_xgf"] + d["off_xga"]
+            xr = (d["on_xgf"] / on_x - d["off_xgf"] / off_x) if on_x > 0 and off_x > 0 else 0.0
+            x["xg_rel"] = round(xr * d["toi"] / (d["toi"] + K_TOI), 4)
             # владение 5 на 5: доля попыток бросков при нём минус без него
             on_n = d["on_cf"] + d["on_ca"]; off_n = d["off_cf"] + d["off_ca"]
             cf_rel = (d["on_cf"] / on_n - d["off_cf"] / off_n) if on_n > 0 and off_n > 0 else 0.0
@@ -156,7 +160,7 @@ def extended(fw, dm, gk, extra):
         # перцентили
         for key, field, inv in (("pas2", "a1_60", False), ("sht", "sa_60", False), ("hit", "hit_60", False), ("tka", "tk_60", False),
                                 ("blk", "blk_60", False), ("dis", "dis_60", False), ("fo", "fo_pct", False), ("dfn2", "xga_rel", True),
-                                ("cor", "cf_rel", False), ("hnd", "gv_60", True)):
+                                ("cor", "cf_rel", False), ("hnd", "gv_60", True), ("imp", "xg_rel", False)):
             vals = [(-1 if inv else 1) * p["x"][field] for p in grp]
             for p, r in zip(grp, pct_rank(vals)):
                 p["r"][key] = r
@@ -178,10 +182,11 @@ def extended(fw, dm, gk, extra):
             if p["x"]["fo_n"] < 80:
                 r["fo"] = min(r["fo"], 35); p.setdefault("est", []).append("fo")
             if not p["x"]["has_mp"]:
-                for k in ("sht", "hit", "tka", "blk", "dis", "cor", "hnd"):
+                for k in ("sht", "hit", "tka", "blk", "dis", "cor", "hnd", "imp"):
                     r[k] = 40
                 p.setdefault("est", []).append("mp")
             del p["_x"]
+            p["x"].pop("has_mp", None)
     # вратари
     gkeys = ["gp", "toi", "xga", "ga", "hd_xg", "hd_g", "md_xg", "md_g", "ld_xg", "ld_g", "reb", "xreb"]
     for p in gk:
@@ -199,14 +204,14 @@ def extended(fw, dm, gk, extra):
 
 ROLES_F = [("Снайпер", dict(att=0.35, fin=0.15, sht=0.25, pwr=0.25)),
            ("Плеймейкер", dict(pas=0.5, att=0.2, cor=0.2, hnd=0.1)),
-           ("Двусторонний форвард", dict(dfn=0.35, cor=0.25, tka=0.2, att=0.2)),
+           ("Двусторонний форвард", dict(dfn=0.3, imp=0.2, cor=0.2, tka=0.15, att=0.15)),
            ("Силовой форвард", dict(hit=0.4, blk=0.15, dfn=0.2, att=0.25)),
            ("Скоростной форвард", dict(spd=0.45, att=0.3, tka=0.25))]
 ROLES_C = [("Центр-распасовщик", dict(pas=0.4, fo=0.3, att=0.15, cor=0.15)),
            ("Оборонительный центр", dict(fo=0.35, dfn=0.4, blk=0.1, tka=0.15))]
 ROLES_D = [("Атакующий защитник", dict(pas=0.35, att=0.25, sht=0.2, cor=0.2)),
            ("Защитник-домосед", dict(dfn=0.45, blk=0.3, hit=0.25)),
-           ("Универсальный защитник", dict(dfn=0.3, pas=0.25, cor=0.25, sta=0.2)),
+           ("Универсальный защитник", dict(imp=0.3, dfn=0.25, pas=0.2, cor=0.15, sta=0.1)),
            ("Силовой защитник", dict(hit=0.45, blk=0.25, dfn=0.3))]
 
 
@@ -219,8 +224,8 @@ def roles(p):
         have = {k: v for k, v in w.items() if k in r}
         if sum(have.values()) < 0.6:
             continue   # без расширенных данных роль не оценить
-        out.append([name, round(sum(r[k] * v for k, v in have.items()) / sum(have.values()))])
-    return sorted(out, key=lambda x: -x[1])
+        out.append(dict(n=name, v=round(sum(r[k] * v for k, v in have.items()) / sum(have.values()))))
+    return sorted(out, key=lambda x: -x["v"])
 
 
 def main(src, out_path, extra_path=None):
@@ -350,16 +355,16 @@ def main(src, out_path, extra_path=None):
         for p in grp:
             r = p["r"]
             if p["pos"] != "D":
-                w = dict(att=0.3, pas=0.22, sta=0.15, dfn=0.1, cor=0.08, fin=0.05, spd=0.05, sht=0.05)
+                w = dict(att=0.26, pas=0.2, imp=0.15, sta=0.12, dfn=0.07, cor=0.07, fin=0.04, spd=0.05, sht=0.04)
             else:
-                w = dict(dfn=0.24, sta=0.2, pas=0.16, cor=0.12, att=0.12, spd=0.06, blk=0.05, sht=0.05)
+                w = dict(imp=0.2, pas=0.17, sta=0.17, att=0.14, dfn=0.14, cor=0.08, spd=0.05, sht=0.05)
             have = {k: v for k, v in w.items() if k in r}
             r["ovr"] = round(sum(r[k] * v for k, v in have.items()) / sum(have.values()))
             p["roles"] = roles(p)
     for p in gk:
         r = p["r"]
         r["ovr"] = round(0.7 * r["gk"] + 0.15 * r.get("hd", r["gk"]) + 0.15 * r.get("gsta", r["gk"])) if "hd" in r else r["gk"]
-        p["roles"] = [["Вратарь", r["ovr"]]]
+        p["roles"] = [dict(n="Вратарь", v=r["ovr"])]
 
     # ---------------- звенья клубов (по именам → id)
     def ids(names):
