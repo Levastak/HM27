@@ -25,8 +25,10 @@ import pandas as pd
 from scipy import sparse
 from sklearn.linear_model import LogisticRegression
 
-SEASON_W = {"20262027": 1.0, "20252026": 1.0, "20242025": 0.8, "20232024": 0.64}
+SEASON_W = {"20262027": 1.0, "20252026": 1.0, "20242025": 0.8, "20232024": 0.64, "20222023": 0.5}
 MID, SCALE = 11.0, 3.4          # шкала 1–20: середина и цена одного стандартного отклонения
+# общий уровень: ценность за матч (общая шкала F и D), очки за 60, игровое время, доля сыгранных матчей
+LEVEL_W = {"value": 0.5, "pts": 0.25, "toi": 0.15, "share": 0.10}
 REG_MIN = 400                   # «регулярный» игрок: от 400 взвешенных минут (полевые), 1000 (вратари)
 NET_X = 89.0
 SHOT_TYPES = ["wrist", "snap", "slap", "backhand", "tip-in", "deflected", "wrap-around"]
@@ -207,6 +209,54 @@ def fit_xg(shots):
     return xg, info
 
 
+def mp_xg(shots, raw_dir, meta):
+    """Заменить xG на модель MoneyPuck (moneypuck.com, некоммерческое использование): у неё больше признаков броска.
+    Сопоставление: матч, бросающий, секунда матча (±1 с). Несопоставленные броски остаются с нашим xG."""
+    keys = {}
+    years = sorted({int(s[:4]) for s in shots["season"].unique()})
+    total = 0
+    for y in years:
+        path = os.path.join(raw_dir, f"mp_shots_{y}.csv.gz")
+        if not os.path.exists(path):
+            continue
+        df = pd.read_csv(path, usecols=lambda c: c in ("game_id", "isPlayoffGame", "time", "shooterPlayerId", "xGoal", "event", "period"))
+        df = df.dropna(subset=["shooterPlayerId", "xGoal"])
+        gid = (str(y) + df["game_id"].astype(int).map(lambda g: f"{g:06d}"))
+        for g, t, pid, x in zip(gid, df["time"].astype(int), df["shooterPlayerId"].astype(int), df["xGoal"].astype(float)):
+            keys[(g, pid, t)] = x
+        total += len(df)
+    if not keys:
+        meta["xg_source"] = "своя модель (данных MoneyPuck нет)"
+        return
+    unb = shots["type"].isin(UNBLOCKED)
+    gt = ((shots["per"] - 1) * 1200 + shots["t"]).astype(int)
+    found = np.full(len(shots), np.nan)
+    for i, (g, pid, t, u) in enumerate(zip(shots["gid"], shots["shooter"], gt, unb)):
+        if not u:
+            continue
+        x = keys.get((g, pid, t))
+        if x is None:
+            x = keys.get((g, pid, t - 1), keys.get((g, pid, t + 1)))
+        if x is not None:
+            found[i] = x
+    ok = ~np.isnan(found) & (shots["en"].values == 0)
+    y = (shots["type"] == "goal").values
+    m = ok & unb.values
+    meta["xg_mp"] = {"mp_shots": total, "matched": round(float(m.sum() / max(1, (unb.values & (shots["en"].values == 0)).sum())), 3),
+                     "mean_mp": round(float(found[m].mean()), 4), "goal_rate": round(float(y[m].mean()), 4),
+                     "auc_mp": _auc(found[m], y[m]), "auc_own": _auc(shots["xg"].values[m], y[m])}
+    shots.loc[ok, "xg"] = found[ok]
+    meta["xg_source"] = "MoneyPuck (moneypuck.com) там, где бросок найден, иначе своя модель"
+    log("xG MoneyPuck:", meta["xg_mp"])
+
+
+def _auc(p, y):
+    order = np.argsort(p)
+    ranks = np.empty(len(p)); ranks[order] = np.arange(1, len(p) + 1)
+    npos = y.sum()
+    return round(float((ranks[y == 1].sum() - npos * (npos + 1) / 2) / (npos * (len(y) - npos))), 4) if 0 < npos < len(y) else None
+
+
 # ───────────────────────────── 3. RAPM ─────────────────────────────
 
 def rapm(rows_off, rows_def, y, w, home, folds, P, lambdas):
@@ -249,6 +299,61 @@ def rapm(rows_off, rows_def, y, w, home, folds, P, lambdas):
     best = min(errs, key=errs.get)
     beta, mu = solve(tot, best)
     return beta[:P], beta[P:2 * P], best, {str(k): round(float(v), 4) for k, v in errs.items()}, float(beta[-1])
+
+
+# целевое распределение уровня у регулярных игроков НХЛ: (доля игроков ниже, уровень)
+LEVEL_TARGET = [(0.0, 5.0), (0.03, 7.0), (0.20, 10.0), (0.65, 13.0), (0.90, 16.0), (0.975, 18.0), (0.997, 19.5), (1.0, 19.8)]
+
+
+def level_map(raw, regs):
+    """Уровень по месту среди регулярных игроков (квантили → целевое распределение); остальные — по той же кривой,
+    ниже самого слабого регулярного — с тем же наклоном вниз."""
+    r = np.sort(raw[regs].values)
+    q = np.linspace(0, 1, len(r))
+    tq, tl = zip(*LEVEL_TARGET)
+    lev_r = np.interp(q, tq, tl)
+    x = raw.values
+    out = np.interp(x, r, lev_r)
+    slope = (lev_r[min(len(r) - 1, len(r) // 10)] - lev_r[0]) / max(r[min(len(r) - 1, len(r) // 10)] - r[0], 1e-9)
+    out = np.where(x < r[0], lev_r[0] + (x - r[0]) * slope, out)
+    return pd.Series(np.clip(out, 1, 19.9), index=raw.index)
+
+
+def wowy_pairs(e5, pidx, P):
+    """WOWY: для каждого игрока — насколько доля xG его партнёров с ним выше, чем без него (5 на 5).
+    Возвращает (среднее по партнёрам, взвешенное по времени, «эффективные минуты» для сжатия)."""
+    w = (e5["dur"] * e5["sw"]).values
+    tot = np.zeros((P, 3))       # минуты, xGF, xGA каждого игрока
+    pair = np.zeros((P * P, 3))  # [i*P+j]: j вместе с i
+    for col, xf, xa in (("hs", "xg_h", "xg_a"), ("aw", "xg_a", "xg_h")):
+        H = np.full((len(e5), 6), -1, np.int64)
+        for r, t in enumerate(e5[col].values):
+            for c_, p_ in enumerate(t[:6]):
+                H[r, c_] = pidx[p_]
+        f, ag = e5[xf].values * e5["sw"].values, e5[xa].values * e5["sw"].values
+        for c_ in range(6):
+            m = H[:, c_] >= 0
+            np.add.at(tot, H[m, c_], np.stack([w[m], f[m], ag[m]], 1))
+        for c1 in range(6):
+            for c2 in range(6):
+                if c1 == c2:
+                    continue
+                m = (H[:, c1] >= 0) & (H[:, c2] >= 0)
+                idx = H[m, c1] * P + H[m, c2]
+                for k_, arr in enumerate((w[m], f[m], ag[m])):
+                    pair[:, k_] += np.bincount(idx, weights=arr, minlength=P * P)
+    pair = pair.reshape(P, P, 3)
+    with_t, with_f, with_a = pair[:, :, 0], pair[:, :, 1], pair[:, :, 2]
+    wo_t = tot[None, :, 0] - with_t
+    wo_f = tot[None, :, 1] - with_f
+    wo_a = tot[None, :, 2] - with_a
+    ok = (with_t >= 1800) & (wo_t >= 1800)        # от 30 минут вместе и порознь
+    pw = np.where(ok, with_f / np.maximum(with_f + with_a, 1e-9), 0)
+    po = np.where(ok, wo_f / np.maximum(wo_f + wo_a, 1e-9), 0)
+    wt = np.where(ok, 1 / (1 / np.maximum(with_t, 1) + 1 / np.maximum(wo_t, 1)), 0)
+    num = (wt * (pw - po)).sum(1)
+    den = wt.sum(1)
+    return num / np.maximum(den, 1e-9), den / 60
 
 
 # ───────────────────────────── 4–6. метрики и шкала ─────────────────────────────
@@ -355,8 +460,9 @@ def main():
     pos_of = {int(k): v.get("position") for k, v in pages.items()}
 
     # ── протоколы и смены ──
-    all_shots, all_events, stint_rows, pg_rows, games = [], [], [], [], []
+    shot_dfs, event_dfs, stint_dfs, pg_dfs, games = [], [], [], [], []
     for season in a.seasons:
+        all_shots, all_events, stint_rows, pg_rows = [], [], [], []
         p_path = os.path.join(a.raw, f"pbp_{season}.json.gz")
         if not os.path.exists(p_path):
             log(f"{season}: нет протоколов"); continue
@@ -381,20 +487,27 @@ def main():
                 agk = [p for p, tm in on.items() if tm != hid and pos.get(p) == "G"]
                 stint_rows.append((gid, season, sw, per, t0, t1, tuple(hs[:6]), tuple(as_[:6]), hgk[0] if hgk else 0, agk[0] if agk else 0))
         del pbp, sh
-    shots = pd.DataFrame(all_shots); events = pd.DataFrame(all_events)
+        # по сезону — сразу в таблицы: словари и кортежи в Python занимают в разы больше памяти
+        shot_dfs.append(pd.DataFrame(all_shots)); event_dfs.append(pd.DataFrame(all_events))
+        stint_dfs.append(pd.DataFrame(stint_rows, columns=["gid", "season", "sw", "per", "t0", "t1", "hs", "aw", "hg", "ag"]))
+        pg_dfs.append(pd.DataFrame(pg_rows, columns=["gid", "season", "pid", "team", "sec"]))
+        del all_shots, all_events, stint_rows, pg_rows
+    shots = pd.concat(shot_dfs, ignore_index=True); events = pd.concat(event_dfs, ignore_index=True)
+    del shot_dfs, event_dfs
     games = pd.DataFrame(games).set_index("gid")
-    del all_shots, all_events
-    log(f"бросков {len(shots)}, событий {len(events)}, стинтов {len(stint_rows)}")
+    log(f"бросков {len(shots)}, событий {len(events)}, стинтов {sum(len(x) for x in stint_dfs)}")
 
-    # ── xG ──
+    # ── xG: своя модель + xG MoneyPuck там, где бросок нашёлся в их данных ──
     shots["xg"], meta["xg"] = fit_xg(shots)
+    shots["xg_own"] = shots["xg"]
+    mp_xg(shots, a.raw, meta)
     shots["g"] = (shots["type"] == "goal").astype(int)
     shots["w"] = shots["season"].map(SEASON_W).fillna(0.5)
     log("xG:", meta["xg"])
 
     # ── стинты: суммы xG/бросков/голов по командам ──
-    st = pd.DataFrame(stint_rows, columns=["gid", "season", "sw", "per", "t0", "t1", "hs", "aw", "hg", "ag"])
-    del stint_rows
+    st = pd.concat(stint_dfs, ignore_index=True)
+    del stint_dfs
     st["dur"] = st["t1"] - st["t0"]
     st["nh"], st["na"] = st["hs"].map(len), st["aw"].map(len)
     st["key0"], st["key1"] = st["per"] * 10000 + st["t0"], st["per"] * 10000 + st["t1"]
@@ -422,6 +535,7 @@ def main():
         mine = sm[sm["home"] == hflag]
         st[f"xg_{side}"] = mine[mine["type"].isin(UNBLOCKED)].groupby("stint")["xg"].sum().reindex(st.index).fillna(0)
         st[f"cf_{side}"] = mine.groupby("stint").size().reindex(st.index).fillna(0)
+        st[f"ff_{side}"] = mine[mine["type"].isin(UNBLOCKED)].groupby("stint").size().reindex(st.index).fillna(0)
         st[f"gf_{side}"] = mine[mine["type"] == "goal"].groupby("stint").size().reindex(st.index).fillna(0)
 
     # ── индекс игроков ──
@@ -480,7 +594,20 @@ def main():
     own = lambda c: (lambda s, col: (s[c + ("_h" if col == "hs" else "_a")] * s["sw"]).values)
     opp = lambda c: (lambda s, col: (s[c + ("_a" if col == "hs" else "_h")] * s["sw"]).values)
     dur = lambda s, col: (s["dur"] * s["sw"]).values
-    add(flat(["hs", "aw"], is5, {"toi5": dur, "xgf5": own("xg"), "xga5": opp("xg"), "cf5": own("cf"), "ca5": opp("cf")}))
+    add(flat(["hs", "aw"], is5, {"toi5": dur, "xgf5": own("xg"), "xga5": opp("xg"), "cf5": own("cf"), "ca5": opp("cf"), "ff5": own("ff")}))
+    # качество моментов при игроке (5 на 5): xG своей команды сверх «обычного» для её бросков (xG/бросок команды за сезон)
+    st["home"], st["away"] = st["gid"].map(games["home"]), st["gid"].map(games["away"])
+    e5 = st[is5]
+    tq = {}
+    for side, tcol in (("h", "home"), ("a", "away")):
+        g_ = e5.groupby(["season", tcol])[[f"xg_{side}", f"ff_{side}"]].sum()
+        for (se_, tm_), r_ in g_.iterrows():
+            v_ = tq.setdefault((se_, tm_), [0.0, 0.0]); v_[0] += r_[f"xg_{side}"]; v_[1] += r_[f"ff_{side}"]
+    tq = {k: v[0] / max(v[1], 1) for k, v in tq.items()}
+    st["q_h"] = [tq.get((a_, b_), 0.067) for a_, b_ in zip(st["season"], st["home"])]
+    st["q_a"] = [tq.get((a_, b_), 0.067) for a_, b_ in zip(st["season"], st["away"])]
+    add(flat(["hs", "aw"], is5, {"qres5": lambda s_, col: ((s_["xg_h"] - s_["ff_h"] * s_["q_h"]) if col == "hs" else (s_["xg_a"] - s_["ff_a"] * s_["q_a"])).values * s_["sw"].values}))
+    wowy = wowy_pairs(st[is5 & (st["dur"] > 0)], pidx, P)
     # большинство: свои 5 на 4; меньшинство: свои 4 на 5
     add({k: v for k, v in flat(["hs"], pp_h, {"toipp": dur, "xgfpp": own("xg")}).items()})
     add({k: v for k, v in flat(["aw"], pp_a, {"toipp": dur, "xgfpp": own("xg")}).items()})
@@ -501,11 +628,12 @@ def main():
     S["rapm_xo"], S["rapm_xd"] = xo, -xd           # оборона: меньше xG соперника → больше
     S["rapm_co"], S["rapm_cd"] = co, -cd
     S["rapm_x"] = S["rapm_xo"] + S["rapm_xd"]
+    S["wowy"], S["wowy_n"] = wowy
     S["rapm_c"] = S["rapm_co"] + S["rapm_cd"]
 
     # ── игровое время по матчам (все ситуации) и сыгранные матчи ──
-    pg = pd.DataFrame(pg_rows, columns=["gid", "season", "pid", "team", "sec"])
-    del pg_rows
+    pg = pd.concat(pg_dfs, ignore_index=True)
+    del pg_dfs
     pg = pg.groupby(["gid", "season", "pid", "team"], as_index=False)["sec"].sum()
     pg["w"] = pg["season"].map(SEASON_W).fillna(0.5)
     pg["type"] = pg["gid"].map(games["type"])
@@ -577,6 +705,7 @@ def main():
     lng = fen_ok[fen_ok["dist"] >= 35]
     counts["lng_n"] = per_player_game(lng, "shooter")
     counts["lng_on"] = per_player_game(lng, "shooter", lambda d: (d["type"] != "missed-shot").astype(float))
+    counts["lng_gax"] = per_player_game(lng, "shooter", lambda d: d["g"] - d["xg"])
     net = fen_ok[(fen_ok["dist"] < 20) | fen_ok["stype"].isin(["tip-in", "deflected"]) | (fen_ok["reb"] == 1)]
     counts["net_xg"] = per_player_game(net, "shooter", lambda d: d["xg"])
     clutch = fen_ok[(fen_ok["close"] == 1)]
@@ -603,26 +732,43 @@ def main():
 
     def k_for(name, value_col, expo_col="expo", min_expo=150, df=None):
         k, r = split_half_k(df if df is not None else PG, value_col, expo_col, min_expo)
+        if k is not None and expo_col == "expo":
+            k = max(k, 250.0)     # пол для показателей «за 60 минут»: у игроков с малым временем они раздуты лёгкими соперниками
         ks[name] = {"k": None if k is None else round(k, 1), "r_half": None if r is None else round(r, 3)}
         return k if k is not None else 1e9
 
-    # ── общий уровень ──
+    # ── общий уровень: ценность за матч в голах (общая шкала для нападающих и защитников) ──
     S["pts"] = S["g_all"] + S["a1"] + S["a2"]
     PG["pts"] = PG["g_all"] + PG["a1"] + PG["a2"]
+    gpw = S["gp_w"].clip(lower=0.5)
+    k_fin = k_for("fin", "gax", "fsh", 25)
+    gax_shot = (S["gax"]) / (S["fsh"] + k_fin)                         # сжато к нулю по надёжности
+    pp_rate = S["xgfpp"] / S["toipp"].clip(lower=1) * 3600
+    pk_rate = S["xgapk"] / S["toipk"].clip(lower=1) * 3600
+    val = pd.DataFrame(index=S.index)
+    val["ev"] = (S["rapm_xo"] + S["rapm_xd"]) * S["toi5"] / 3600 / gpw          # RAPM 5 на 5: xG за матч
+    val["fin"] = gax_shot * S["fsh"] / gpw                                       # реализация сверх xG
+    val["pp"] = (pp_rate - lg_pp) * S["toipp"] / 3600 / gpw * 0.2 * (S["toipp"] / (S["toipp"] + 3000))
+    val["pk"] = -(pk_rate - lg_pp) * S["toipk"] / 3600 / gpw * 0.2 * (S["toipk"] / (S["toipk"] + 3000))
+    val["pen"] = (S["pend"] - S["pen"]) / gpw * 0.17                            # удаление ≈ 0,17 гола
+    val["fo"] = (S["fow"] - S["fol"]) / gpw * 0.008
+    S["value"] = val.sum(axis=1)
     k_pts = k_for("pts60", "pts")
+    allg = {"all": list(S.index)}
+    zv = Scale(S["value"], gpw * 10, 1e-6, allg, reg, None, prior_on_level=False).z
     zp = Scale(per60("pts"), S["toi_min"], k_pts, groups, reg, None, prior_on_level=False).z
-    zr = Scale(S["rapm_x"], S["toi5"] / 60, 1e-6, groups, reg, None, prior_on_level=False).z      # уже сжат гребнем
-    zt = Scale(S["toi_gp"], S["gp_w"] * 10, 1e-6, groups, reg, None, prior_on_level=False).z
-    zs = Scale(S["gp_share"], S["gp_w"] * 10, 1e-6, groups, reg, None, prior_on_level=False).z
-    WF, WD = (0.32, 0.33, 0.22, 0.13), (0.36, 0.20, 0.30, 0.14)
-    zG = pd.Series(0.0, index=S.index)
-    for g, (wr, wp, wt, wsh) in (("F", WF), ("D", WD)):
-        idx = groups[g]
-        raw = wr * zr[idx] + wp * zp[idx] + wt * zt[idx] + wsh * zs[idx]
-        regs = [i for i in idx if reg[i]]
-        zG[idx] = (raw - raw[regs].mean()) / raw[regs].std()
-    S["level"] = to_scale(zG).clip(1, 20)
+    zt = Scale(S["toi_gp"], gpw * 10, 1e-6, groups, reg, None, prior_on_level=False).z
+    zs = Scale(S["gp_share"], gpw * 10, 1e-6, groups, reg, None, prior_on_level=False).z
+    zr = Scale(S["rapm_x"], S["toi5"] / 60, 1e-6, groups, reg, None, prior_on_level=False).z
+    raw = LEVEL_W["value"] * zv + LEVEL_W["pts"] * zp + LEVEL_W["toi"] * zt + LEVEL_W["share"] * zs
+    regs = [i for i in S.index if reg[i]]
+    S["level"] = level_map(raw, regs)
+    zG = (S["level"] - MID) / SCALE                       # для априорных значений характеристик
     S["level_se"] = (SCALE * np.sqrt(500 / (S["toi_min"] + 500))).clip(0.6, 3.0)
+    meta["level_weights"] = LEVEL_W
+    top = S[S["toi_min"] >= REG_MIN].sort_values("level", ascending=False)
+    meta["d_share"] = {n: round(float((top.head(n)["grp"] == "D").mean()), 3) for n in (10, 25, 50, 100)}
+    log("доля защитников в топах:", meta["d_share"])
 
     # ── характеристики полевых ──
     A = {}
@@ -632,14 +778,23 @@ def main():
         v, se = combine(S["level"], sc.z, sc.se, kind)
         A[key] = {"v": v, "se": se, "beta": sc.beta, "kind": kind}
 
+    def zq(x, n, k, grp=None, sign=1.0):
+        return Scale(x, n, k, grp or groups, reg, None, sign, prior_on_level=False).z.fillna(0)
+
+    one = pd.Series(1e6, index=S.index)
+    pwr = pd.Series({p: _edge_mean(edge, p, "shot") for p in S.index}).astype(float)
     # атака
-    attr("fin", "tech", S["gax"] / S["fsh"].clip(lower=1), S["fsh"], k_for("fin", "gax", "fsh", 25))
-    pwr = pd.Series({p: _edge_mean(edge, p, "shot") for p in S.index})
-    attr("pwr", "direct", pwr.astype(float), pd.Series(np.where(pwr.notna(), 1e6, 0), index=S.index), 1e-6,
-         grp={"all": list(S.index)})
-    attr("lng", "spec", S["lng_on"] / S["lng_n"].clip(lower=1), S["lng_n"], k_for("lng", "lng_on", "lng_n", 20))
+    attr("fin", "tech", S["gax"] / S["fsh"].clip(lower=1), S["fsh"], k_fin)
+    attr("pwr", "direct", pwr, pd.Series(np.where(pwr.notna(), 1e6, 0), index=S.index), 1e-6, grp=allg)
+    # бросок издали: точность (в створ), реализация с 35+ футов и мощь броска
+    PG["lng_gax_"] = PG["lng_gax"]
+    z_lacc = zq(S["lng_on"] / S["lng_n"].clip(lower=1), S["lng_n"], k_for("lng", "lng_on", "lng_n", 20))
+    z_lfin = zq(S["lng_gax"] / S["lng_n"].clip(lower=1), S["lng_n"], k_for("lng_fin", "lng_gax", "lng_n", 20))
+    z_pwr = ((pwr - pwr.mean()) / pwr.std()).fillna(0)
+    attr("lng", "spec", 0.4 * z_lacc + 0.35 * z_lfin + 0.25 * z_pwr, one, 1e-6)
     attr("net", "spec", per60("net_xg"), S["toi_min"], k_for("net", "net_xg"))
-    attr("pas", "tech", per60("a1"), S["toi_min"], k_for("pas", "a1"))
+    PG["pas_"] = PG["a1"] + 0.5 * PG["a2"]
+    attr("pas", "tech", (S["a1"] + 0.5 * S["a2"]) / S["toi_min"].clip(lower=1) * 60, S["toi_min"], k_for("pas", "pas_"))
     attr("hnd", "tech", S["rapm_c"], S["toi5"] / 60, 1e-6)
     fo_n = S["fow"] + S["fol"]
     PG["fo_n"] = PG["fow"] + PG["fol"]
@@ -650,43 +805,52 @@ def main():
     attr("tka", "spec", per60("tk"), S["toi_min"], k_for("tka", "tk"))
     attr("blk", "spec", per60("blk"), S["toi_min"], k_for("blk", "blk"))
     attr("hit", "spec", per60("hits"), S["toi_min"], k_for("hit", "hits"))
-    pk_rel = (S["xgapk"] / S["toipk"].clip(lower=1) * 3600)
-    attr("pk", "spec", pk_rel, S["toipk"] / 60, 60.0, sign=-1.0, prior=False)
+    attr("pk", "spec", pk_rate, S["toipk"] / 60, 60.0, sign=-1.0, prior=False)
     # физика
-    spd = pd.Series({p: _edge_mean(edge, p, "speed") for p in S.index})
-    attr("spd", "direct", spd.astype(float), pd.Series(np.where(spd.notna(), 1e6, 0), index=S.index), 1e-6, grp={"all": list(S.index)})
-    bur = pd.Series({p: _edge_rate(edge, p, "burstsOver20") for p in S.index})
-    attr("acc", "direct", bur.astype(float), pd.Series(np.where(bur.notna(), 1e6, 0), index=S.index), 1e-6, grp={"all": list(S.index)})
+    spd = pd.Series({p: _edge_mean(edge, p, "speed") for p in S.index}).astype(float)
+    attr("spd", "direct", spd, pd.Series(np.where(spd.notna(), 1e6, 0), index=S.index), 1e-6, grp=allg)
+    bur = pd.Series({p: _edge_rate(edge, p, "burstsOver20") for p in S.index}).astype(float)
+    attr("acc", "direct", bur, pd.Series(np.where(bur.notna(), 1e6, 0), index=S.index), 1e-6, grp=allg)
     size = pd.Series({p: _size(pages.get(str(p))) for p in S.index}).astype(float)
-    zsize = (size - size.mean()) / size.std()
-    zhit = Scale(per60("hits"), S["toi_min"], ks.get("hit", {}).get("k") or 300, {"all": list(S.index)}, reg, None, prior_on_level=False).z
-    strength = 0.65 * zsize.fillna(0) + 0.35 * zhit.fillna(0)
-    attr("str", "spec", strength, pd.Series(1e6, index=S.index), 1e-6, grp={"all": list(S.index)})
-    attr("sta", "spec", S["toi_gp"], S["gp_w"] * 10, 1e-6)
-    # мышление
+    zsize = ((size - size.mean()) / size.std()).fillna(0)
+    zhit = zq(per60("hits"), S["toi_min"], ks.get("hit", {}).get("k") or 300, allg)
+    attr("str", "spec", 0.65 * zsize + 0.35 * zhit, one, 1e-6, grp=allg)
+    attr("sta", "spec", S["toi_gp"], gpw * 10, 1e-6)
+    # мышление — каждая характеристика из своего источника, без повторного RAPM
     PG["tkgv"] = PG["tk"] + PG["gv"]
-    # решения: влияние на xG (RAPM) + отборы к потерям + качество выбора броска (xG на бросок)
-    z_tkgv = Scale(S["tk"] / (S["tk"] + S["gv"]).clip(lower=1), S["tk"] + S["gv"], k_for("dec_tkgv", "tk", "tkgv", 10), groups, reg, None, prior_on_level=False).z
-    PG["ixg_"] = PG["ixg"]
-    z_sel = Scale(S["ixg"] / S["fsh"].clip(lower=1), S["fsh"], k_for("dec_sel", "ixg", "fsh", 25), groups, reg, None, prior_on_level=False).z
-    attr("dec", "tech", 0.5 * zr.fillna(0) + 0.25 * z_tkgv.fillna(0) + 0.25 * z_sel.fillna(0), pd.Series(1e6, index=S.index), 1e-6)
-    attr("vis", "tech", S["rapm_xo"], S["toi5"] / 60, 1e-6)
+    z_tkgv = zq(S["tk"] / (S["tk"] + S["gv"]).clip(lower=1), S["tk"] + S["gv"], k_for("dec_tkgv", "tk", "tkgv", 10))
+    z_sel = zq(S["ixg"] / S["fsh"].clip(lower=1), S["fsh"], k_for("dec_sel", "ixg", "fsh", 25))
+    z_gvp = zq(S["gv"] / S["cf5"].clip(lower=1), S["cf5"], 300.0, sign=-1.0)          # потери на атаку своей команды
+    attr("dec", "tech", 0.45 * z_tkgv + 0.3 * z_sel + 0.25 * z_gvp, one, 1e-6)
+    # видение: качество моментов партнёров при нём (xG на бросок сверх обычного для команды) + первые передачи
+    z_q = zq(S["qres5"] / S["ff5"].clip(lower=1), S["ff5"], 900.0)
+    z_a1 = zq(per60("a1"), S["toi_min"], ks.get("pas", {}).get("k") or 400)
+    attr("vis", "tech", 0.65 * z_q + 0.35 * z_a1, one, 1e-6)
     attr("dis", "spec", per60("pen"), S["toi_min"], k_for("dis", "pen"), sign=-1.0, prior=False)
     dist = pd.Series({p: _edge_rate(edge, p, "dist") for p in S.index}).astype(float)
-    zwork = (Scale(per60("blk") + per60("hits") + per60("tk"), S["toi_min"], 300, groups, reg, None, prior_on_level=False).z.fillna(0) * 0.7
-             + ((dist - dist.mean()) / dist.std()).fillna(0) * 0.3)
-    attr("wrk", "spec", zwork, pd.Series(1e6, index=S.index), 1e-6)
+    zwork = 0.6 * zq(per60("blk") + per60("tk"), S["toi_min"], 300) + 0.4 * ((dist - dist.mean()) / dist.std()).fillna(0)
+    attr("wrk", "spec", zwork, one, 1e-6)
+    # командная игра: насколько партнёрам лучше с ним, чем без него (WOWY по доле xG), + доля передач в очках
     ast_share = (S["a1"] + S["a2"]) / S["pts"].clip(lower=1)
-    attr("tm", "tech", 0.6 * zr.fillna(0) + 0.4 * Scale(ast_share, S["pts"], 20, groups, reg, None, prior_on_level=False).z.fillna(0),
-         pd.Series(1e6, index=S.index), 1e-6)
-    attr("pp", "spec", S["xgfpp"] / S["toipp"].clip(lower=1) * 3600, S["toipp"] / 60, 60.0)
-    attr("cmp", "weak", S["cl_gax"] / S["cl_n"].clip(lower=1), S["cl_n"], k_for("cmp", "cl_gax", "cl_n", 10))
+    attr("tm", "tech", 0.7 * zq(S["wowy"], S["wowy_n"], 600.0) + 0.3 * zq(ast_share, S["pts"], 20), one, 1e-6)
+    attr("pp", "spec", pp_rate, S["toipp"] / 60, 60.0)
+    # хладнокровие: опыт важных матчей (плей-офф) и реализация в концовках при разнице в одну шайбу; данных мало
+    po_gp = pd.Series({p: (((pages.get(str(p)) or {}).get("careerTotals") or {}).get("playoffs") or {}).get("gamesPlayed") or 0 for p in S.index}).astype(float)
+    z_po = ((np.log1p(po_gp) - np.log1p(po_gp).mean()) / np.log1p(po_gp).std()).fillna(0)
+    z_cl = zq(S["cl_gax"] / S["cl_n"].clip(lower=1), S["cl_n"], k_for("cmp", "cl_gax", "cl_n", 10))
+    attr("cmp", "weak", 0.6 * z_po + 0.4 * z_cl, one, 1e-6)
     # стабильность: разброс игровой оценки от матча к матчу
     gs = PG.assign(gs=0.75 * PG["g_all"] + 0.7 * PG["a1"] + 0.55 * PG["a2"] + 0.05 * PG["blk"] + 0.15 * PG["pend"] - 0.15 * PG["pen"]
                    + 0.01 * PG["fow"] - 0.01 * PG["fol"] + 0.075 * PG["fsh"])
     gstat = gs.groupby("pid")["gs"].agg(["mean", "std", "count"])
     cv = gstat["std"] / gstat["mean"].clip(lower=0.25)          # коэффициент вариации игровой оценки
     attr("con", "cons", cv.reindex(S.index), gstat["count"].reindex(S.index).fillna(0), 120.0, sign=-1.0, prior=True)
+    # корреляции между характеристиками (регулярные игроки): контроль дублей
+    vals = pd.DataFrame({k: v["v"] for k, v in A.items()}).loc[regs]
+    cm = vals.corr()
+    meta["attr_corr_high"] = sorted([(a_, b_, round(float(cm.at[a_, b_]), 2)) for i_, a_ in enumerate(cm.columns) for b_ in cm.columns[i_ + 1:]
+                                     if abs(cm.at[a_, b_]) >= 0.75], key=lambda x: -abs(x[2]))
+    log("сильно связанные характеристики:", meta["attr_corr_high"])
     meta["reliability"] = ks
 
     # ── вратари ──
@@ -929,6 +1093,8 @@ def goalies(shots, pg, pages, games, extra_path=None):
         zm = Scale(mx, mn, k * 0.7, grp, reg, None, prior_on_level=False).z
         z = pd.Series(np.where(mx.notna(), 0.5 * z.fillna(0) + 0.5 * zm.fillna(0), z), index=agg.index)
     # доля стартов в сезонах (с весами): нагрузка — признак доверия
+    # мало бросков — тянем не к среднему, а к уровню запасного (незнакомые вратари в среднем ниже основных)
+    z = z + (1 - agg["n"] / (agg["n"] + k)) * (-0.8)
     zw = Scale(agg["starts"] / agg["gp"].clip(lower=1), agg["gp"] * 10, 1e-6, grp, reg, None, prior_on_level=False).z
     zl = 0.75 * z.fillna(0) + 0.25 * zw.fillna(0)
     regs = [i for i in agg.index if reg[i]]
@@ -948,7 +1114,10 @@ def goalies(shots, pg, pages, games, extra_path=None):
         v, se = combine(level, sc.z, sc.se, kind)
         res[key] = (v, se)
     # стабильность: разброс GSAx по матчам
-    gstat = per_game.groupby("pid")["v"].agg(["std", "count"])
+    # стабильность: разброс сейвов сверх ожидаемого на бросок от матча к матчу (полные матчи, без весов сезонов)
+    pg2 = sh.groupby(["goalie", "gid"]).agg(gs=("gsax", "sum"), n=("gsax", "size")).reset_index()
+    pg2 = pg2[pg2["n"] >= 15]
+    gstat = (pg2["gs"] / pg2["n"]).groupby(pg2["goalie"]).agg(["std", "count"])
     sc = Scale(-gstat["std"].reindex(agg.index), gstat["count"].reindex(agg.index).fillna(0), 60.0, grp, reg, zG, 1.0, False)
     res["gcon"] = combine(level, sc.z, sc.se, "cons")
     out = {}

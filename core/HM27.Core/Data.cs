@@ -14,6 +14,8 @@ public sealed class GameData
     [JsonPropertyName("league")] public LeagueInfo League { get; set; }
     [JsonPropertyName("teams")] public List<TeamData> Teams { get; set; } = new();
     [JsonPropertyName("players")] public List<PlayerData> Players { get; set; } = new();
+    /// <summary>Модель игрока: источники, возрастные кривые по группам (data/history.py).</summary>
+    [JsonPropertyName("model")] public ModelInfo Model { get; set; } = new();
 
     [JsonIgnore] public Dictionary<int, PlayerData> PlayerById { get; private set; }
     [JsonIgnore] public Dictionary<string, TeamData> TeamByAbbr { get; private set; }
@@ -30,10 +32,20 @@ public sealed class GameData
     void Index()
     {
         PlayerById = Players.ToDictionary(p => p.Id);
+        foreach (var p in Players)
+            if (p.A is { Count: > 0 }) p.Roles = HM27.Core.Roles.For(p);   // роли — из характеристик модели игрока
         TeamByAbbr = Teams.ToDictionary(t => t.Abbr);
     }
 
     public IEnumerable<PlayerData> Roster(string abbr) => Players.Where(p => p.Team == abbr);
+}
+
+public sealed class ModelInfo
+{
+    [JsonPropertyName("built")] public string Built { get; set; }
+    [JsonPropertyName("xg")] public string Xg { get; set; }
+    /// <summary>Группа → возраст → изменение за сезон (ед. шкалы 1–20).</summary>
+    [JsonPropertyName("curves")] public Dictionary<string, Dictionary<string, double>> Curves { get; set; } = new();
 }
 
 public sealed class LeagueInfo
@@ -91,6 +103,10 @@ public sealed class CareerFacts
     [JsonPropertyName("aw")] public List<string> Awards { get; set; } = new();
     [JsonPropertyName("pick")] public int? Pick { get; set; }
     [JsonPropertyName("draft")] public int? DraftYear { get; set; }
+    /// <summary>Капитан (C) или ассистент (A) в сезоне 2026-27.</summary>
+    [JsonPropertyName("cap")] public string Cap { get; set; }
+    /// <summary>Вся карьера в НХЛ — в одном клубе.</summary>
+    [JsonPropertyName("one_club")] public bool OneClub { get; set; }
 }
 
 public sealed class RoleFit

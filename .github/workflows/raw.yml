@@ -53,4 +53,4 @@ jobs:
           ls -la raw
           [ -f fetch.log ] && cp fetch.log raw/fetch.log
           [ -f mp.log ] && cp mp.log raw/mp.log
-          gh release upload raw-data raw/*.json.gz raw/*.csv.gz raw/*.json raw/*.log --clobber
+          gh release upload raw-data $(ls raw/*.json.gz raw/*.csv.gz raw/*.json raw/*.log 2>/dev/null) --clobber

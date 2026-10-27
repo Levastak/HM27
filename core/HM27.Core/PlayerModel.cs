@@ -10,7 +10,7 @@ public static class Attrs
     {
         new("fin", "Завершение", "Атака", "Голы сверх ожидаемых (xG) на бросок; сильно сжато к уровню — реализация шумная"),
         new("pwr", "Мощь броска", "Атака", "Самый сильный бросок сезона (NHL EDGE)"),
-        new("lng", "Дальний бросок", "Атака", "Точность бросков с 35+ футов (доля в створ)"),
+        new("lng", "Бросок издали", "Атака", "Броски с 35+ футов (10+ м): точность, реализация, мощь броска"),
         new("net", "Игра у ворот", "Атака", "xG с близкой дистанции, добиваний и подставлений за 60 минут"),
         new("pas", "Передача", "Атака", "Первые передачи за 60 минут"),
         new("hnd", "Владение шайбой", "Атака", "Вклад в попытки бросков команды (RAPM 5 на 5)"),
@@ -48,6 +48,17 @@ public static class Attrs
 
     public static AttrDef[] For(PlayerData p) => p.IsGoalie ? Goalie : Skater;
     public static readonly string[] SkaterGroups = { "Атака", "Оборона", "Физика", "Мышление" };
+
+    /// <summary>Группа возрастной кривой (data/age_curves.json): бросок, передачи, оборона, мышление, физика, вратари.</summary>
+    public static string CurveGroup(string key) => key switch
+    {
+        "spd" or "acc" or "sta" or "str" => "phys",
+        "fin" or "pwr" or "lng" or "net" => "shoot",
+        "pas" or "hnd" or "vis" or "pp" => "pass",
+        "dfn" or "tka" or "blk" or "hit" or "pk" => "def",
+        "rfx" or "gpos" or "reb" or "scr" or "gsta" or "gcmp" or "gcon" or "stk" => "goalie",
+        _ => "mind",
+    };
 
     /// <summary>Группа возрастной кривой: сдвиг возраста (физика стареет раньше, мышление — позже).</summary>
     public static int AgeShift(string key) => key switch
@@ -104,7 +115,29 @@ public static class PlayerModel
     static float C(double v, double lo = 1, double hi = 20) => (float)Math.Clamp(v, lo, hi);
     static int I(double v, int lo, int hi) => (int)Math.Round(Math.Clamp(v, lo, hi));
 
-    /// <summary>Ожидаемое изменение уровня за сезон по возрасту (ед. шкалы). Начальная гипотеза, уточняется по данным.</summary>
+    /// <summary>
+    /// Изменение характеристики группы за сезон по возрасту — из истории НХЛ 2010–2026 (data/history.py, метод разностей),
+    /// если кривых в базе нет — априорная гипотеза со сдвигом возраста по группе.
+    /// </summary>
+    public static double Curve(GameData data, string group, double age)
+    {
+        var c = data?.Model?.Curves;
+        if (c != null && c.TryGetValue(group, out var g) && g.Count > 0)
+        {
+            int a0 = (int)Math.Floor(age);
+            double f = age - a0;
+            double V(int a) => g.TryGetValue(Math.Clamp(a, 18, 40).ToString(), out var v) ? v : Curve(a);
+            return V(a0) * (1 - f) + V(a0 + 1) * f;
+        }
+        int shift = group switch { "phys" => 2, "shoot" => 0, "pass" or "def" => -1, "goalie" => -2, _ => -3 };
+        return Curve(age + shift);
+    }
+
+    /// <summary>Средняя кривая уровня: среднее по группам характеристик игрока.</summary>
+    public static double LevelCurve(GameData data, PlayerData p, double age) =>
+        Attrs.For(p).Average(d => Curve(data, Attrs.CurveGroup(d.Key), age));
+
+    /// <summary>Априорная кривая (гипотеза до данных), ед. шкалы за сезон.</summary>
     public static double Curve(double age)
     {
         double[] ages = { 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 40 };
@@ -116,10 +149,10 @@ public static class PlayerModel
     }
 
     /// <summary>Рост, который ещё впереди в среднем: сумма положительной кривой от возраста до 30.</summary>
-    static double Remaining(int age)
+    static double Remaining(GameData data, PlayerData p, int age)
     {
         double s = 0;
-        for (int a = age; a < 30; a++) s += Math.Max(0, Curve(a));
+        for (int a = age; a < 32; a++) s += Math.Max(0, LevelCurve(data, p, a));
         return s;
     }
 
@@ -146,18 +179,20 @@ public static class PlayerModel
             s.A[d.Key] = C(v);
         }
         // потенциал: средний рост для возраста, у сильных для своего возраста — больше; разброс тем шире, чем моложе
-        double rem = Remaining(age) * Math.Clamp(0.6 + 0.08 * (s.Lvl - 10), 0.6, 1.4);
+        double rem = Remaining(c.Data, p, age) * Math.Clamp(0.6 + 0.08 * (s.Lvl - 10), 0.6, 1.4);
         double sd = age <= 20 ? 1.8 : age <= 23 ? 1.3 : age <= 25 ? 0.7 : 0.3;
         double pot = s.Lvl + rem + N(rng) * sd;
         if (age <= 25 && rng.NextDouble() < 0.03) pot += 2.5;                       // «поздно раскрывшийся»
         if (f.Pick is <= 10 && f.Gp < 200) pot += 0.4;
-        s.Pot = age >= 27 ? s.Lvl + 0.2f : C(Math.Max(pot, s.Lvl));
+        s.Pot = age >= 28 ? s.Lvl + 0.2f : C(Math.Max(pot, s.Lvl));
         // характер: из фактов карьеры, недостающее — мягкая генерация (у реальных игроков не ниже 7)
         bool Aw(string t) => f.Awards?.Contains(t) == true;
         s.Prof = I(12 + 2.2 * N(rng) + (f.Seasons >= 10 ? 1 : 0) + (age >= 33 && p.Level >= 12 ? 1.5 : 0) + (Aw("pro") ? 3 : 0), 7, 20);
         s.Amb = I(12 + 2.5 * N(rng) + (p.Level >= 16 ? 1 : 0), 7, 20);
-        s.Loy = I(10.5 + 2.2 * N(rng) + Math.Min(f.ClubSeasons, 10) * 0.4 - Math.Max(f.Clubs - 1, 0) * 0.4, 7, 20);
-        s.Lead = I(10 + 2.2 * N(rng) + Math.Min(f.Gp / 300.0, 3) + (Aw("leader") ? 4 : 0) + (age >= 28 && p.Level >= 15 ? 1.5 : 0), 7, 20);
+        s.Loy = I(10.5 + 2.2 * N(rng) + Math.Min(f.ClubSeasons, 10) * 0.4 - Math.Max(f.Clubs - 1, 0) * 0.4 + (f.OneClub && f.Seasons >= 5 ? 2.5 : 0), 7, 20);
+        // лидерство: капитанская «С» и ассистентская «А» в сезоне 2026-27, награды за лидерство, опыт
+        s.Lead = I(10 + 2.2 * N(rng) + Math.Min(f.Gp / 300.0, 3) + (Aw("leader") ? 4 : 0) + (age >= 28 && p.Level >= 15 ? 1.5 : 0)
+                   + (f.Cap == "C" ? 5 : f.Cap == "A" ? 2.5 : 0), 7, 20);
         s.Temp = I(12.5 + 1.8 * N(rng) - Math.Min(f.Fights, 8) * 0.6 + (Aw("fair") ? 3 : 0), 6, 20);
         s.Adapt = I(11.5 + 2.3 * N(rng) + Math.Min(Math.Max(f.Clubs - 1, 0), 3) * 0.6, 7, 20);
         double missRate = (f.MissLong + 3.0) / (f.Span + 60.0);
@@ -260,7 +295,7 @@ public static class Development
             double sumD = 0; int n = 0;
             foreach (var d in Attrs.For(p))
             {
-                double cv = PlayerModel.Curve(age + Attrs.AgeShift(d.Key));
+                double cv = PlayerModel.Curve(c.Data, Attrs.CurveGroup(d.Key), age);
                 double g = Math.Max(cv, 0) * room * (0.7 + 0.06 * (s.Prof - 10)) * mins;
                 if (inj.Contains(p.Id)) g = 0;
                 double dec = Math.Min(cv, 0) * (1.15 - 0.03 * (s.Prof - 10));
@@ -280,4 +315,85 @@ public static class Development
     }
 
     static double N(Random r) => Math.Sqrt(-2 * Math.Log(1 - r.NextDouble())) * Math.Cos(2 * Math.PI * r.NextDouble());
+}
+
+/// <summary>Роли игрока: оценка пригодности из характеристик (как в FM). Ключевые — вес ≥ 0,2 (подсветка в карточке).</summary>
+public static class Roles
+{
+    public sealed record Def(string Name, string Pos, (string key, double w)[] Keys);
+
+    public static readonly Def[] All =
+    {
+        new("Снайпер", "F", new[] { ("fin", 0.4), ("pwr", 0.2), ("lng", 0.15), ("cmp", 0.15), ("acc", 0.1) }),
+        new("Игрок у ворот", "F", new[] { ("net", 0.4), ("str", 0.2), ("fin", 0.2), ("hit", 0.1), ("wrk", 0.1) }),
+        new("Плеймейкер", "F", new[] { ("pas", 0.35), ("vis", 0.3), ("hnd", 0.15), ("dec", 0.1), ("tm", 0.1) }),
+        new("Двусторонний форвард", "F", new[] { ("dfn", 0.3), ("vis", 0.15), ("hnd", 0.15), ("tka", 0.15), ("wrk", 0.15), ("dec", 0.1) }),
+        new("Силовой форвард", "F", new[] { ("str", 0.3), ("hit", 0.3), ("wrk", 0.2), ("net", 0.1), ("fin", 0.1) }),
+        new("Скоростной форвард", "F", new[] { ("spd", 0.35), ("acc", 0.25), ("hnd", 0.2), ("fin", 0.1), ("dec", 0.1) }),
+        new("Центр-распасовщик", "C", new[] { ("pas", 0.3), ("fo", 0.25), ("vis", 0.25), ("dec", 0.2) }),
+        new("Оборонительный центр", "C", new[] { ("fo", 0.3), ("dfn", 0.3), ("pk", 0.2), ("tka", 0.1), ("dis", 0.1) }),
+        new("Атакующий защитник", "D", new[] { ("pas", 0.3), ("vis", 0.25), ("pwr", 0.15), ("pp", 0.15), ("hnd", 0.15) }),
+        new("Защитник-домосед", "D", new[] { ("dfn", 0.35), ("blk", 0.25), ("pk", 0.2), ("hit", 0.1), ("dis", 0.1) }),
+        new("Универсальный защитник", "D", new[] { ("dfn", 0.25), ("pas", 0.2), ("hnd", 0.2), ("sta", 0.2), ("dec", 0.15) }),
+        new("Силовой защитник", "D", new[] { ("hit", 0.35), ("str", 0.35), ("blk", 0.15), ("dfn", 0.15) }),
+        // широкий профиль: без ярко выраженных ключевых характеристик — для игроков без явной специализации
+        new("Нападающий широкого профиля", "F", new[] { ("fin", 0.15), ("pas", 0.15), ("vis", 0.15), ("dfn", 0.15), ("hnd", 0.15), ("wrk", 0.15), ("spd", 0.1) }),
+        new("Защитник широкого профиля", "D", new[] { ("dfn", 0.15), ("pas", 0.15), ("hnd", 0.15), ("blk", 0.15), ("sta", 0.15), ("dec", 0.15), ("pk", 0.1) }),
+        new("Вратарь-реакция", "G", new[] { ("rfx", 0.45), ("gcmp", 0.2), ("scr", 0.2), ("gcon", 0.15) }),
+        new("Позиционный вратарь", "G", new[] { ("gpos", 0.45), ("reb", 0.2), ("gcon", 0.2), ("rfx", 0.15) }),
+        new("Вратарь широкого профиля", "G", new[] { ("rfx", 0.17), ("gpos", 0.17), ("reb", 0.17), ("scr", 0.17), ("gcon", 0.16), ("gsta", 0.16) }),
+    };
+
+    static bool Fits(Def d, PlayerData p) => d.Pos switch
+    {
+        "G" => p.IsGoalie,
+        "D" => p.IsDefense,
+        "C" => p.Pos == "C",
+        _ => p.IsForward,
+    };
+
+    /// <summary>Оценка роли 1–20 по характеристикам (из данных или видимым — через get).</summary>
+    public static double Score(Def d, Func<string, double> get, double median = double.NaN)
+    {
+        double s = d.Keys.Sum(k => k.w * get(k.key)) / d.Keys.Sum(k => k.w);
+        // роль не держится на слабом месте: штраф, если ключевая характеристика заметно ниже типичной для самого игрока
+        if (!double.IsNaN(median))
+            foreach (var (key, w) in d.Keys)
+                if (w >= 0.2) s -= 0.7 * Math.Max(0, median - 2.5 - get(key));
+        return s;
+    }
+
+    /// <summary>Медиана характеристик игрока — «его типичный уровень» для проверки ролей.</summary>
+    public static double Median(PlayerData p, Func<string, double> get)
+    {
+        var v = Attrs.For(p).Where(a => a.Key != "stk").Select(a => get(a.Key)).OrderBy(x => x).ToList();
+        return v.Count == 0 ? p.Level : v[v.Count / 2];
+    }
+
+    /// <summary>Противоречие: ключевая характеристика лучшей роли ниже типичной для игрока больше чем на 3.</summary>
+    public static string Contradiction(PlayerData p)
+    {
+        var best = p.Roles.FirstOrDefault();
+        if (best == null) return null;
+        double med = Median(p, p.AttrEst);
+        foreach (var k in Key(best.Name))
+            if (p.AttrEst(k) < med - 3) return $"{best.Name}: {k} {p.AttrEst(k):F0} при типичных {med:F0}";
+        return null;
+    }
+
+    public static List<RoleFit> For(PlayerData p, Func<string, double> get = null)
+    {
+        get ??= p.AttrEst;
+        double med = Median(p, get);
+        // сначала роли без слабого места среди ключевых, внутри — по оценке
+        return All.Where(d => Fits(d, p))
+                  .Select(d => (fit: new RoleFit { Name = d.Name, V = (int)Math.Clamp(Math.Round(Score(d, get, med) * 5), 1, 99) },
+                                ok: d.Keys.Where(k => k.w >= 0.2).All(k => get(k.key) >= med - 3)))
+                  .OrderByDescending(x => x.ok).ThenByDescending(x => x.fit.V).Select(x => x.fit).ToList();
+    }
+
+    public static Def Get(string name) => All.FirstOrDefault(d => d.Name == name);
+
+    /// <summary>Ключевые характеристики роли (вес ≥ 0,2) — подсвечиваются в карточке.</summary>
+    public static string[] Key(string name) => Get(name)?.Keys.Where(k => k.w >= 0.2).Select(k => k.key).ToArray() ?? Array.Empty<string>();
 }

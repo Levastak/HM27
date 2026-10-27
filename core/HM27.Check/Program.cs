@@ -176,6 +176,11 @@ Check("Плей-офф", playoffsOk, $"15 серий и чемпион в каж
     Check("Модель игрока: баланс", viol == 0 && low.Count == 0,
         $"техника выше уровня +3: {viol}; эталонные звёзды ниже 17: {(low.Count == 0 ? "нет" : string.Join(", ", low))}");
 
+    // роли без противоречий: ключевые характеристики лучшей роли — не слабое место игрока (не ниже его типичных − 3)
+    var bad = data.Players.Where(p => p.A.Count > 0).Select(p => (p, why: Roles.Contradiction(p))).Where(x => x.why != null).ToList();
+    Check("Модель игрока: роли", bad.Count == 0,
+        $"противоречий в ролях: {bad.Count}{(bad.Count > 0 ? " — " + string.Join("; ", bad.Take(6).Select(x => $"{x.p.Name} ({x.why})")) : "")}");
+
     // сезон развития
     var start = c1.Players.ToDictionary(kv => kv.Key, kv => kv.Value.Lvl);
     c1.SimToEnd();

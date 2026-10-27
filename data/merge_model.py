@@ -10,7 +10,13 @@
 Старые рейтинги r (перцентили) остаются для ролей и хроники; r.ovr = уровень × 5 — для сортировок и звёзд.
 Игроки без данных за 4 сезона (дебютанты) получают уровень из перцентиля старой оценки с большой погрешностью.
 """
-import gzip, json, math, sys
+import gzip, json, math, os, sys, unicodedata
+
+
+def norm(name):
+    """Имя для сопоставления: без диакритики, точек, регистра (J. T. Miller = J.T. Miller)."""
+    n = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    return "".join(ch for ch in n.lower() if ch.isalnum())
 
 MID, SD = 11.0, 3.4
 
@@ -55,11 +61,56 @@ def facts(f):
     return {k: v for k, v in out.items() if v not in (None, [], 0) or k in ("gp",)}
 
 
-def main(db_path="game/data/hm27-data.json", model_path="data/derived.json.gz"):
+def fix_namesakes(db, path=os.path.join(os.path.dirname(os.path.abspath(__file__)), "overrides.json")):
+    """Тёзки в одном клубе: «Сводка» склеивает их по имени в одну запись. Разводим на двоих: у нападающего —
+    статистика и номер исходной записи, в звеньях нападения и большинства — он, в парах защиты — защитник."""
+    if not os.path.exists(path):
+        return
+    rules = json.load(open(path, encoding="utf-8")).get("namesakes", [])
+    for r in rules:
+        recs = [p for p in db["players"] if p["team"] == r["team"] and p["name"] == r["name"]]
+        if len(recs) != 1:
+            continue
+        base = recs[0]
+        db["players"].remove(base)
+        ids = {}
+        for spec in r["players"]:
+            p = json.loads(json.dumps(base))
+            p.update(id=spec["id"], pos=spec["pos"], num=spec["num"], born=spec["born"], h=spec["h"], w=spec["w"],
+                     country=spec.get("country", base.get("country")), head=f"20262027/{r['team']}/{spec['id']}")
+            if spec["num"] != base.get("num"):
+                p["stats"] = {k: 0 for k in base.get("stats", {})}
+                if spec["pos"] == "D":
+                    p.update(ixg_pg=0.08, ixg60=0.25, toi=17.0, fin=1.0, apg=0.2)
+            db["players"].append(p)
+            ids["D" if spec["pos"] == "D" else "F"] = spec["id"]
+        old = base["id"]
+        for t in db["teams"]:
+            if t["abbr"] != r["team"]:
+                continue
+            L = t["lines"]
+            L["f"] = [[ids.get("F", x) if x == old else x for x in line] for line in L["f"]]
+            L["d"] = [[ids.get("D", x) if x == old else x for x in line] for line in L["d"]]
+            for k in ("pp1", "pp2"):
+                L[k] = [ids.get("F", x) if x == old else x for x in L.get(k, [])]
+
+
+def main(db_path="game/data/hm27-data.json", model_path="data/derived.json.gz", curves_path="data/age_curves.json", leaders_path="data/leaders.json"):
     db = json.load(open(db_path, encoding="utf-8"))
+    leaders = {}
+    if os.path.exists(leaders_path):
+        L = json.load(open(leaders_path, encoding="utf-8"))
+        for team, t in L["teams"].items():
+            for n in t.get("C", []):
+                leaders[(team, norm(n))] = {"cap": "C"}
+            for n in t.get("A", []):
+                leaders[(team, norm(n))] = {"cap": "A"}
+            for n in t.get("one_club", []):
+                leaders.setdefault((team, norm(n)), {})["one_club"] = True
     with gzip.open(model_path, "rt", encoding="utf-8") as f:
         m = json.load(f)
-    found = fallback = 0
+    fix_namesakes(db)
+    found = fallback = lead_n = 0
     for p in db["players"]:
         src = (m["goalies"] if p["pos"] == "G" else m["skaters"]).get(str(p["id"]))
         if src and src.get("toi", 0) > 0:
@@ -76,12 +127,26 @@ def main(db_path="game/data/hm27-data.json", model_path="data/derived.json.gz"):
             p["fx"] = {}
             fallback += 1
         p.setdefault("r", {})["ovr"] = int(round(p["lvl"][0] * 5))
+    # капитаны и ассистенты: при тёзках в одном клубе (два Элиаса Петтерссона в «Ванкувере») — у кого больше матчей в НХЛ
+    by_key = {}
+    for p in db["players"]:
+        by_key.setdefault((p["team"], norm(p["name"])), []).append(p)
+    for key, ld in leaders.items():
+        cands = by_key.get(key)
+        if not cands:
+            continue
+        p = max(cands, key=lambda x: (x.get("fx") or {}).get("gp", 0))
+        p.setdefault("fx", {}).update(ld)
+        lead_n += 1
     db["format"] = 3
     db["model"] = {"built": m["meta"]["built"], "seasons": m["meta"]["seasons"], "scale": m["meta"]["scale"],
-                   "kinds": m["meta"].get("attr_kinds", {})}
+                   "kinds": m["meta"].get("attr_kinds", {}), "xg": m["meta"].get("xg_source", "")}
+    if os.path.exists(curves_path):
+        c = json.load(open(curves_path, encoding="utf-8"))
+        db["model"]["curves"] = {g: {str(a): v for a, v in vals.items()} for g, vals in c["groups"].items()}
     with open(db_path, "w", encoding="utf-8") as fh:
         json.dump(db, fh, ensure_ascii=False, separators=(",", ":"))
-    print(f"Модель игрока: {found} игроков из расчёта, {fallback} без данных (оценка по перцентилю)")
+    print(f"Модель игрока: {found} игроков из расчёта, {fallback} без данных (оценка по перцентилю), капитанов и ассистентов {lead_n}")
 
 
 if __name__ == "__main__":
