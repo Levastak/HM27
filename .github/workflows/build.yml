@@ -117,65 +117,68 @@ jobs:
 
   # Готовые сборки запускаются на настоящих Mac (Apple Silicon) и Windows: без этого релиз не выходит.
   smoke-macos:
-    name: Запуск на Mac
+    name: Подпись и запуск на Mac
     needs: build
     runs-on: macos-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: HM27-builds
-      - name: Подпись и Gatekeeper
+          path: in
+      - name: Подпись штатным codesign (ad-hoc)
         run: |
-          ditto -x -k HM27-macos.zip .
-          ls
-          codesign --verify --deep --strict --verbose=2 HM27.app 2>&1 | tail -5
-          codesign -dv HM27.app 2>&1 | head -12
-          spctl -a -vv HM27.app 2>&1 || echo "Gatekeeper не пропускает без сертификата Apple — ожидаемо"
+          set +e
+          mkdir app && ditto -x -k in/HM27-macos.zip app
+          echo "--- подпись Godot (до):"
+          codesign --verify --deep --strict --verbose=2 app/HM27.app > sig-before.txt 2>&1; echo "код $?" >> sig-before.txt; cat sig-before.txt
+          echo "::warning title=sig-before::$(tail -c 800 sig-before.txt | tr '\n' '|')"
+          set -e
+          xattr -cr app/HM27.app
+          # сначала вложенные библиотеки .NET, потом само приложение
+          find app/HM27.app/Contents/Resources -name "*.dylib" -print0 | xargs -0 codesign --force --sign - --timestamp=none
+          codesign --force --sign - --timestamp=none --options runtime --entitlements tools/macos-entitlements.plist app/HM27.app
+          codesign --verify --deep --strict --verbose=2 app/HM27.app
+          codesign -dv --entitlements - app/HM27.app 2>&1 | head -20
           sw_vers; uname -m
       - name: Самопроверка без окна
         run: |
-          ./HM27.app/Contents/MacOS/HM27 --headless --verbose -- --smoke=30 --smoke-out="$PWD/smoke-mac.txt" > run-mac.log 2>&1; echo "Код выхода: $?" >> run-mac.log
-          tail -40 run-mac.log
-          cat smoke-mac.txt
+          set +e
+          app/HM27.app/Contents/MacOS/HM27 --headless -- --smoke=30 --smoke-out="$PWD/smoke-mac.txt" > run-mac.log 2>&1
+          code=$?
+          tail -30 run-mac.log
+          echo "Код выхода: $code"
+          echo "::warning title=mac-exit::код $code; $(cat smoke-mac.txt 2>/dev/null | head -c 400)"
+          [ $code -ne 0 ] && echo "::warning title=mac-log-tail::$(tail -c 900 run-mac.log | tr '\n' '|')"
           grep -q "SMOKE OK" smoke-mac.txt
       - name: Запуск с графикой (снимок экрана)
         continue-on-error: true
         run: |
-          ./HM27.app/Contents/MacOS/HM27 -- --screen=hub --days=20 --shot="$PWD/mac-hub.png" > run-mac-gfx.log 2>&1 &
+          app/HM27.app/Contents/MacOS/HM27 -- --screen=hub --days=20 --shot="$PWD/mac-hub.png" > run-mac-gfx.log 2>&1 &
           PID=$!; for i in $(seq 1 90); do [ -f mac-hub.png ] && break; kill -0 $PID 2>/dev/null || break; sleep 2; done
           kill $PID 2>/dev/null || true
-          tail -30 run-mac-gfx.log
+          tail -20 run-mac-gfx.log
+          echo "::warning title=mac-gfx::$(grep -iE 'Metal|Vulkan|Кадр|error' run-mac-gfx.log | head -5 | tr '\n' '|')"
           test -f mac-hub.png
+      - name: Упаковка
+        run: |
+          cp README.md app/README.md
+          cd app && ditto -c -k --sequesterRsrc --keepParent HM27.app ../HM27-macos.zip
+          cd .. && unzip -l HM27-macos.zip | tail -1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HM27-macos-signed
+          path: HM27-macos.zip
       - name: Логи в служебный релиз ci-logs
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view ci-logs -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
-            gh release create ci-logs -R "$GITHUB_REPOSITORY" --prerelease --title "Служебное: логи автопроверок" --notes "Логи запуска сборок на CI. Не для игры."
-          ls -la
-          for f in smoke-mac.txt run-mac.log run-mac-gfx.log mac-hub.png; do
-            if [ -f "$f" ]; then gh release upload ci-logs "$f" -R "$GITHUB_REPOSITORY" --clobber || echo "::warning::не загрузился $f"; fi
+          gh release view ci-logs >/dev/null 2>&1 || gh release create ci-logs --prerelease --title "Служебное: логи автопроверок" --notes "Логи запуска сборок на CI. Не для игры."
+          for f in sig-before.txt smoke-mac.txt run-mac.log run-mac-gfx.log mac-hub.png; do
+            if [ -f "$f" ]; then gh release upload ci-logs "$f" --clobber 2>&1 | tail -2 || true; fi
           done
-          # хвост лога — в аннотации (их видно через API даже без доступа к логам)
-          if [ -f run-mac.log ]; then
-            n=0
-            grep -vE "^\s*$" run-mac.log | grep -iE "error|exception|fail|abort|signal|crash|dotnet|\.NET|hostfxr|SMOKE|Godot Engine|dyld|Library" | head -9 | while IFS= read -r line; do
-              echo "::warning title=mac-log::${line:0:900}"
-            done
-            echo "::warning title=mac-log-tail::$(tail -c 900 run-mac.log | tr '\n' '|')"
-          else
-            echo "::warning title=mac-log::run-mac.log не создан"
-          fi
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: smoke-macos
-          path: |
-            smoke-mac.txt
-            run-mac*.log
-            mac-hub.png
 
   smoke-windows:
     name: Запуск на Windows
@@ -208,6 +211,10 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: HM27-builds
+          path: build
+      - uses: actions/download-artifact@v4
+        with:
+          name: HM27-macos-signed
           path: build
       - name: Релиз
         env:
