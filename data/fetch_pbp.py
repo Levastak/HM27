@@ -12,6 +12,7 @@
   pbp_<сезон>.json.gz    = {game_id: {date, home, away, home_id, away_id, roster:[[pid, team_id, pos]], plays:[...]}}
   shifts_<сезон>.json.gz = {game_id: [[pid, team_id, period, start_s, end_s], ...]}
   players.json.gz        = {pid: {страница игрока без тяжёлых полей}}
+  edge.json.gz           = {pid: {сезон: {speed, bursts*, dist, shot, ...}}}  (NHL EDGE, api-web.nhle.com/v1/edge/skater-detail)
 Уже скачанные завершённые матчи не скачиваются заново (файлы прошлых запусков лежат в релизе raw-data).
 """
 import argparse, concurrent.futures as cf, gzip, json, os, sys, threading, time, urllib.error, urllib.request
@@ -20,6 +21,7 @@ UA = "Mozilla/5.0 (HM27 data; github.com/Levastak/HM27)"
 PBP = "https://api-web.nhle.com/v1/gamecenter/{gid}/play-by-play"
 SHIFTS = "https://api.nhle.com/stats/rest/en/shiftcharts?cayenneExp=gameId={gid}"
 LANDING = "https://api-web.nhle.com/v1/player/{pid}/landing"
+EDGE = "https://api-web.nhle.com/v1/edge/skater-detail/{pid}/{season}/2"
 GAMES_PER_SEASON = 1312
 DONE = ("OFF", "FINAL")
 
@@ -167,6 +169,46 @@ def players(pids, out_dir, workers, report, refresh):
                 miss += 1
     save(path, have)
     report["players"] = {"total": len(have), "fetched": len(todo) - miss, "missing": miss}
+    return have
+
+
+def edge(players_pages, seasons, out_dir, workers, report):
+    """NHL EDGE по сезонам (регулярка): макс. скорость, рывки, дистанция, мощь броска. Текущий сезон — всегда заново."""
+    path = os.path.join(out_dir, "edge.json.gz")
+    have = load(path)
+    cur = seasons[-1]
+    skaters = [pid for pid, j in players_pages.items() if j.get("position") != "G"]
+    todo = [(pid, s) for pid in skaters for s in seasons if s == cur or s not in have.get(pid, {})]
+    log(f"EDGE: игроков {len(skaters)}, запросов {len(todo)}")
+
+    def m(o, *ks):
+        for k in ks:
+            o = (o or {}).get(k) if isinstance(o, dict) else None
+        return o
+
+    def one(ps):
+        pid, s = ps
+        j = fetch_json(EDGE.format(pid=pid, season=s))
+        if not j or not j.get("skatingSpeed"):
+            return pid, s, None
+        sk = j.get("skatingSpeed") or {}
+        return pid, s, {
+            "gp": m(j, "player", "gamesPlayed"),
+            "speed": m(sk, "speedMax", "metric"),
+            **{k: m(sk, k, "value") for k in sk if k.startswith("bursts")},
+            "dist": m(j, "totalDistanceSkated", "metric"), "dist_max": m(j, "distanceMaxGame", "metric"),
+            "shot": m(j, "topShotSpeed", "metric"),
+            "oz": m(j, "zoneTimeDetails", "offensiveZoneEvPctg"), "dz": m(j, "zoneTimeDetails", "defensiveZonePctg"),
+        }
+
+    got = 0
+    with cf.ThreadPoolExecutor(workers) as ex:
+        for pid, s, d in ex.map(one, todo):
+            if d:
+                have.setdefault(pid, {})[s] = d
+                got += 1
+    save(path, have)
+    report["edge"] = {"players": len(have), "requests": len(todo), "got": got}
 
 
 def main():
@@ -181,7 +223,8 @@ def main():
     for s in a.seasons:
         for g in season_games(s, a.dir, a.workers, report).values():
             pids.update(r[0] for r in g["roster"] if r[0])
-    players(pids, a.dir, a.workers, report, a.refresh_players)
+    pages = players(pids, a.dir, a.workers, report, a.refresh_players)
+    edge(pages, a.seasons, a.dir, a.workers, report)
     with open(os.path.join(a.dir, "report.json"), "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=1)
     print(json.dumps(report, ensure_ascii=False))
