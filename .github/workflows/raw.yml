@@ -8,7 +8,7 @@ on:
     inputs:
       seasons:
         description: "Сезоны через пробел"
-        default: "20232024 20242025 20252026 20262027"
+        default: "20222023 20232024 20242025 20252026 20262027"
       refresh_players:
         description: "Обновить страницы всех игроков"
         type: boolean
@@ -34,17 +34,23 @@ jobs:
           gh release view raw-data >/dev/null 2>&1 || gh release create raw-data --title "Сырые данные для модели игрока" \
             --notes "Протоколы, карты смен и страницы игроков из открытых API НХЛ. Обновляется workflow «Сырые данные». Не для игры." --prerelease
           gh release download raw-data --dir raw --pattern "*.json.gz" || true
+          gh release download raw-data --dir raw --pattern "*.csv.gz" || true
           ls -la raw
       - name: Загрузка
         run: |
           FLAG=""
           [ "${{ inputs.refresh_players }}" = "true" ] && FLAG="--refresh-players"
-          python3 data/fetch_pbp.py --dir raw --seasons ${{ inputs.seasons }} $FLAG 2> fetch.log || { tail -60 fetch.log; exit 1; }
+          python3 data/fetch_pbp.py --dir raw --seasons ${{ inputs.seasons }} --edge-seasons 20212022 ${{ inputs.seasons }} $FLAG 2> fetch.log || { tail -60 fetch.log; exit 1; }
           tail -20 fetch.log
           echo "::notice title=raw::$(cat raw/report.json | tr -d '\n ' | head -c 1500)"
+      - name: MoneyPuck (броски с xG, сводки сезонов 2010–2026, справочник игроков)
+        run: |
+          python3 data/fetch_mp.py --dir raw 2> mp.log || { tail -40 mp.log; exit 1; }
+          echo "::notice title=mp::$(cat raw/mp_report.json | tr -d '\n ' | head -c 1500)"
       - name: В релиз
         if: always()
         run: |
           ls -la raw
           [ -f fetch.log ] && cp fetch.log raw/fetch.log
-          gh release upload raw-data raw/*.json.gz raw/report.json raw/fetch.log --clobber
+          [ -f mp.log ] && cp mp.log raw/mp.log
+          gh release upload raw-data raw/*.json.gz raw/*.csv.gz raw/*.json raw/*.log --clobber

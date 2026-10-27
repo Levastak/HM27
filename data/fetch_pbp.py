@@ -217,6 +217,7 @@ def main():
     ap.add_argument("--seasons", nargs="+", default=["20232024", "20242025", "20252026", "20262027"])
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--refresh-players", action="store_true", help="обновить страницы всех игроков")
+    ap.add_argument("--edge-seasons", nargs="*", default=None, help="сезоны NHL EDGE (по умолчанию — как --seasons)")
     a = ap.parse_args()
     os.makedirs(a.dir, exist_ok=True)
     report, pids = {}, set()
@@ -224,7 +225,7 @@ def main():
         for g in season_games(s, a.dir, a.workers, report).values():
             pids.update(r[0] for r in g["roster"] if r[0])
     pages = players(pids, a.dir, a.workers, report, a.refresh_players)
-    edge(pages, a.seasons, a.dir, a.workers, report)
+    edge(pages, a.edge_seasons or a.seasons, a.dir, a.workers, report)
     with open(os.path.join(a.dir, "report.json"), "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=1)
     print(json.dumps(report, ensure_ascii=False))
