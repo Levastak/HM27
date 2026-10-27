@@ -10,11 +10,11 @@ namespace HM27.UI;
 /// </summary>
 public static class Ui
 {
-    public static readonly Color Bg = new("1C2027");       // фон страниц
-    public static readonly Color Side = new("14171C");     // левое меню
-    public static readonly Color Panel = new("252A33");    // панели-виджеты
-    public static readonly Color Panel2 = new("2D333D");   // шапки панелей, кнопки
-    public static readonly Color Line = new("363D49");
+    public static readonly Color Bg = new("141B25");       // фон страниц (сине-серый, как у WTCS)
+    public static readonly Color Side = new("0E131A");     // левое меню
+    public static readonly Color Panel = new("1D2633");    // панели-виджеты
+    public static readonly Color Panel2 = new("263142");   // шапки панелей, кнопки
+    public static readonly Color Line = new("2F3B4D");
     public static readonly Color Text = new("ECEFF4");
     public static readonly Color Muted = new("A0A8B5");
     public static readonly Color Dim = new("6E7785");

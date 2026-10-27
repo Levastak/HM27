@@ -77,7 +77,7 @@ public partial class Segmented : HBoxContainer
         {
             int k = i;
             var b = Ui.B(items[i], () => { Select(k); onSelect(k); });
-            b.AddThemeFontSizeOverride("font_size", 13);
+            b.AddThemeFontSizeOverride("font_size", 12);
             _buttons.Add(b);
             AddChild(b);
         }
@@ -89,7 +89,7 @@ public partial class Segmented : HBoxContainer
         for (int i = 0; i < _buttons.Count; i++)
         {
             bool on = i == k;
-            _buttons[i].AddThemeStyleboxOverride("normal", Ui.Box(on ? new Color(Ui.Accent, 0.28f) : Ui.Panel2, 6, on ? Ui.Accent : Ui.Line, 12));
+            _buttons[i].AddThemeStyleboxOverride("normal", Ui.Box(on ? new Color(Ui.Accent, 0.28f) : Ui.Panel2, 6, on ? Ui.AccentBright : Ui.Line, 9));
             _buttons[i].AddThemeColorOverride("font_color", on ? Colors.White : Ui.Muted);
         }
     }

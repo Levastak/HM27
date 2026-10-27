@@ -308,173 +308,6 @@ public partial class SquadPage : Control
 }
 
 // =====================================================================================================
-/// <summary>Профиль игрока, как в FM: шапка с фото и фактами, характеристики 1–20, аналитика, роль, статистика.</summary>
-public partial class PlayerPage : Control
-{
-    Career C => P.C;
-    readonly int _id;
-    public PlayerPage() { }
-    public PlayerPage(int id) { _id = id; SizeFlagsHorizontal = SizeFlags.ExpandFill; SizeFlagsVertical = SizeFlags.ExpandFill; }
-
-    public override void _Ready()
-    {
-        var p = C.Data.PlayerById[_id];
-        var t = C.Team(p.Team);
-        var v = Ui.V(12);
-        var page = P.Page(v);
-        page.SetAnchorsPreset(LayoutPreset.FullRect);
-        AddChild(page);
-
-        // ---------- шапка
-        var top = Ui.H(18);
-        var c1 = new Color(t.Colors[0]);
-        top.AddChild(new PlayerPhoto(p, 132, c1.Darkened(0.35f)));
-        var info = Ui.Expand(Ui.V(4));
-        info.AddChild(Ui.H(10, Ui.L(p.Num.HasValue ? $"#{p.Num}" : "", 24, Ui.AccentBright, Ui.Black), Ui.L(p.NameRu, 26, Ui.Text, Ui.Bold)));
-        info.AddChild(Ui.H(8, new TeamBadge(t, 22), Ui.L($"{t.Name} · {Capital(P.PosLong(p.Pos))}", 14, Ui.Muted)));
-        info.AddChild(Ui.Spacer(false, 6));
-        var facts = new GridContainer { Columns = 4 };
-        facts.AddThemeConstantOverride("h_separation", 34); facts.AddThemeConstantOverride("v_separation", 4);
-        var age = p.Age(C.Today);
-        void Fact(string k, string val) { facts.AddChild(Ui.V(0, Ui.L(k.ToUpperInvariant(), 10, Ui.Dim, Ui.Bold), Ui.L(val, 14, Ui.Text, Ui.Semi))); }
-        Fact("Возраст", age.HasValue ? $"{age} ({Born(p.Born)})" : "—");
-        Fact("Рост / вес", $"{p.Height} см / {p.Weight} кг");
-        Fact("Страна", PlayerCard.Country(p.Country));
-        Fact("В составе", P.Role(p.Id, p.Team));
-        info.AddChild(facts);
-        top.AddChild(info);
-        var right = Ui.V(6);
-        right.AddChild(Ui.L("СПОСОБНОСТИ", 10, Ui.Dim, Ui.Bold, HorizontalAlignment.Right));
-        right.AddChild(Ui.H(0, Ui.Spacer(), Ui.Stars(p.Ovr, 20)));
-        right.AddChild(Ui.L($"Общий рейтинг {p.Ovr} из 99", 12, Ui.Muted, null, HorizontalAlignment.Right));
-        if (C.Injured.Contains(p.Id)) right.AddChild(Ui.H(6, Ui.Spacer(), Ui.Icon("cross", 14, Ui.Loss), Ui.L("Травмирован", 13, Ui.Loss, Ui.Semi)));
-        top.AddChild(right);
-        var head = new PanelContainer();
-        var hs = Ui.Box(Ui.Panel, 4, null, 16); hs.BorderColor = c1.Luminance < 0.08f ? c1.Lightened(0.3f) : c1; hs.BorderWidthLeft = 4;
-        head.AddThemeStyleboxOverride("panel", hs);
-        head.AddChild(top);
-        v.AddChild(head);
-
-        // ---------- характеристики, аналитика, роль
-        var row = Ui.H(12);
-        var attrs = Ui.V(6);
-        var keys = p.IsGoalie ? new[] { ("gk", "Вратарское мастерство") } :
-            new[] { ("att", "Атака"), ("pas", "Пас"), ("fin", "Реализация"), ("dfn", "Оборона"), ("sta", "Выносливость") };
-        foreach (var (k, name) in keys)
-        {
-            int v20 = Ui.Attr20(p.Rating(k));
-            var bar = new ColorRect { Color = Ui.Line, CustomMinimumSize = new Vector2(110, 6) };
-            bar.AddChild(new ColorRect { Color = Ui.AttrColor(v20), Size = new Vector2(110 * v20 / 20f, 6) });
-            attrs.AddChild(Ui.H(10, Ui.Expand(Ui.L(name, 13)), bar, Ui.Attr(p.Rating(k), 15).Also(l => l.CustomMinimumSize = new Vector2(26, 0))));
-        }
-        attrs.AddChild(Ui.Spacer(false, 4));
-        attrs.AddChild(Ui.L("Шкала 1–20, как в FM: место игрока среди всех на его позиции в лиге.", 11, Ui.Dim).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart));
-        row.AddChild(Ui.Expand(Widget.Make("Характеристики", attrs)));
-
-        var an = Ui.V(6);
-        void Line(string k, string val) => an.AddChild(Ui.H(10, Ui.Expand(Ui.L(k, 13, Ui.Muted)), Ui.L(val, 13, Ui.Text, Ui.Semi)));
-        if (p.IsGoalie)
-        {
-            Line("Сейвы сверх ожидаемого", $"{Ui.Signed(p.Gsax * 100, "0.0")}% от xG");
-            Line("Матчей в прошлом сезоне", p.Stats.ContainsKey("gp") ? "" : "—");
-        }
-        else
-        {
-            Line("Личный xG за матч", $"{p.IxgPg:0.00}");
-            Line("Личный xG за 60 минут", $"{p.Ixg60:0.00}");
-            Line("Время в НХЛ за матч", $"{p.Toi:0.0} мин");
-            Line("Передач за матч", $"{p.Apg:0.00}");
-            Line("Реализация (голы / xG)", $"{p.Fin:0.00}");
-        }
-        an.AddChild(Ui.L("Данные MoneyPuck и НХЛ за последние сезоны.", 11, Ui.Dim));
-        row.AddChild(Ui.Expand(Widget.Make("Аналитика", an)));
-
-        var role = Ui.V(6);
-        var l = C.Lineups[p.Team];
-        role.AddChild(Ui.H(10, Ui.Expand(Ui.L("Место в составе", 13, Ui.Muted)), Ui.L(P.Role(p.Id, p.Team), 13, Ui.Text, Ui.Semi)));
-        if (!p.IsGoalie)
-        {
-            role.AddChild(Ui.H(10, Ui.Expand(Ui.L("Минут за матч по плану", 13, Ui.Muted)), Ui.L($"{l.MinutesOf(p.Id):0}", 13, Ui.Text, Ui.Semi)));
-            string pp = l.Pp1.Contains(p.Id) ? "1-е звено" : l.Pp2.Contains(p.Id) ? "2-е звено" : "нет";
-            role.AddChild(Ui.H(10, Ui.Expand(Ui.L("Большинство", 13, Ui.Muted)), Ui.L(pp, 13, Ui.Text, Ui.Semi)));
-        }
-        if (p.Team == C.UserTeam) role.AddChild(Ui.B("Изменить звенья", () => Shell.I.Go("lines")).Also(b => b.AddThemeFontSizeOverride("font_size", 12)));
-        else role.AddChild(Ui.B($"Открыть клуб «{t.City}»", () => Shell.I.Go("club", null, t.Abbr)).Also(b => b.AddThemeFontSizeOverride("font_size", 12)));
-        row.AddChild(Ui.Expand(Widget.Make("Роль", role)));
-        v.AddChild(row);
-
-        // ---------- статистика
-        if (p.IsGoalie)
-        {
-            var rows = new List<(string name, GoalieLine s)>();
-            var real = p.Stats;
-            if (real.Count > 0) rows.Add(("НХЛ 2026-27 (реальность, на " + Ui.DateShort(DateOnly.Parse(C.Data.DataDate)) + ")", new GoalieLine { Gp = (int)real.GetValueOrDefault("gp"), W = (int)real.GetValueOrDefault("w"), L = (int)real.GetValueOrDefault("l"), Otl = (int)real.GetValueOrDefault("otl") }));
-            if (C.Goalies.TryGetValue(p.Id, out var s1)) rows.Add(("HM27 · регулярный чемпионат", s1));
-            if (C.PoGoalies.TryGetValue(p.Id, out var s2)) rows.Add(("HM27 · плей-офф", s2));
-            var g = new Grid<(string name, GoalieLine s)>(new List<Col<(string name, GoalieLine s)>>
-            {
-                new() { Title = "Турнир", Width = 0, Align = HorizontalAlignment.Left, Cell = x => Ui.L(x.name, 13) },
-                new() { Title = "И", Width = 40, Cell = x => Ui.L($"{x.s.Gp}", 13) },
-                new() { Title = "В-П-ПО", Width = 80, Cell = x => Ui.L($"{x.s.W}-{x.s.L}-{x.s.Otl}", 13) },
-                new() { Title = "%ОБ", Width = 60, Cell = x => Ui.L(x.s.Sa > 0 ? $"{x.s.SvPct:.000}" : real.ContainsKey("sv") && x.name.StartsWith("НХЛ") ? $"{real["sv"]:.000}" : "—", 13, Ui.Text, Ui.Bold) },
-                new() { Title = "КН", Width = 50, Cell = x => Ui.L(x.s.Sa > 0 ? $"{x.s.Gaa:0.00}" : real.ContainsKey("gaa") && x.name.StartsWith("НХЛ") ? $"{real["gaa"]:0.00}" : "—", 13) },
-                new() { Title = "Сух", Width = 40, Cell = x => Ui.L($"{x.s.So}", 13) },
-            }, rows);
-            v.AddChild(Widget.Make("Статистика", g.Root, null, null, 0));
-        }
-        else
-        {
-            var rows = new List<(string name, int gp, int g, int a, int ppg)>();
-            var real = p.Stats;
-            if (real.Count > 0) rows.Add(("НХЛ 2026-27 (реальность, на " + Ui.DateShort(DateOnly.Parse(C.Data.DataDate)) + ")", (int)real.GetValueOrDefault("gp"), (int)real.GetValueOrDefault("g"), (int)real.GetValueOrDefault("a"), -1));
-            if (C.Skaters.TryGetValue(p.Id, out var s1)) rows.Add(("HM27 · регулярный чемпионат", s1.Gp, s1.G, s1.A, s1.Ppg));
-            if (C.PoSkaters.TryGetValue(p.Id, out var s2)) rows.Add(("HM27 · плей-офф", s2.Gp, s2.G, s2.A, s2.Ppg));
-            var g = new Grid<(string name, int gp, int g, int a, int ppg)>(new List<Col<(string name, int gp, int g, int a, int ppg)>>
-            {
-                new() { Title = "Турнир", Width = 0, Align = HorizontalAlignment.Left, Cell = x => Ui.L(x.name, 13) },
-                new() { Title = "И", Width = 40, Cell = x => Ui.L($"{x.gp}", 13) },
-                new() { Title = "Г", Width = 40, Cell = x => Ui.L($"{x.g}", 13) },
-                new() { Title = "П", Width = 40, Cell = x => Ui.L($"{x.a}", 13) },
-                new() { Title = "О", Width = 44, Cell = x => Ui.L($"{x.g + x.a}", 13, Ui.Text, Ui.Bold) },
-                new() { Title = "ГБ", Width = 40, Cell = x => Ui.L(x.ppg < 0 ? "—" : $"{x.ppg}", 13, Ui.Muted) },
-                new() { Title = "О/И", Width = 50, Cell = x => Ui.L(x.gp > 0 ? $"{(x.g + x.a) / (double)x.gp:0.00}" : "—", 13, Ui.Muted) },
-            }, rows);
-            v.AddChild(Widget.Make("Статистика", g.Root, null, null, 0));
-        }
-
-        // ---------- матчи игрока в HM27
-        var games = C.Games.Where(gm => gm.Played && (gm.Home == p.Team || gm.Away == p.Team) && (gm.Result.HomeDressed.Contains(p.Id) || gm.Result.AwayDressed.Contains(p.Id)))
-            .OrderByDescending(gm => gm.Date).Take(8).ToList();
-        if (games.Count > 0)
-        {
-            var gg = new Grid<ScheduledGame>(new List<Col<ScheduledGame>>
-            {
-                new() { Title = "Дата", Width = 70, Align = HorizontalAlignment.Left, Cell = gm => Ui.L(Ui.DateShort(gm.Date), 12, Ui.Muted) },
-                new() { Title = "Соперник", Width = 0, Align = HorizontalAlignment.Left, Cell = gm => P.Team(gm.Home == p.Team ? gm.Away : gm.Home) },
-                new() { Title = "Счёт", Width = 70, Cell = gm => { bool h = gm.Home == p.Team; return Ui.L($"{(h ? gm.Result.HomeGoals : gm.Result.AwayGoals)}:{(h ? gm.Result.AwayGoals : gm.Result.HomeGoals)}", 13); } },
-                new() { Title = p.IsGoalie ? "Сейвы" : "Г+П", Width = 70, Cell = gm =>
-                {
-                    var r = gm.Result;
-                    if (p.IsGoalie)
-                    {
-                        bool h = gm.Home == p.Team;
-                        if ((h ? r.HomeGoalie : r.AwayGoalie) != p.Id) return Ui.L("не играл", 12, Ui.Dim);
-                        int sh = h ? r.AwayShots : r.HomeShots, ga = h ? r.AwayGoals : r.HomeGoals;
-                        return Ui.L($"{sh - ga}/{sh}", 13);
-                    }
-                    int g1 = r.Goals.Count(e => e.Scorer == p.Id && e.Kind != "so"), a1 = r.Goals.Count(e => e.A1 == p.Id || e.A2 == p.Id);
-                    return Ui.L($"{g1}+{a1}", 13, g1 + a1 > 0 ? Ui.Text : Ui.Dim, g1 + a1 > 0 ? Ui.Bold : null);
-                } },
-            }, games, gm => Main.I.ShowMatch(gm));
-            v.AddChild(Widget.Make("Последние матчи в HM27", gg.Root, null, null, 0));
-        }
-    }
-
-    static string Capital(string s) => string.IsNullOrEmpty(s) ? s : char.ToUpper(s[0]) + s[1..];
-    static string Born(string iso) => DateOnly.TryParse(iso, out var d) ? $"{d.Day:00}.{d.Month:00}.{d.Year}" : "";
-}
-
-// =====================================================================================================
 /// <summary>Входящие: список писем слева, письмо справа.</summary>
 public partial class InboxPage : Control
 {
@@ -546,4 +379,46 @@ public partial class InboxPage : Control
             _view.AddChild(Ui.H(0, Ui.B(text, () => P.OpenLink(link), true, 13)));
         }
     }
+}
+
+// =====================================================================================================
+/// <summary>Медицинский центр: лазарет клуба и травмы ключевых игроков лиги.</summary>
+public partial class MedicalPage : Control
+{
+    Career C => P.C;
+    public MedicalPage() { SizeFlagsHorizontal = SizeFlags.ExpandFill; SizeFlagsVertical = SizeFlags.ExpandFill; }
+
+    public override void _Ready()
+    {
+        var v = Ui.V(12);
+        var page = P.Page(v);
+        page.SetAnchorsPreset(LayoutPreset.FullRect);
+        AddChild(page);
+        var mine = Active().Where(x => x.p.Team == C.UserTeam).ToList();
+        v.AddChild(Widget.Make($"Лазарет клуба · {mine.Count}", Table(mine, false), null, null, 0));
+        var league = Active().Where(x => x.p.Team != C.UserTeam && x.p.Ovr >= 60).OrderByDescending(x => x.p.Ovr).Take(30).ToList();
+        v.AddChild(Widget.Make("Травмы ключевых игроков лиги", Table(league, true), null, null, 0));
+        var season = C.Injuries.Where(i => C.Data.PlayerById[i.Id].Team == C.UserTeam).ToList();
+        v.AddChild(Ui.L($"За сезон у клуба {season.Count} {Ui.Plural(season.Count, "травма", "травмы", "травм")}. Частота и длительность травм — по средним НХЛ; чаще травмируются игроки силового стиля.", 12, Ui.Dim));
+    }
+
+    List<(PlayerData p, Injury i)> Active() =>
+        C.Injured.Distinct().Select(id => (p: C.Data.PlayerById[id], i: InjuryModel.Active(C, id))).Where(x => x.i != null).OrderBy(x => x.i.Until).ToList();
+
+    Control Table(List<(PlayerData p, Injury i)> rows, bool club)
+    {
+        var cols = new List<Col<(PlayerData p, Injury i)>>
+        {
+            new() { Title = "Игрок", Width = 0, Align = HorizontalAlignment.Left, Cell = x => Ui.H(6, Ui.Icon("cross", 13, Ui.Loss), Ui.L(x.p.NameRu, 13)), Sort = x => x.p.LastRu, Desc = false },
+        };
+        if (club) cols.Add(new() { Title = "Клуб", Width = 150, Align = HorizontalAlignment.Left, Cell = x => P.Team(x.p.Team), Sort = x => x.p.Team, Desc = false });
+        cols.Add(new() { Title = "Поз", Width = 40, Cell = x => Ui.L(Ui.PosRu(x.p.Pos), 12, Ui.Muted) });
+        cols.Add(new() { Title = "Способности", Width = 90, Cell = x => Ui.Stars(x.p.Ovr, 12), Sort = x => x.p.Ovr });
+        cols.Add(new() { Title = "Травма", Width = 230, Align = HorizontalAlignment.Left, Cell = x => Ui.L(Cap(x.i.Kind), 12, Ui.Text) });
+        cols.Add(new() { Title = "С", Width = 70, Cell = x => Ui.L(x.i.From > C.Today.AddDays(-400) ? Ui.DateShort(x.i.From) : "—", 12, Ui.Muted) });
+        cols.Add(new() { Title = "Вернётся", Width = 140, Cell = x => { int d = x.i.Until.DayNumber - C.Today.DayNumber + 1; return Ui.L($"{Ui.DateShort(x.i.Until.AddDays(1))} ({d} {Ui.Plural(d, "день", "дня", "дней")})", 12, d <= 3 ? Ui.Win : d <= 14 ? Ui.Otl : Ui.Loss); }, Sort = x => x.i.Until.DayNumber, Desc = false });
+        return new Grid<(PlayerData p, Injury i)>(cols, rows, x => Shell.I.Go("player", null, x.p.Id.ToString())).Root;
+    }
+
+    static string Cap(string s) => string.IsNullOrEmpty(s) ? s : char.ToUpper(s[0]) + s[1..];
 }

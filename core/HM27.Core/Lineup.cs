@@ -192,6 +192,23 @@ public sealed class Lineup
         bool OnTeam(int id) => id != 0 && data.PlayerById.TryGetValue(id, out var p) && p.Team == abbr;
     }
 
+    /// <summary>Поменять местами только в звеньях равных составов и в воротах (спецбригады не трогаем).</summary>
+    public void SwapEven(int a, int b)
+    {
+        int Map(int x) => x == a ? b : x == b ? a : x;
+        foreach (var line in F) for (int s = 0; s < line.Length; s++) line[s] = Map(line[s]);
+        foreach (var pair in D) for (int s = 0; s < pair.Length; s++) pair[s] = Map(pair[s]);
+        G1 = Map(G1); G2 = Map(G2);
+    }
+
+    /// <summary>Поставить игрока в спецбригаду на место slot (если он уже в ней — поменять местами).</summary>
+    public static void SetUnit(int[] unit, int slot, int id)
+    {
+        int at = Array.IndexOf(unit, id);
+        if (at >= 0) unit[at] = unit[slot];
+        unit[slot] = id;
+    }
+
     /// <summary>Поменять местами двух игроков (в составе или игрока состава с запасным).</summary>
     public void Swap(int a, int b)
     {

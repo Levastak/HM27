@@ -150,7 +150,9 @@ public static class Widget
         }
         head.AddChild(hh);
         v.AddChild(head);
-        v.AddChild(pad > 0 ? Ui.Margin(content, pad, pad - 2, pad, pad) : content);
+        var body = pad > 0 ? Ui.Margin(content, pad, pad - 2, pad, pad) : content;
+        if ((content.SizeFlagsVertical & Control.SizeFlags.Expand) != 0) { body.SizeFlagsVertical = Control.SizeFlags.ExpandFill; v.SizeFlagsVertical = Control.SizeFlags.ExpandFill; }
+        v.AddChild(body);
         return p;
     }
 }

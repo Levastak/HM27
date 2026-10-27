@@ -24,14 +24,14 @@ public partial class Shell : Control
     static readonly (string key, string icon, string name)[] Menu =
     {
         ("home", "house", "Главная"), ("inbox", "inbox", "Входящие"), ("squad", "users", "Состав"), ("lines", "list-ordered", "Звенья"),
-        ("schedule", "calendar-days", "Расписание"), ("comp", "trophy", "Соревнования"),
+        ("schedule", "calendar-days", "Расписание"), ("comp", "trophy", "Соревнования"), ("club", "landmark", "Клуб"), ("medical", "cross", "Лазарет"),
     };
 
     static readonly Dictionary<string, (string key, string name)[]> Subs = new()
     {
         ["squad"] = new[] { ("players", "Игроки"), ("stats", "Статистика") },
         ["comp"] = new[] { ("table", "Таблица"), ("stats", "Статистика лиги"), ("playoffs", "Плей-офф") },
-        ["club"] = new[] { ("players", "Игроки"), ("schedule", "Расписание") },
+        ["club"] = new[] { ("overview", "Обзор"), ("players", "Игроки"), ("schedule", "Расписание") },
     };
 
     public Shell(string page, string sub = null, string arg = null) { _cur = new Nav(page, sub, arg); }
@@ -111,7 +111,8 @@ public partial class Shell : Control
             "schedule" => Embedded("calendar"),
             "comp" => Embedded(_cur.Sub == "stats" ? "stats" : _cur.Sub),
             "player" => new PlayerPage(int.Parse(_cur.Arg)),
-            "club" => _cur.Sub == "schedule" ? Embedded("calendar:" + _cur.Arg) : new SquadPage(_cur.Arg),
+            "club" => _cur.Sub == "schedule" ? Embedded("calendar:" + (_cur.Arg ?? C.UserTeam)) : _cur.Sub == "players" ? new SquadPage(_cur.Arg ?? C.UserTeam) : new ClubPage(_cur.Arg ?? C.UserTeam),
+            "medical" => new MedicalPage(),
             _ => new HomePage(),
         };
         _page.AddChild(view);
@@ -122,7 +123,7 @@ public partial class Shell : Control
     // ------------------------------------------------------------------ шапка
     void BuildHeader()
     {
-        var t = C.Team(_cur.Page == "club" ? _cur.Arg : _cur.Page == "player" ? C.Data.PlayerById[int.Parse(_cur.Arg)].Team : C.UserTeam);
+        var t = C.Team(_cur.Page == "club" ? (_cur.Arg ?? C.UserTeam) : _cur.Page == "player" ? C.Data.PlayerById[int.Parse(_cur.Arg)].Team : C.UserTeam);
         var c1 = new Color(t.Colors[0]);
         if (c1.Luminance < 0.05f) c1 = c1.Lightened(0.12f);
         var c2 = new Color(t.Colors.Count > 1 ? t.Colors[1] : t.Colors[0]);
@@ -150,7 +151,16 @@ public partial class Shell : Control
     (string, string) Titles(TeamData t)
     {
         var row = C.Table[t.Abbr];
-        string rec = $"{t.Name} · {row.W}-{row.L}-{row.Otl}, {row.Pts} {Ui.Plural(row.Pts, "очко", "очка", "очков")}";
+        int dplace = C.Sorted(x => x.Division == t.Division).FindIndex(r => r.Team == t.Abbr) + 1;
+        string divGen = t.Division switch { "Центральный" => "Центральном", "Тихоокеанский" => "Тихоокеанском", "Атлантический" => "Атлантическом", "Столичный" => "Столичном", _ => t.Division };
+        var nx = C.NextGame(t.Abbr);
+        string next = "";
+        if (nx != null)
+        {
+            int dd = nx.Date.DayNumber - C.Today.DayNumber;
+            next = $" · След. матч: {C.Team(nx.Home == t.Abbr ? nx.Away : nx.Home).City} ({(nx.Home == t.Abbr ? "Д" : "Г")}) {(dd == 0 ? "сегодня" : dd == 1 ? "завтра" : $"через {dd} {Ui.Plural(dd, "день", "дня", "дней")}")}";
+        }
+        string rec = row.Gp == 0 ? $"{t.Name}{next}" : $"{dplace}-е в {divGen} · {row.W}-{row.L}-{row.Otl}, {row.Pts} {Ui.Plural(row.Pts, "очко", "очка", "очков")}{next}";
         return _cur.Page switch
         {
             "inbox" => ("Входящие", rec),
@@ -159,7 +169,8 @@ public partial class Shell : Control
             "schedule" => ("Расписание", rec),
             "comp" => ("Соревнования", "НХЛ · сезон 2026-27"),
             "player" => (C.Data.PlayerById[int.Parse(_cur.Arg)].NameRu, rec),
-            "club" => (t.Name, $"{t.Division} дивизион · {row.W}-{row.L}-{row.Otl}, {row.Pts} {Ui.Plural(row.Pts, "очко", "очка", "очков")}"),
+            "club" => (t.Name, rec),
+            "medical" => ("Медицинский центр", rec),
             _ => ("Главная", rec),
         };
     }
@@ -268,7 +279,7 @@ public partial class Shell : Control
         Ui.Clear(_sideBox);
         foreach (var (key, icon, name) in Menu)
         {
-            bool on = _cur.Page == key;
+            bool on = _cur.Page == key && (key != "club" || _cur.Arg == null || _cur.Arg == C.UserTeam);
             var b = new Button { FocusMode = FocusModeEnum.None, CustomMinimumSize = new Vector2(0, 38), Flat = true, MouseDefaultCursorShape = CursorShape.PointingHand };
             var st = Ui.Box(on ? new Color(1, 1, 1, 0.07f) : new Color(0, 0, 0, 0), 4, null, 10);
             if (on) { st.BorderColor = Ui.AccentBright; st.BorderWidthLeft = 3; }
@@ -278,11 +289,13 @@ public partial class Shell : Control
             var h = Ui.H(12, Ui.Icon(icon, 18, on ? Ui.Text : Ui.Muted), Ui.Expand(Ui.L(name, 14, on ? Ui.Text : Ui.Muted, on ? Ui.Semi : Ui.Medium)));
             if (key == "inbox" && C.Unread > 0)
                 h.AddChild(Ui.Card(Ui.L(C.Unread.ToString(), 11, Colors.White, Ui.Bold), new Color("D9534F"), 6));
+            int injN = key == "medical" ? C.Injured.Count(id => C.Data.PlayerById[id].Team == C.UserTeam) : 0;
+            if (injN > 0) h.AddChild(Ui.Card(Ui.L(injN.ToString(), 11, Colors.White, Ui.Bold), new Color("7A3B3B"), 6));
             h.MouseFilter = MouseFilterEnum.Ignore;
             foreach (var ch in h.GetChildren()) if (ch is Control cc) cc.MouseFilter = MouseFilterEnum.Ignore;
             h.SetAnchorsPreset(LayoutPreset.FullRect); h.OffsetLeft = 12; h.OffsetRight = -8;
             b.AddChild(h);
-            b.Pressed += () => Go(key);
+            b.Pressed += () => Go(key, null, key == "club" ? C.UserTeam : null);
             _sideBox.AddChild(b);
         }
         _sideBox.AddChild(Ui.Spacer());

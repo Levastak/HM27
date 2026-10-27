@@ -7,42 +7,50 @@ using HM27.Core;
 namespace HM27.UI;
 
 /// <summary>
-/// Матч: перед матчем — шансы по модели, вратари, лидеры; во время — табло с часами и лентой голов
-/// (исход уже посчитан движком, часы показывают его ход); после — итог, по периодам, три звезды.
+/// Матч в духе FM: до матча — шансы, форма, вратари, лидеры, травмы; во время — табло с часами,
+/// трансляция, график давления, живая статистика; после — итог, оценки игроков, три звезды.
+/// Исход посчитан движком заранее; трансляция показывает его ход (хроника согласована со счётом).
 /// </summary>
 public partial class MatchScreen : Control
 {
     readonly ScheduledGame _g;
     Career C => Main.I.Career;
-    bool _fresh;           // матч сыгран только что (а не открыт из истории)
-    double _clock = -1;    // игровые секунды во время показа
-    double _speed = 120;   // игровых секунд в секунду
+    bool _fresh;
+    double _clock = -1;
+    double _speed = 60;
+    int _shown;
+    bool _keyOnly;
+    List<MatchEvent> _ev;
     Label _scoreL, _clockL;
     VBoxContainer _feed;
-    int _shown;
-    Control _actions;
+    MomentumChart _chart;
+    Dictionary<string, (Label a, Label h)> _stat;
+    VBoxContainer _lineupBox;
 
     public MatchScreen(ScheduledGame g) { _g = g; }
     public MatchScreen() { }
+
+    TeamData Home => C.Team(_g.Home);
+    TeamData Away => C.Team(_g.Away);
 
     public override void _Ready()
     {
         if (_g.Played) ShowResult(); else ShowPreview();
     }
 
-    TeamData Home => C.Team(_g.Home);
-    TeamData Away => C.Team(_g.Away);
-
-    Control Frame(out VBoxContainer body)
+    // ------------------------------------------------------------------ каркас
+    VBoxContainer Frame()
     {
         Ui.Clear(this);
-        body = Ui.V(18);
-        var m = Ui.Margin(Ui.Scroll(body), 60, 30, 60, 30);
-        m.SetAnchorsPreset(LayoutPreset.FullRect);
-        AddChild(m);
-        string title = _g.Playoff ? $"Плей-офф · {SeriesTitle()}" : "Регулярный чемпионат";
-        body.AddChild(Ui.H(12, Ui.B("← К клубу", Back), Ui.L($"{title} · {Ui.Date(_g.Date)}", 15, Ui.Muted)));
-        return m;
+        var root = Ui.V(0);
+        root.SetAnchorsPreset(LayoutPreset.FullRect);
+        AddChild(root);
+        root.AddChild(ScoreBar());
+        var body = Ui.V(12);
+        var m = Ui.Margin(body, 16, 12, 16, 12);
+        m.SizeFlagsVertical = SizeFlags.ExpandFill;
+        root.AddChild(m);
+        return body;
     }
 
     string SeriesTitle()
@@ -50,7 +58,7 @@ public partial class MatchScreen : Control
         var s = C.Bracket.FirstOrDefault(x => x.Games.Contains(_g.Id));
         if (s == null) return "";
         int n = s.Games.IndexOf(_g.Id) + 1;
-        return $"матч {n} · серия {C.Team(s.High).City} — {C.Team(s.Low).City} {s.WinsHigh}:{s.WinsLow}";
+        return $"Плей-офф · матч {n} · серия {C.Team(s.High).City} — {C.Team(s.Low).City} {s.WinsHigh}:{s.WinsLow}";
     }
 
     void Back()
@@ -59,65 +67,116 @@ public partial class MatchScreen : Control
         Main.I.ShowHub();
     }
 
-    // ------------------------------------------------------------------ перед матчем
+    /// <summary>Табло сверху, как в FM: цвета формы, названия, счёт, часы.</summary>
+    Control ScoreBar()
+    {
+        var bar = new PanelContainer();
+        var sb = new StyleBoxFlat { BgColor = new Color("0B1017"), BorderColor = Ui.Line, BorderWidthBottom = 1 };
+        sb.ContentMarginLeft = sb.ContentMarginRight = 14; sb.ContentMarginTop = sb.ContentMarginBottom = 8;
+        bar.AddThemeStyleboxOverride("panel", sb);
+        var h = Ui.H(12);
+        bar.AddChild(h);
+        h.AddChild(Ui.B("← К клубу", Back).Also(b => b.AddThemeFontSizeOverride("font_size", 12)));
+        h.AddChild(Ui.L(_g.Playoff ? SeriesTitle() : $"Регулярный чемпионат · {Ui.Date(_g.Date)}", 12, Ui.Muted));
+        h.AddChild(Ui.Spacer());
+        h.AddChild(TeamPlate(Away, false));
+        var mid = Ui.V(0);
+        mid.CustomMinimumSize = new Vector2(170, 0);
+        _scoreL = Ui.L(_g.Played ? $"{_g.Result.AwayGoals} : {_g.Result.HomeGoals}" : "– : –", 34, Ui.Text, Ui.Black, HorizontalAlignment.Center);
+        _clockL = Ui.L(_g.Played ? EndText(_g.Result) : "до матча", 12, Ui.Gold, Ui.Semi, HorizontalAlignment.Center);
+        mid.AddChild(_scoreL); mid.AddChild(_clockL);
+        h.AddChild(mid);
+        h.AddChild(TeamPlate(Home, true));
+        h.AddChild(Ui.Spacer());
+        h.AddChild(new Control { CustomMinimumSize = new Vector2(150, 0) });
+        h.Alignment = BoxContainer.AlignmentMode.Center;
+        return bar;
+    }
+
+    static string EndText(MatchResult r) => r.End == "REG" ? "Матч окончен" : r.End == "OT" ? "Матч окончен · ОТ" : "Матч окончен · буллиты";
+
+    Control TeamPlate(TeamData t, bool home)
+    {
+        var c1 = new Color(t.Colors[0]); var c2 = new Color(t.Colors.Count > 1 ? t.Colors[1] : t.Colors[0]);
+        var kit = Ui.V(0, new ColorRect { Color = c1.Luminance < 0.06f ? c1.Lightened(0.2f) : c1, CustomMinimumSize = new Vector2(8, 22) }, new ColorRect { Color = c2, CustomMinimumSize = new Vector2(8, 10) });
+        kit.AddThemeConstantOverride("separation", 0);
+        var name = Ui.V(0, Ui.L(t.City.ToUpperInvariant(), 16, Ui.Text, Ui.Black, home ? HorizontalAlignment.Left : HorizontalAlignment.Right),
+            Ui.L(t.Name.Replace(t.City, "").Trim(), 11, Ui.Muted, null, home ? HorizontalAlignment.Left : HorizontalAlignment.Right));
+        name.CustomMinimumSize = new Vector2(170, 0);
+        var badge = new TeamBadge(t, 40) { SizeFlagsVertical = SizeFlags.ShrinkCenter };
+        kit.SizeFlagsVertical = SizeFlags.ShrinkCenter; name.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+        return home ? Ui.H(8, kit, badge, name) : Ui.H(8, name, badge, kit);
+    }
+
+    // ------------------------------------------------------------------ до матча
     void ShowPreview()
     {
-        Frame(out var body);
+        var body = Frame();
         var o = C.Preview(_g);
         var hs = C.Side(_g.Home, _g.Date); var aws = C.Side(_g.Away, _g.Date);
-
-        var row = Ui.H(30);
+        var row = Ui.H(12);
         row.AddChild(Ui.Expand(TeamColumn(Away, aws, false)));
-        var mid = Ui.V(10);
-        mid.CustomMinimumSize = new Vector2(380, 0);
-        mid.AddChild(Ui.L("ШАНСЫ ПО МОДЕЛИ", 12, Ui.Muted, Ui.Semi, HorizontalAlignment.Center));
-        mid.AddChild(Ui.H(10, Ui.L(Ui.Pct(1 - o.PHome), 34, Ui.Text, Ui.Black), Ui.Spacer(), Ui.L(Ui.Pct(o.PHome), 34, Ui.Text, Ui.Black)));
-        mid.AddChild(SplitBar(1 - o.PHome, new Color(Away.Colors[0]), new Color(Home.Colors[0])));
-        mid.AddChild(Ui.L($"Ожидаемые голы: {o.LamAway:0.0} — {o.LamHome:0.0}", 14, Ui.Muted, null, HorizontalAlignment.Center));
-        mid.AddChild(Ui.L($"Ничья в основное время: {Ui.Pct(o.PTie)}", 14, Ui.Muted, null, HorizontalAlignment.Center));
-        if (hs.B2B || aws.B2B)
-            mid.AddChild(Ui.L($"Второй матч за два дня: {(aws.B2B ? Away.City : "")}{(aws.B2B && hs.B2B ? ", " : "")}{(hs.B2B ? Home.City : "")}", 13, Ui.Otl, null, HorizontalAlignment.Center));
-        row.AddChild(mid);
-        row.AddChild(Ui.Expand(TeamColumn(Home, hs, true)));
-        body.AddChild(Ui.Card(row, Ui.Panel, 26));
-
-        var actions = Ui.H(12);
-        actions.Alignment = BoxContainer.AlignmentMode.Center;
+        var mid = Ui.V(12); mid.CustomMinimumSize = new Vector2(420, 0);
+        var chances = Ui.V(8);
+        chances.AddChild(Ui.H(10, Ui.L(Ui.Pct(1 - o.PHome), 34, Ui.Text, Ui.Black), Ui.Spacer(), Ui.L(Ui.Pct(o.PHome), 34, Ui.Text, Ui.Black)));
+        chances.AddChild(SplitBar(1 - o.PHome, new Color(Away.Colors[0]), new Color(Home.Colors[0])));
+        void Line(string k, string v) => chances.AddChild(Ui.H(8, Ui.Expand(Ui.L(k, 12, Ui.Muted)), Ui.L(v, 13, Ui.Text, Ui.Semi)));
+        Line("Ожидаемые голы", $"{o.LamAway:0.0} — {o.LamHome:0.0}");
+        Line("Ничья в основное время", Ui.Pct(o.PTie));
+        Line("Победа хозяев в основное время", Ui.Pct(o.PHomeReg));
+        Line("Победа гостей в основное время", Ui.Pct(o.PAwayReg));
+        if (hs.B2B || aws.B2B) chances.AddChild(Ui.L($"Второй матч за два дня: {string.Join(", ", new[] { aws.B2B ? Away.City : null, hs.B2B ? Home.City : null }.Where(x => x != null))}", 12, Ui.Otl));
+        mid.AddChild(Widget.Make("Шансы по модели", chances));
         bool mine = _g.Home == C.UserTeam || _g.Away == C.UserTeam;
         if (mine)
         {
-            actions.AddChild(Ui.B("Состав и звенья", () => Main.I.ShowHub("lines")));
-            actions.AddChild(Ui.B("Арена в 3Д", () => Main.I.ShowArena(_g)));
+            var my = C.Lineups[C.UserTeam];
+            var tac = Ui.V(4,
+                Ui.H(8, Ui.Expand(Ui.L("Темп игры", 12, Ui.Muted)), Ui.L(my.Tempo switch { -1 => "Закрытый", 1 => "Открытый", _ => "Обычный" }, 13, Ui.Text, Ui.Semi)),
+                Ui.H(8, Ui.Expand(Ui.L("Снятие вратаря", 12, Ui.Muted)), Ui.L(my.EarlyPull ? "Раньше обычного" : "Как обычно", 13, Ui.Text, Ui.Semi)),
+                Ui.H(8, Ui.Expand(Ui.L("Вратарь на матч", 12, Ui.Muted)), Ui.L(C.Short((_g.Home == C.UserTeam ? hs : aws).Goalie), 13, Ui.Text, Ui.Semi)));
+            mid.AddChild(Widget.Make("Ваш план на матч", tac, "Звенья →", () => Main.I.ShowHub("lines")));
             var go = Ui.B("Начать матч", StartMatch, true, 18);
-            go.CustomMinimumSize = new Vector2(260, 52);
-            actions.AddChild(go);
+            go.CustomMinimumSize = new Vector2(0, 52);
+            mid.AddChild(go);
+            var quick = Ui.B("Сразу результат", PlayInstant);
+            quick.AddThemeFontSizeOverride("font_size", 13);
+            mid.AddChild(quick);
+            mid.AddChild(Ui.B("Арена в 3Д", () => Main.I.ShowArena(_g)).Also(b => b.AddThemeFontSizeOverride("font_size", 13)));
         }
-        body.AddChild(actions);
-        body.AddChild(Ui.L("Исход считает движок на модели NHL-STATS.RU: сила клубов по xG, ваши звенья и минуты, вратари, усталость. Матч в 3Д появится в следующих версиях.", 13, Ui.Dim, null, HorizontalAlignment.Center).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart));
+        row.AddChild(mid);
+        row.AddChild(Ui.Expand(TeamColumn(Home, hs, true)));
+        body.AddChild(Ui.Scroll(row));
     }
 
     Control TeamColumn(TeamData t, MatchSide side, bool home)
     {
-        var v = Ui.V(10);
-        v.Alignment = BoxContainer.AlignmentMode.Center;
-        var badge = new TeamBadge(t, 120) { SizeFlagsHorizontal = SizeFlags.ShrinkCenter };
-        v.AddChild(badge);
-        v.AddChild(Ui.L(t.Name, 24, Ui.Text, Ui.Bold, HorizontalAlignment.Center));
+        var v = Ui.V(12);
         var r = C.Table[t.Abbr];
-        v.AddChild(Ui.L($"{(home ? "Хозяева" : "Гости")} · {r.W}-{r.L}-{r.Otl} · {r.Pts} {Ui.Plural(r.Pts, "очко", "очка", "очков")}", 14, Ui.Muted, null, HorizontalAlignment.Center));
+        var info = Ui.V(6);
+        info.AddChild(Ui.L($"{(home ? "Хозяева" : "Гости")} · {r.W}-{r.L}-{r.Otl}, {r.Pts} {Ui.Plural(r.Pts, "очко", "очка", "очков")} · {C.Sorted(x => x.Conference == t.Conference).FindIndex(x => x.Team == t.Abbr) + 1}-е в конференции", 12, Ui.Muted));
+        info.AddChild(Ui.H(8, Ui.L("Форма", 12, Ui.Muted), P.Form(t.Abbr, 5, 18)));
         var g = C.Data.PlayerById.GetValueOrDefault(side.Goalie);
-        if (g != null) v.AddChild(Ui.H(8, Ui.Spacer(), Ui.L($"Вратарь: {g.NameRu}", 14), Ui.Rating(g.Ovr, 12, 30), Ui.Spacer()));
-        var top = side.Lineup.Skaters.Select(id => C.Data.PlayerById[id]).OrderByDescending(p => p.Ovr).Take(3);
-        v.AddChild(Ui.L("Лидеры: " + string.Join(", ", top.Select(p => p.LastRu)), 13, Ui.Muted, null, HorizontalAlignment.Center));
+        if (g != null) info.AddChild(Ui.H(8, Ui.L("Вратарь:", 12, Ui.Muted), Ui.L(g.NameRu, 13, Ui.Text, Ui.Semi), Ui.Stars(g.Ovr, 11)));
+        v.AddChild(Widget.Make(t.Name, info));
+        var l = side.Lineup;
+        var lines = Ui.V(2);
+        for (int i = 0; i < Math.Min(2, l.F.Count); i++)
+            lines.AddChild(Ui.L($"{i + 1}: " + string.Join(" — ", l.F[i].Select(id => C.Short(id))), 12, Ui.Text));
+        for (int i = 0; i < Math.Min(2, l.D.Count); i++)
+            lines.AddChild(Ui.L($"З{i + 1}: " + string.Join(" — ", l.D[i].Select(id => C.Short(id))), 12, Ui.Muted));
+        v.AddChild(Widget.Make("Звенья", lines));
+        var inj = C.Injured.Where(id => C.Data.PlayerById[id].Team == t.Abbr).Select(id => C.Data.PlayerById[id]).OrderByDescending(p => p.Ovr).Take(5).ToList();
+        v.AddChild(Widget.Make("Не сыграют", inj.Count == 0 ? Ui.L("Все здоровы", 12, Ui.Muted) : Ui.V(2, inj.Select(p => (Control)Ui.H(6, Ui.Icon("cross", 12, Ui.Loss), Ui.L(p.NameRu, 12), Ui.Stars(p.Ovr, 10))).ToArray())));
         return v;
     }
 
     static Control SplitBar(double left, Color a, Color b)
     {
-        var h = new HBoxContainer { CustomMinimumSize = new Vector2(360, 10) };
+        var h = new HBoxContainer { CustomMinimumSize = new Vector2(380, 10) };
         h.AddThemeConstantOverride("separation", 2);
-        h.AddChild(new ColorRect { Color = a.Luminance < 0.08f ? a.Lightened(0.3f) : a, CustomMinimumSize = new Vector2((float)(356 * left), 10) });
-        h.AddChild(new ColorRect { Color = b.Luminance < 0.08f ? b.Lightened(0.3f) : b, CustomMinimumSize = new Vector2((float)(356 * (1 - left)), 10) });
+        h.AddChild(new ColorRect { Color = a.Luminance < 0.08f ? a.Lightened(0.3f) : a, CustomMinimumSize = new Vector2((float)(376 * left), 10) });
+        h.AddChild(new ColorRect { Color = b.Luminance < 0.08f ? b.Lightened(0.3f) : b, CustomMinimumSize = new Vector2((float)(376 * (1 - left)), 10) });
         return h;
     }
 
@@ -126,23 +185,10 @@ public partial class MatchScreen : Control
     {
         C.Play(_g);
         _fresh = true;
-        Frame(out var body);
-        body.AddChild(Scoreboard(0, 0, "1-й период · 00:00"));
-        var ctl = Ui.H(10);
-        ctl.Alignment = BoxContainer.AlignmentMode.Center;
-        ctl.AddChild(Ui.L("Скорость:", 13, Ui.Muted));
-        foreach (var (n, sp) in new[] { ("×1", 60.0), ("×2", 120.0), ("×4", 240.0) })
-            ctl.AddChild(Ui.B(n, () => _speed = sp));
-        ctl.AddChild(Ui.B("Сразу к итогу", PlayInstant));
-        _actions = ctl;
-        body.AddChild(ctl);
-        _feed = Ui.V(6);
-        body.AddChild(Ui.Card(_feed, Ui.Panel, 18));
-        _feed.AddChild(Ui.L("Вбрасывание!", 15, Ui.Muted));
-        _clock = 0; _shown = 0;
+        BuildLive();
+        _clock = 0;
     }
 
-    /// <summary>Для автоматических снимков: начать матч и перемотать часы.</summary>
     public void StartLive(double atSec) { StartMatch(); _clock = atSec; }
 
     public void PlayInstant()
@@ -152,147 +198,346 @@ public partial class MatchScreen : Control
         ShowResult();
     }
 
-    public override void _Process(double delta)
+    List<MatchEvent> Events()
     {
-        if (_clock < 0 || _g.Result == null) return;
         var r = _g.Result;
-        _clock += delta * _speed;
-        // голы до текущего момента
-        while (_shown < r.Goals.Count && GoalTime(r.Goals[_shown]) <= _clock)
-        {
-            var e = r.Goals[_shown++];
-            _feed.AddChild(GoalRow(e));
-        }
-        int hg = r.Goals.Take(_shown).Count(e => e.Team == _g.Home), ag = r.Goals.Take(_shown).Count(e => e.Team == _g.Away);
-        int t = (int)Math.Min(_clock, 3600);
-        _scoreL.Text = $"{ag} : {hg}";
-        _clockL.Text = _clock < 3600 ? $"{t / 1200 + 1}-й период · {(t % 1200) / 60:00}:{t % 60:00}" : r.End == "REG" ? "Матч окончен" : r.End == "OT" ? "Овертайм" : "Буллиты";
-        double end = r.Goals.Count > 0 ? Math.Max(3600, GoalTime(r.Goals[^1])) : 3600;
-        if (_clock >= end + 60) { _clock = -1; ShowResult(); }
+        if (r.Events.Count > 0) return r.Events;
+        // чужой матч без хроники: только голы
+        return r.Goals.Where(e => e.Kind != "so").Select(e => new MatchEvent { T = (e.Period - 1) * 1200 + e.Sec, Team = e.Team, Kind = "goal", P1 = e.Scorer, P2 = e.A1, Note = e.Kind }).ToList();
     }
 
-    static double GoalTime(GoalEvent e) => e.Kind == "so" ? 3600 + 400 : (e.Period - 1) * 1200 + e.Sec;
-
-    Control Scoreboard(int ag, int hg, string clock)
+    void BuildLive()
     {
-        var h = Ui.H(26);
-        h.Alignment = BoxContainer.AlignmentMode.Center;
-        h.AddChild(Ui.V(6, new TeamBadge(Away, 96) { SizeFlagsHorizontal = SizeFlags.ShrinkCenter }, Ui.L(Away.Name, 18, Ui.Text, Ui.Semi, HorizontalAlignment.Center)).Also(x => x.CustomMinimumSize = new Vector2(300, 0)));
-        var mid = Ui.V(4);
-        _scoreL = Ui.L($"{ag} : {hg}", 72, Ui.Text, Ui.Black, HorizontalAlignment.Center);
-        _clockL = Ui.L(clock, 16, Ui.Muted, Ui.Semi, HorizontalAlignment.Center);
-        mid.AddChild(_scoreL); mid.AddChild(_clockL);
-        mid.CustomMinimumSize = new Vector2(280, 0);
-        h.AddChild(mid);
-        h.AddChild(Ui.V(6, new TeamBadge(Home, 96) { SizeFlagsHorizontal = SizeFlags.ShrinkCenter }, Ui.L(Home.Name, 18, Ui.Text, Ui.Semi, HorizontalAlignment.Center)).Also(x => x.CustomMinimumSize = new Vector2(300, 0)));
-        return Ui.Card(h, Ui.Panel2, 24);
+        _ev = Events();
+        _shown = 0;
+        var body = Frame();
+        _scoreL.Text = "0 : 0"; _clockL.Text = "1-й период · 00:00";
+        var row = Ui.Expand(Ui.H(12), true, true);
+        body.AddChild(row);
+        row.AddChild(StatsPanel());
+        var center = Ui.Expand(Ui.V(10), true, true);
+        _chart = new MomentumChart(_ev, _g, C) { CustomMinimumSize = new Vector2(0, 120) };
+        center.AddChild(Widget.Make("Давление (попытки бросков)", _chart, null, null, 8));
+        _feed = Ui.V(0);
+        var feedHead = Ui.H(8, Ui.L("Трансляция", 12, Ui.Muted, Ui.Bold), Ui.Spacer());
+        var filter = new Segmented(new[] { "Всё", "Ключевые моменты" }, _keyOnly ? 1 : 0, k => { _keyOnly = k == 1; RefillFeed(); });
+        feedHead.AddChild(filter);
+        var feedPanel = Widget.Make("Ход матча", Ui.V(8, feedHead, Ui.Expand(Ui.Scroll(_feed), true, true)).Also(x => x.SizeFlagsVertical = SizeFlags.ExpandFill), null, null, 10);
+        feedPanel.SizeFlagsVertical = SizeFlags.ExpandFill;
+        center.AddChild(feedPanel);
+        var ctl = Ui.H(8);
+        ctl.Alignment = BoxContainer.AlignmentMode.Center;
+        ctl.AddChild(Ui.L("Скорость:", 12, Ui.Muted));
+        foreach (var (n, sp) in new[] { ("×1", 30.0), ("×2", 60.0), ("×4", 120.0), ("×8", 300.0) })
+            ctl.AddChild(Ui.B(n, () => _speed = sp).Also(b => b.AddThemeFontSizeOverride("font_size", 12)));
+        ctl.AddChild(Ui.B("Сразу к итогу", PlayInstant).Also(b => b.AddThemeFontSizeOverride("font_size", 12)));
+        center.AddChild(ctl);
+        row.AddChild(center);
+        _lineupBox = Ui.V(2);
+        var right = Widget.Make("Отличились", Ui.Scroll(_lineupBox), null, null, 10);
+        right.CustomMinimumSize = new Vector2(280, 0);
+        row.AddChild(right);
+        AddFeed(new MatchEvent { T = 0, Kind = "start" });
+    }
+
+    Control StatsPanel()
+    {
+        _stat = new();
+        var g = new GridContainer { Columns = 3 };
+        g.AddThemeConstantOverride("h_separation", 10); g.AddThemeConstantOverride("v_separation", 6);
+        g.AddChild(new TeamBadge(Away, 22)); g.AddChild(Ui.L("", 12)); g.AddChild(new TeamBadge(Home, 22));
+        foreach (var k in new[] { "Броски в створ", "Попытки бросков", "Заблокировано", "Удаления", "Голы в большинстве", "Сейвы" })
+        {
+            var a = Ui.L("0", 15, Ui.Text, Ui.Bold, HorizontalAlignment.Center); var h = Ui.L("0", 15, Ui.Text, Ui.Bold, HorizontalAlignment.Center);
+            a.CustomMinimumSize = h.CustomMinimumSize = new Vector2(40, 0);
+            g.AddChild(a); g.AddChild(Ui.L(k, 12, Ui.Muted, null, HorizontalAlignment.Center).Also(l => l.CustomMinimumSize = new Vector2(140, 0))); g.AddChild(h);
+            _stat[k] = (a, h);
+        }
+        var w = Widget.Make("Статистика", g);
+        w.CustomMinimumSize = new Vector2(280, 0);
+        return Ui.V(12, w);
+    }
+
+    void UpdateStats(double t)
+    {
+        if (_stat == null) return;
+        var past = _ev.Where(e => e.T <= t).ToList();
+        int Count(string team, Func<MatchEvent, bool> f) => past.Count(e => e.Team == team && f(e));
+        foreach (var (team, idx) in new[] { (_g.Away, 0), (_g.Home, 1) })
+        {
+            string opp = team == _g.Home ? _g.Away : _g.Home;
+            var vals = new Dictionary<string, string>
+            {
+                ["Броски в створ"] = Count(team, e => e.Kind == "shot" || (e.Kind == "goal" && e.Note != "en")).ToString(),
+                ["Попытки бросков"] = Count(team, e => e.Kind is "shot" or "miss" or "block" or "goal").ToString(),
+                ["Заблокировано"] = Count(opp, e => e.Kind == "block").ToString(),
+                ["Удаления"] = Count(team, e => e.Kind == "pen").ToString(),
+                ["Голы в большинстве"] = $"{Count(team, e => e.Kind == "goal" && e.Note == "pp")}/{Count(opp, e => e.Kind == "pen")}",
+                ["Сейвы"] = Count(opp, e => e.Kind == "shot").ToString(),
+            };
+            foreach (var (k, v) in vals) (idx == 0 ? _stat[k].a : _stat[k].h).Text = v;
+        }
+    }
+
+    public override void _Process(double delta)
+    {
+        if (_clock < 0 || _g.Result == null || _ev == null) return;
+        var r = _g.Result;
+        _clock += delta * _speed;
+        while (_shown < _ev.Count && _ev[_shown].T <= _clock) AddFeed(_ev[_shown++]);
+        int hg = _ev.Take(_shown).Count(e => e.Kind == "goal" && e.Team == _g.Home), ag = _ev.Take(_shown).Count(e => e.Kind == "goal" && e.Team == _g.Away);
+        _scoreL.Text = $"{ag} : {hg}";
+        int t = (int)Math.Min(_clock, 3600);
+        _clockL.Text = _clock < 3600 ? $"{t / 1200 + 1}-й период · {(t % 1200) / 60:00}:{t % 60:00}" : r.End == "REG" ? "Конец матча" : r.End == "OT" ? "Овертайм" : "Буллиты";
+        _chart?.SetClock(_clock);
+        UpdateStats(_clock);
+        double end = Math.Max(3600, _ev.Count > 0 ? _ev[^1].T : 3600) + (r.End == "SO" ? 120 : 0);
+        if (_clock >= end + 30) { _clock = -1; ShowResult(); }
+    }
+
+    static bool IsKey(MatchEvent e) => e.Kind is "goal" or "pen" or "start" or "period";
+
+    void RefillFeed()
+    {
+        if (_feed == null) return;
+        Ui.Clear(_feed);
+        AddFeed(new MatchEvent { T = 0, Kind = "start" });
+        for (int i = 0; i < _shown; i++) AddFeed(_ev[i]);
+    }
+
+    int _lastPeriod = 1;
+    void AddFeed(MatchEvent e)
+    {
+        int period = e.T / 1200 + 1;
+        if (period > _lastPeriod && e.Kind != "start")
+        {
+            for (int p = _lastPeriod + 1; p <= period; p++) Put(new MatchEvent { T = (p - 1) * 1200, Kind = "period", Note = p <= 3 ? $"Начало {p}-го периода" : "Овертайм" });
+            _lastPeriod = period;
+        }
+        if (_keyOnly && !IsKey(e)) return;
+        Put(e);
+        if (e.Kind == "goal") RefreshScorers();
+    }
+
+    void Put(MatchEvent e)
+    {
+        var (text, color, font, icon) = Describe(e);
+        string clock = e.Kind == "start" ? "00:00" : $"{(e.T % 1200) / 60:00}:{e.T % 60:00}";
+        var h = Ui.H(10);
+        h.AddChild(Ui.L(clock, 12, Ui.Dim).Also(l => l.CustomMinimumSize = new Vector2(44, 0)));
+        h.AddChild(e.Team != null ? new TeamBadge(C.Team(e.Team), 18) : (Control)Ui.Icon(icon, 16, Ui.Muted));
+        h.AddChild(Ui.Expand(Ui.L(text, e.Kind == "goal" ? 14 : 13, color, font).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart)));
+        var row = new PanelContainer();
+        var sb = Ui.Box(e.Kind == "goal" ? new Color(Ui.Gold, 0.13f) : e.Kind == "period" || e.Kind == "start" ? new Color(1, 1, 1, 0.04f) : new Color(0, 0, 0, 0), 2, null, 8);
+        sb.ContentMarginTop = sb.ContentMarginBottom = e.Kind == "goal" ? 7 : 3;
+        if (e.Kind == "goal") { sb.BorderColor = Ui.Gold; sb.BorderWidthLeft = 3; }
+        row.AddThemeStyleboxOverride("panel", sb);
+        row.AddChild(h);
+        _feed.AddChild(row);
+        _feed.MoveChild(row, 0);   // свежее — сверху
+    }
+
+    (string, Color, FontFile, string) Describe(MatchEvent e)
+    {
+        string N(int id) => id != 0 && C.Data.PlayerById.TryGetValue(id, out var p) ? p.NameRu : "—";
+        string S(int id) => C.Short(id);
+        int h = e.T % 7;
+        switch (e.Kind)
+        {
+            case "start": return ($"Вбрасывание! «{Home.City}» принимает «{Away.City}».", Ui.Muted, Ui.Semi, "activity");
+            case "period": return (e.Note, Ui.Muted, Ui.Semi, "activity");
+            case "goal":
+                var gl = _g.Result.Goals.FirstOrDefault(x => x.Scorer == e.P1 && (x.Period - 1) * 1200 + x.Sec == e.T);
+                var assists = gl == null ? new List<string>() : new[] { gl.A1, gl.A2 }.Where(x => x != 0).Select(S).ToList();
+                string tag = e.Note switch { "pp" => " в большинстве", "sh" => " в меньшинстве", "en" => " в пустые ворота", "ev6" => " с шестым полевым!", _ => "" };
+                return ($"ГОЛ{tag}! {N(e.P1)}{(assists.Count > 0 ? $" ({string.Join(", ", assists)})" : " (без передач)")}", Colors.White, Ui.Bold, "trophy");
+            case "shot":
+                string[] sv = { "отражает", "ловит шайбу", "отбивает щитком", "спасает", "забирает шайбу", "в отличной позиции — сейв", "отбивает блином" };
+                return ($"{S(e.P1)}: {e.Note} — {S(e.P2)} {sv[h]}", Ui.Text, null, "");
+            case "miss": return ($"{S(e.P1)} бросает — {e.Note}", Ui.Muted, null, "");
+            case "block": return ($"{S(e.P1)} бросает — блокирует {S(e.P2)}", Ui.Muted, null, "");
+            case "pen": return ($"Удаление: {N(e.P1)}, 2 минуты ({e.Note})", Ui.Otl, Ui.Semi, "");
+            default: return (e.Kind, Ui.Muted, null, "");
+        }
+    }
+
+    void RefreshScorers()
+    {
+        if (_lineupBox == null) return;
+        Ui.Clear(_lineupBox);
+        var goals = _ev.Take(_shown).Where(e => e.Kind == "goal").ToList();
+        if (goals.Count == 0) { _lineupBox.AddChild(Ui.L("Пока без голов", 12, Ui.Muted)); return; }
+        foreach (var e in goals)
+            _lineupBox.AddChild(Ui.H(6, new TeamBadge(C.Team(e.Team), 16), Ui.L($"{(e.T % 1200) / 60:00}:{e.T % 60:00}", 11, Ui.Dim), Ui.L(C.Short(e.P1), 13, Ui.Text, Ui.Semi)));
+    }
+
+    // ------------------------------------------------------------------ итог
+    void ShowResult()
+    {
+        _ev = Events();
+        var body = Frame();
+        var r = _g.Result;
+        var row = Ui.Expand(Ui.H(12), true, true);
+        body.AddChild(row);
+
+        var left = Ui.V(12); left.CustomMinimumSize = new Vector2(300, 0);
+        var sp = StatsPanel();
+        left.AddChild(sp);
+        UpdateStats(1e9);
+        int periods = Math.Max(3, r.Goals.Where(e => e.Kind != "so").Select(e => e.Period).DefaultIfEmpty(3).Max());
+        var pg = new GridContainer { Columns = periods + 2 + (r.End == "SO" ? 1 : 0) };
+        pg.AddThemeConstantOverride("h_separation", 12);
+        pg.AddChild(Ui.L("", 11));
+        for (int p = 1; p <= periods; p++) pg.AddChild(Ui.L(p <= 3 ? $"{p}" : "ОТ", 11, Ui.Muted, Ui.Bold, HorizontalAlignment.Center));
+        if (r.End == "SO") pg.AddChild(Ui.L("Б", 11, Ui.Muted, Ui.Bold, HorizontalAlignment.Center));
+        pg.AddChild(Ui.L("И", 11, Ui.Muted, Ui.Bold, HorizontalAlignment.Center));
+        foreach (var t in new[] { _g.Away, _g.Home })
+        {
+            pg.AddChild(Ui.H(6, new TeamBadge(C.Team(t), 18), Ui.L(C.Team(t).City, 12)));
+            for (int p = 1; p <= periods; p++) pg.AddChild(Ui.L($"{r.Goals.Count(e => e.Team == t && e.Period == p && e.Kind != "so")}", 13, Ui.Text, null, HorizontalAlignment.Center));
+            if (r.End == "SO") pg.AddChild(Ui.L($"{r.Goals.Count(e => e.Team == t && e.Kind == "so")}", 13, Ui.Text, null, HorizontalAlignment.Center));
+            pg.AddChild(Ui.L($"{(t == _g.Home ? r.HomeGoals : r.AwayGoals)}", 14, Ui.Text, Ui.Bold, HorizontalAlignment.Center));
+        }
+        left.AddChild(Widget.Make("По периодам", pg));
+        left.AddChild(Widget.Make("Три звезды", Ui.V(6, Stars(r).ToArray())));
+        row.AddChild(Ui.Scroll(left).Also(s => s.CustomMinimumSize = new Vector2(310, 0)));
+
+        var center = Ui.Expand(Ui.V(10), true, true);
+        var chart = new MomentumChart(_ev, _g, C) { CustomMinimumSize = new Vector2(0, 120) };
+        chart.SetClock(1e9);
+        center.AddChild(Widget.Make("Давление (попытки бросков)", chart, null, null, 8));
+        var goals = Ui.V(6);
+        foreach (var e in r.Goals) goals.AddChild(GoalRow(e));
+        if (r.Goals.Count == 0) goals.AddChild(Ui.L("Голов не было", 13, Ui.Muted));
+        if (r.PullNote == "tie") goals.AddChild(Ui.L("Раннее снятие вратаря сработало: гол с шестым полевым.", 12, Ui.Win));
+        if (r.PullNote == "en") goals.AddChild(Ui.L("Вратаря сняли раньше — пропустили в пустые ворота.", 12, Ui.Muted));
+        center.AddChild(Widget.Make("Голы", goals));
+        var act = Ui.H(12);
+        act.Alignment = BoxContainer.AlignmentMode.Center;
+        var next = Ui.B(_fresh ? "Продолжить" : "К клубу", Back, true, 16);
+        next.CustomMinimumSize = new Vector2(240, 46);
+        act.AddChild(next);
+        center.AddChild(act);
+        row.AddChild(Ui.Scroll(center).Also(s => s.SizeFlagsHorizontal = SizeFlags.ExpandFill));
+
+        var right = Ui.V(12); right.CustomMinimumSize = new Vector2(330, 0);
+        foreach (var (t, dressed) in new[] { (_g.Away, r.AwayDressed), (_g.Home, r.HomeDressed) })
+            right.AddChild(Widget.Make($"Оценки: {C.Team(t).City}", RatingsTable(dressed), null, null, 0));
+        row.AddChild(Ui.Scroll(right).Also(s => s.CustomMinimumSize = new Vector2(340, 0)));
+    }
+
+    Control RatingsTable(List<int> dressed)
+    {
+        var r = _g.Result;
+        var rows = dressed.Where(id => r.Ratings.ContainsKey(id)).Select(id => C.Data.PlayerById[id]).OrderByDescending(p => r.Ratings[p.Id]).ToList();
+        if (rows.Count == 0) return Ui.Margin(Ui.L("Оценки есть только у матчей, сыгранных в этой версии", 12, Ui.Muted), 10, 8, 10, 8);
+        return new Grid<PlayerData>(new List<Col<PlayerData>>
+        {
+            new() { Title = "Игрок", Width = 0, Align = HorizontalAlignment.Left, Cell = p => Ui.L(p.NameRu, 12) },
+            new() { Title = "Поз", Width = 28, Cell = p => Ui.L(Ui.PosRu(p.Pos), 11, Ui.Muted) },
+            new() { Title = "Г+П", Width = 40, Cell = p => { int g = r.Goals.Count(e => e.Scorer == p.Id && e.Kind != "so"), a = r.Goals.Count(e => e.A1 == p.Id || e.A2 == p.Id); return Ui.L(g + a > 0 ? $"{g}+{a}" : "", 12, Ui.Text, Ui.Semi); } },
+            new() { Title = "Оц.", Width = 40, Cell = p => { var v = r.Ratings[p.Id]; return Ui.L($"{v:0.0}", 13, v >= 7.5 ? new Color("43D17A") : v >= 6.8 ? Ui.Text : v >= 6.3 ? Ui.Otl : Ui.Loss, Ui.Bold); } },
+        }, rows, p => Shell.I?.Go("player", null, p.Id.ToString())).Root;
     }
 
     Control GoalRow(GoalEvent e)
     {
         var t = C.Team(e.Team);
-        var h = Ui.H(12);
-        h.AddChild(Ui.L(e.Kind == "so" ? "Буллиты" : Ui.Clock(e.Period, e.Sec), 13, Ui.Muted).Also(l => l.CustomMinimumSize = new Vector2(120, 0)));
-        h.AddChild(new TeamBadge(t, 26));
-        if (e.Kind == "so") h.AddChild(Ui.L($"Победный буллит — «{t.City}»", 15, Ui.Text, Ui.Semi));
+        var h = Ui.H(10);
+        h.AddChild(Ui.L(e.Kind == "so" ? "Буллиты" : Ui.Clock(e.Period, e.Sec), 12, Ui.Muted).Also(l => l.CustomMinimumSize = new Vector2(110, 0)));
+        h.AddChild(new TeamBadge(t, 22));
+        if (e.Kind == "so") h.AddChild(Ui.L($"Победный буллит — «{t.City}»", 14, Ui.Text, Ui.Semi));
         else
         {
-            var p = C.Data.PlayerById.GetValueOrDefault(e.Scorer);
             var assists = new[] { e.A1, e.A2 }.Where(x => x != 0).Select(x => C.Short(x)).ToList();
-            h.AddChild(Ui.L($"ГОЛ! {p?.NameRu ?? "—"}", 15, Ui.Text, Ui.Bold));
-            h.AddChild(Ui.L(assists.Count > 0 ? $"({string.Join(", ", assists)})" : "(без передач)", 14, Ui.Muted));
-            if (e.Kind == "pp") h.AddChild(Pill("в большинстве", Ui.Otl));
-            if (e.Kind == "sh") h.AddChild(Pill("в меньшинстве", Ui.Win));
-            if (e.Period >= 4) h.AddChild(Pill("овертайм", Ui.Accent));
+            h.AddChild(Ui.L(C.Data.PlayerById.GetValueOrDefault(e.Scorer)?.NameRu ?? "—", 14, Ui.Text, Ui.Bold));
+            h.AddChild(Ui.L(assists.Count > 0 ? $"({string.Join(", ", assists)})" : "(без передач)", 13, Ui.Muted));
+            string tag = e.Kind switch { "pp" => "в большинстве", "sh" => "в меньшинстве", "en" => "в пустые", "ev6" => "6 на 5", _ => null };
+            if (tag != null) h.AddChild(Ui.Card(Ui.L(tag, 10, Colors.Black, Ui.Bold), e.Kind == "sh" ? Ui.Win : Ui.Otl, 6));
+            if (e.Period >= 4) h.AddChild(Ui.Card(Ui.L("овертайм", 10, Colors.White, Ui.Bold), Ui.Accent, 6));
         }
         return h;
     }
 
-    static Control Pill(string text, Color c) => Ui.Card(Ui.L(text, 11, Ui.ReadableOn(c), Ui.Semi), c, 6);
-
-    // ------------------------------------------------------------------ итог
-    void ShowResult()
-    {
-        Frame(out var body);
-        var r = _g.Result;
-        string end = r.End == "REG" ? "Матч окончен" : r.End == "OT" ? "Победа в овертайме" : "Победа по буллитам";
-        body.AddChild(Scoreboard(r.AwayGoals, r.HomeGoals, end));
-
-        var cols = Ui.H(18);
-        var left = Ui.Expand(Ui.V(10));
-        foreach (var e in r.Goals) left.AddChild(GoalRow(e));
-        if (r.Goals.Count == 0) left.AddChild(Ui.L("Голов не было.", 14, Ui.Muted));
-        cols.AddChild(Ui.Expand(Ui.Card(Ui.V(10, Ui.L("ГОЛЫ", 12, Ui.Muted, Ui.Semi), left), Ui.Panel, 18)));
-
-        var right = Ui.V(12);
-        right.CustomMinimumSize = new Vector2(400, 0);
-        int periods = Math.Max(3, r.Goals.Where(e => e.Kind != "so").Select(e => e.Period).DefaultIfEmpty(3).Max());
-        var heads = new List<string> { "" };
-        for (int p = 1; p <= periods; p++) heads.Add(p <= 3 ? $"{p}" : p == 4 ? "ОТ" : $"ОТ{p - 3}");
-        if (r.End == "SO") heads.Add("Б");
-        heads.Add("И");
-        var widths = new List<int> { 0 }; widths.AddRange(Enumerable.Repeat(36, heads.Count - 1));
-        var pt = new Table(heads.ToArray(), widths.ToArray());
-        foreach (var t in new[] { _g.Away, _g.Home })
-        {
-            var cells = new List<Control> { Ui.H(8, new TeamBadge(C.Team(t), 22), Ui.L(C.Team(t).City, 14)) };
-            for (int p = 1; p <= periods; p++) cells.Add(Ui.L($"{r.Goals.Count(e => e.Team == t && e.Period == p && e.Kind != "so")}", 14));
-            if (r.End == "SO") cells.Add(Ui.L($"{r.Goals.Count(e => e.Team == t && e.Kind == "so")}", 14));
-            cells.Add(Ui.L($"{(t == _g.Home ? r.HomeGoals : r.AwayGoals)}", 15, Ui.Text, Ui.Bold));
-            pt.Add(cells.ToArray(), t == C.UserTeam);
-        }
-        right.AddChild(Ui.Card(Ui.V(10, Ui.L("ПО ПЕРИОДАМ", 12, Ui.Muted, Ui.Semi), pt), Ui.Panel, 18));
-        var st = new Table(new[] { "", "Гости", "Хозяева" }, new[] { 0, 90, 90 });
-        st.Add(new Control[] { Ui.L("Броски в створ", 14), Ui.L($"{r.AwayShots}", 14), Ui.L($"{r.HomeShots}", 14) });
-        st.Add(new Control[] { Ui.L("Вратари", 14), Ui.L(C.Short(r.AwayGoalie), 13), Ui.L(C.Short(r.HomeGoalie), 13) });
-        int aSv = r.HomeShots - (r.HomeGoals - (r.End == "SO" && r.HomeGoals > r.AwayGoals ? 1 : 0));
-        int hSv = r.AwayShots - (r.AwayGoals - (r.End == "SO" && r.AwayGoals > r.HomeGoals ? 1 : 0));
-        st.Add(new Control[] { Ui.L("Отражено", 14), Ui.L($"{aSv} из {r.HomeShots}", 13), Ui.L($"{hSv} из {r.AwayShots}", 13) });
-        st.Add(new Control[] { Ui.L("Шанс до матча", 14), Ui.L(Ui.Pct(1 - r.PHome), 13, Ui.Muted), Ui.L(Ui.Pct(r.PHome), 13, Ui.Muted) });
-        right.AddChild(Ui.Card(Ui.V(10, Ui.L("СТАТИСТИКА", 12, Ui.Muted, Ui.Semi), st), Ui.Panel, 18));
-        right.AddChild(Ui.Card(Ui.V(8, new Control[] { Ui.L("ТРИ ЗВЕЗДЫ", 12, Ui.Muted, Ui.Semi) }.Concat(Stars(r)).ToArray()), Ui.Panel, 18));
-        cols.AddChild(right);
-        body.AddChild(cols);
-
-        var act = Ui.H(12);
-        act.Alignment = BoxContainer.AlignmentMode.Center;
-        var next = Ui.B(_fresh ? "Дальше" : "К клубу", Back, true, 17);
-        next.CustomMinimumSize = new Vector2(240, 50);
-        act.AddChild(next);
-        body.AddChild(act);
-    }
-
     IEnumerable<Control> Stars(MatchResult r)
     {
-        var pts = new Dictionary<int, double>();
-        foreach (var e in r.Goals.Where(e => e.Kind != "so" && e.Scorer != 0))
-        {
-            pts[e.Scorer] = pts.GetValueOrDefault(e.Scorer) + 1.1;
-            if (e.A1 != 0) pts[e.A1] = pts.GetValueOrDefault(e.A1) + 0.8;
-            if (e.A2 != 0) pts[e.A2] = pts.GetValueOrDefault(e.A2) + 0.6;
-        }
-        // вратари: отражённые сверх 25 + бонус за «сухарь»
-        int hGa = r.AwayGoals, aGa = r.HomeGoals;
-        pts[r.HomeGoalie] = Math.Max(0, (r.AwayShots - hGa - 24) * 0.12) + (hGa == 0 ? 2.5 : 0) + (r.HomeGoals > r.AwayGoals ? 0.4 : 0);
-        pts[r.AwayGoalie] = Math.Max(0, (r.HomeShots - aGa - 24) * 0.12) + (aGa == 0 ? 2.5 : 0) + (r.AwayGoals > r.HomeGoals ? 0.4 : 0);
+        var top = r.Ratings.Count > 0
+            ? r.Ratings.OrderByDescending(kv => kv.Value).Take(3).Select(kv => kv.Key).ToList()
+            : r.Goals.Where(e => e.Scorer != 0).GroupBy(e => e.Scorer).OrderByDescending(x => x.Count()).Take(3).Select(x => x.Key).ToList();
         int i = 0;
-        foreach (var (id, _) in pts.Where(kv => kv.Key != 0).OrderByDescending(kv => kv.Value).Take(3).Select(kv => (kv.Key, kv.Value)))
+        foreach (var id in top)
         {
             var p = C.Data.PlayerById[id];
             string line;
             if (p.IsGoalie)
             {
                 bool home = id == r.HomeGoalie;
-                int sh = home ? r.AwayShots : r.HomeShots, ga = home ? hGa : aGa;
-                line = $"{sh - ga} сейвов из {sh}";
+                int sh = home ? r.AwayShots : r.HomeShots, ga = home ? r.AwayGoals : r.HomeGoals;
+                line = $"{sh - ga} сейвов";
             }
-            else
-            {
-                int g = r.Goals.Count(e => e.Scorer == id && e.Kind != "so"), a = r.Goals.Count(e => e.A1 == id || e.A2 == id);
-                line = $"{g} + {a}";
-            }
-            yield return Ui.H(10, Ui.L(new string('*', 3 - i++), 15, Ui.Otl, Ui.Bold).Also(l => l.CustomMinimumSize = new Vector2(30, 0)),
-                new TeamBadge(C.Team(p.Team), 22), Ui.Expand(Ui.L(p.NameRu, 14, Ui.Text, Ui.Semi)), Ui.L(line, 13, Ui.Muted));
+            else line = $"{r.Goals.Count(e => e.Scorer == id && e.Kind != "so")}+{r.Goals.Count(e => e.A1 == id || e.A2 == id)}";
+            var st = Ui.H(1);
+            for (int k = 0; k < 3 - i; k++) st.AddChild(Ui.Icon("star", 13, Ui.Gold).Also(x => x.Texture = Icons.Get("star", true)));
+            st.CustomMinimumSize = new Vector2(44, 0);
+            i++;
+            yield return Ui.H(8, st, new TeamBadge(C.Team(p.Team), 20), Ui.Expand(Ui.L(p.NameRu, 13, Ui.Text, Ui.Semi)), Ui.L(line, 12, Ui.Muted),
+                r.Ratings.TryGetValue(id, out var rt) ? Ui.L($"{rt:0.0}", 13, new Color("43D17A"), Ui.Bold) : new Control());
         }
+    }
+}
+
+/// <summary>График давления: разница попыток бросков по минутам (вверх — гости, вниз — хозяева, как в табло), голы — отметки.</summary>
+public partial class MomentumChart : Control
+{
+    readonly List<MatchEvent> _ev;
+    readonly ScheduledGame _g;
+    readonly Color _ca, _ch;
+    double _clock;
+    readonly double _end;
+    public MomentumChart() { }
+    public MomentumChart(List<MatchEvent> ev, ScheduledGame g, Career c)
+    {
+        _ev = ev; _g = g;
+        Color Vis(Color x) { for (int i = 0; i < 6 && x.Luminance < 0.35f; i++) x = x.Lightened(0.15f); return x; }
+        _ca = Vis(new Color(c.Team(g.Away).Colors[0])); _ch = Vis(new Color(c.Team(g.Home).Colors[0]));
+        if (_ca.IsEqualApprox(_ch)) _ch = Vis(new Color(c.Team(g.Home).Colors.Count > 1 ? c.Team(g.Home).Colors[1] : "#CCCCCC"));
+        _end = Math.Max(3600, ev.Count > 0 ? ev.Max(e => e.T) + 30 : 3600);
+    }
+
+    public void SetClock(double t) { _clock = t; QueueRedraw(); }
+
+    public override void _Draw()
+    {
+        var s = Size;
+        float mid = s.Y / 2;
+        DrawLine(new Vector2(0, mid), new Vector2(s.X, mid), new Color(1, 1, 1, 0.12f), 1);
+        for (int p = 1; p < 3; p++) DrawLine(new Vector2((float)(p * 1200 / _end * s.X), 0), new Vector2((float)(p * 1200 / _end * s.X), s.Y), new Color(1, 1, 1, 0.08f), 1);
+        if (_ev == null) return;
+        int bins = (int)Math.Ceiling(_end / 60);
+        var diff = new double[bins];
+        foreach (var e in _ev.Where(e => e.T <= _clock && e.Kind is "shot" or "miss" or "block" or "goal"))
+            diff[Math.Min(bins - 1, e.T / 60)] += e.Team == _g.Away ? 1 : -1;
+        // сглаживание
+        var sm = new double[bins];
+        for (int i = 0; i < bins; i++) { double a = 0, w = 0; for (int k = -2; k <= 2; k++) if (i + k >= 0 && i + k < bins) { double ww = 3 - Math.Abs(k); a += diff[i + k] * ww; w += ww; } sm[i] = a / w; }
+        double max = Math.Max(1.2, sm.Select(Math.Abs).DefaultIfEmpty(1).Max());
+        float bw = s.X / bins;
+        int upto = (int)Math.Min(bins, Math.Ceiling(_clock / 60));
+        for (int i = 0; i < upto; i++)
+        {
+            float h = (float)(sm[i] / max * (mid - 6));
+            var col = h > 0 ? _ca : _ch;
+            DrawRect(new Rect2(i * bw + 0.5f, h > 0 ? mid - h : mid, bw - 1, Math.Abs(h)), new Color(col, 0.85f));
+        }
+        foreach (var e in _ev.Where(e => e.Kind == "goal" && e.T <= _clock))
+        {
+            float x = (float)(e.T / _end * s.X);
+            bool away = e.Team == _g.Away;
+            DrawLine(new Vector2(x, away ? 2 : mid), new Vector2(x, away ? mid : s.Y - 2), Ui.Gold, 2);
+            DrawCircle(new Vector2(x, away ? 6 : s.Y - 6), 5, Ui.Gold);
+        }
+        if (_clock < _end) DrawLine(new Vector2((float)(_clock / _end * s.X), 0), new Vector2((float)(_clock / _end * s.X), s.Y), new Color(1, 1, 1, 0.5f), 1);
+        DrawString(Ui.Semi, new Vector2(6, 14), "гости", HorizontalAlignment.Left, -1, 10, new Color(_ca, 0.9f));
+        DrawString(Ui.Semi, new Vector2(6, s.Y - 6), "хозяева", HorizontalAlignment.Left, -1, 10, new Color(_ch, 0.9f));
     }
 }

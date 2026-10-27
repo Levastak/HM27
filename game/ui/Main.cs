@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Godot;
 using HM27.Core;
 
@@ -8,7 +9,7 @@ namespace HM27.UI;
 /// <summary>Корень игры: база, карьера, переключение экранов, сохранение.</summary>
 public partial class Main : Control
 {
-    public const string Version = "0.2.0";
+    public const string Version = "0.3.0";
     const string SavePath = "user://career.json";
 
     public static Main I { get; private set; }
@@ -24,7 +25,13 @@ public partial class Main : Control
         Theme = Ui.MakeTheme();
         SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(new LogoCache());
-        AddChild(new ColorRect { Color = Ui.Bg, MouseFilter = MouseFilterEnum.Ignore }.Also(r => r.SetAnchorsPreset(LayoutPreset.FullRect)));
+        // фон: мягкий диагональный градиент, как у скинов FM
+        var grad = new Gradient();
+        grad.SetColor(0, new Color("1A2433")); grad.SetColor(1, new Color("0D1219"));
+        var bg = new TextureRect { Texture = new GradientTexture2D { Gradient = grad, Width = 256, Height = 256, FillFrom = new Vector2(0, 0), FillTo = new Vector2(1, 1) },
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.Scale, MouseFilter = MouseFilterEnum.Ignore };
+        bg.SetAnchorsPreset(LayoutPreset.FullRect);
+        AddChild(bg);
 
         // Возврат из 3Д-арены: карьера уже в памяти
         if (Match3D.RinkPreview.PendingCareer != null)
@@ -64,7 +71,11 @@ public partial class Main : Control
             if (g != null) { c.Play(g); c.SimDay(); }
             Save();
             LoadCareer();
-            foreach (var tab in new[] { "overview", "lines", "calendar", "table", "stats", "playoffs" }) ShowHub(tab);
+            foreach (var tab in new[] { "overview", "lines", "calendar", "table", "stats", "playoffs", "squad", "inbox", "club", "medical" }) ShowHub(tab, tab == "club" ? "MIN" : null);
+            ShowHub("player", Data.Roster("MIN").First(p => !p.IsGoalie).Id.ToString());
+            ShowHub("player", Data.Roster("MIN").First(p => p.IsGoalie).Id.ToString());
+            var last = Career.LastGame("MIN");
+            if (last != null) { ShowMatch(last); }
             ShowClubSelect();
             ShowMenu();
             var row = Career.Table["MIN"];
@@ -137,7 +148,7 @@ public partial class Main : Control
         var (page, sub) = tab switch
         {
             "lines" => ("lines", (string)null), "calendar" => ("schedule", null), "table" => ("comp", "table"), "stats" => ("comp", "stats"),
-            "playoffs" => ("comp", "playoffs"), "squad" => ("squad", null), "inbox" => ("inbox", null), "player" => ("player", null), "club" => ("club", null),
+            "playoffs" => ("comp", "playoffs"), "squad" => ("squad", null), "inbox" => ("inbox", null), "player" => ("player", null), "club" => ("club", null), "medical" => ("medical", null),
             _ => ("home", null),
         };
         if (_screen is Shell sh && sh.IsInsideTree()) sh.Go(page, sub, arg);
