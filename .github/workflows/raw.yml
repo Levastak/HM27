@@ -1,0 +1,50 @@
+name: Сырые данные (протоколы и смены)
+
+# По кнопке. Скачивает протоколы матчей, карты смен и страницы игроков из открытых API НХЛ
+# и складывает их в релиз raw-data. Уже скачанные завершённые матчи берутся из релиза и не качаются заново.
+# Эти данные — вход для расчёта характеристик (data/derive.py), в сборку игры они не попадают.
+on:
+  workflow_dispatch:
+    inputs:
+      seasons:
+        description: "Сезоны через пробел"
+        default: "20232024 20242025 20252026 20262027"
+      refresh_players:
+        description: "Обновить страницы всех игроков"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  raw:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Кэш из релиза raw-data
+        run: |
+          mkdir -p raw
+          gh release view raw-data >/dev/null 2>&1 || gh release create raw-data --title "Сырые данные для модели игрока" \
+            --notes "Протоколы, карты смен и страницы игроков из открытых API НХЛ. Обновляется workflow «Сырые данные». Не для игры." --prerelease
+          gh release download raw-data --dir raw --pattern "*.json.gz" || true
+          ls -la raw
+      - name: Загрузка
+        run: |
+          FLAG=""
+          [ "${{ inputs.refresh_players }}" = "true" ] && FLAG="--refresh-players"
+          python3 data/fetch_pbp.py --dir raw --seasons ${{ inputs.seasons }} $FLAG 2> fetch.log || { tail -60 fetch.log; exit 1; }
+          tail -20 fetch.log
+          echo "::notice title=raw::$(cat raw/report.json | tr -d '\n ' | head -c 1500)"
+      - name: В релиз
+        if: always()
+        run: |
+          ls -la raw
+          [ -f fetch.log ] && cp fetch.log raw/fetch.log
+          gh release upload raw-data raw/*.json.gz raw/report.json raw/fetch.log --clobber
