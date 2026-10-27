@@ -41,9 +41,42 @@ public partial class Main : Control
         var args = new System.Collections.Generic.Dictionary<string, string>();
         foreach (var a in OS.GetCmdlineUserArgs())
             if (a.StartsWith("--") && a.Contains('=')) args[a[2..a.IndexOf('=')]] = a[(a.IndexOf('=') + 1)..];
+        if (args.TryGetValue("smoke", out var smoke)) { Smoke(int.Parse(smoke), args.GetValueOrDefault("smoke-out")); return; }
         if (args.TryGetValue("screen", out var scr)) { DebugStart(scr, args); return; }
 
         ShowMenu();
+    }
+
+    /// <summary>
+    /// Самопроверка готовой сборки (CI на настоящих Mac и Windows): база, карьера, N игровых дней,
+    /// матч клуба игрока, сохранение и загрузка, построение экранов. Итог — в консоль и в файл.
+    /// </summary>
+    void Smoke(int days, string outPath)
+    {
+        string result;
+        try
+        {
+            var c = Career.New(Data, "MIN", 27);
+            Career = c;
+            for (int i = 0; i < days; i++) c.SimDay();
+            c.SimToUserGame();
+            var g = c.UserGameToday();
+            if (g != null) { c.Play(g); c.SimDay(); }
+            Save();
+            LoadCareer();
+            foreach (var tab in new[] { "overview", "lines", "calendar", "table", "stats", "playoffs" }) ShowHub(tab);
+            ShowClubSelect();
+            ShowMenu();
+            var row = Career.Table["MIN"];
+            result = $"SMOKE OK: {OS.GetName()} {Engine.GetArchitectureName()}, {Data.Players.Count} игроков, {Ui.Date(Career.Today)}, MIN {row.W}-{row.L}-{row.Otl}, сохранение {FileAccess.GetFileAsString(SavePath).Length / 1024} КБ";
+        }
+        catch (Exception e)
+        {
+            result = $"SMOKE FAIL: {e}";
+        }
+        GD.Print(result);
+        if (!string.IsNullOrEmpty(outPath)) System.IO.File.WriteAllText(outPath, result);
+        GetTree().Quit(result.StartsWith("SMOKE OK") ? 0 : 1);
     }
 
     void DebugStart(string screen, System.Collections.Generic.Dictionary<string, string> args)

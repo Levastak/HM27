@@ -110,9 +110,84 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: HM27-builds
-          path: build/HM27-*.zip
+          path: |
+            build/HM27-*.zip
+            build/export-*.log
           retention-days: 14
 
+  # Готовые сборки запускаются на настоящих Mac (Apple Silicon) и Windows: без этого релиз не выходит.
+  smoke-macos:
+    name: Запуск на Mac
+    needs: build
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: HM27-builds
+      - name: Подпись и Gatekeeper
+        run: |
+          ditto -x -k HM27-macos.zip .
+          ls
+          codesign --verify --deep --strict --verbose=2 HM27.app 2>&1 | tail -5
+          codesign -dv HM27.app 2>&1 | head -12
+          spctl -a -vv HM27.app 2>&1 || echo "Gatekeeper не пропускает без сертификата Apple — ожидаемо"
+          sw_vers; uname -m
+      - name: Самопроверка без окна
+        run: |
+          ./HM27.app/Contents/MacOS/HM27 --headless -- --smoke=30 --smoke-out="$PWD/smoke-mac.txt" > run-mac.log 2>&1 || true
+          tail -40 run-mac.log
+          cat smoke-mac.txt
+          grep -q "SMOKE OK" smoke-mac.txt
+      - name: Запуск с графикой (снимок экрана)
+        continue-on-error: true
+        run: |
+          ./HM27.app/Contents/MacOS/HM27 -- --screen=hub --days=20 --shot="$PWD/mac-hub.png" > run-mac-gfx.log 2>&1 &
+          PID=$!; for i in $(seq 1 90); do [ -f mac-hub.png ] && break; kill -0 $PID 2>/dev/null || break; sleep 2; done
+          kill $PID 2>/dev/null || true
+          tail -30 run-mac-gfx.log
+          test -f mac-hub.png
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-macos
+          path: |
+            smoke-mac.txt
+            run-mac*.log
+            mac-hub.png
+
+  smoke-windows:
+    name: Запуск на Windows
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: HM27-builds
+      - name: Самопроверка без окна
+        shell: pwsh
+        run: |
+          Expand-Archive HM27-windows.zip -DestinationPath win
+          $p = Start-Process -FilePath "win\HM27.exe" -ArgumentList "--headless","--","--smoke=30","--smoke-out=$PWD\smoke-win.txt" -Wait -PassThru
+          Get-Content smoke-win.txt
+          if (-not (Select-String -Path smoke-win.txt -Pattern "SMOKE OK" -Quiet)) { exit 1 }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-windows
+          path: smoke-win.txt
+
+  release:
+    name: Релиз
+    needs: [build, smoke-macos, smoke-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: HM27-builds
+          path: build
       - name: Релиз
         env:
           GH_TOKEN: ${{ github.token }}
