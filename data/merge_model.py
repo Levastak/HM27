@@ -142,6 +142,25 @@ def main(db_path="game/data/hm27-data.json", model_path="data/derived.json.gz", 
             fallback += 1
         # для сортировок и звёзд: ovr = КА − 80 (звёзды = ovr / 20: КА 190 → 5★, 160 → 4★, 120 → 2★)
         p.setdefault("r", {})["ovr"] = int(max(10, min(100, round(p["ca"][0] - 80))))
+    # номинации клубов на Мастертон и Кинг Клэнси (data/character.json): счётчики → профессионализм и лидерство в ядре
+    ch_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "character.json")
+    if os.path.exists(ch_path):
+        ch = json.load(open(ch_path, encoding="utf-8"))
+        by_name = {}
+        for p in db["players"]:
+            by_name.setdefault(norm(p["name"]), []).append(p)
+        tagged = 0
+        for tag in ("masterton", "clancy"):
+            for _, names in ch.get(tag, {}).items():
+                for n in names:
+                    cands = by_name.get(norm(n), [])
+                    if not cands:
+                        continue
+                    p = max(cands, key=lambda x: (x.get("fx") or {}).get("gp", 0))
+                    fx = p.setdefault("fx", {})
+                    fx[tag] = fx.get(tag, 0) + 1
+                    tagged += 1
+        print(f"Номинации за характер: {tagged} совпадений")
     # капитаны и ассистенты: при тёзках в одном клубе (два Элиаса Петтерссона в «Ванкувере») — у кого больше матчей в НХЛ
     by_key = {}
     for p in db["players"]:

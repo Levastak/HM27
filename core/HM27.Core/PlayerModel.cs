@@ -204,13 +204,16 @@ public static class PlayerModel
         s.Pot = C(s.Lvl + (s.Pa - s.Ca) / CA_PER_LVL);
         // характер: из фактов карьеры, недостающее — мягкая генерация (у реальных игроков не ниже 7)
         bool Aw(string t) => f.Awards?.Contains(t) == true;
-        s.Prof = I(12 + 2.2 * N(rng) + (f.Seasons >= 10 ? 1 : 0) + (age >= 33 && p.Level >= 12 ? 1.5 : 0) + (Aw("pro") ? 3 : 0), 7, 20);
+        // номинации клуба на Мастертон (упорство, самоотдача) и Кинг Клэнси (лидерство) — реальные факты о характере
+        s.Prof = I(12 + 2.2 * N(rng) + (f.Seasons >= 10 ? 1 : 0) + (age >= 33 && p.Level >= 12 ? 1.5 : 0) + (Aw("pro") ? 3 : 0)
+                   + Math.Min(f.Masterton, 2) * 1.5 + Math.Min(f.Clancy, 2) * 0.5, 7, 20);
         s.Amb = I(12 + 2.5 * N(rng) + (p.Level >= 16 ? 1 : 0), 7, 20);
         s.Loy = I(10.5 + 2.2 * N(rng) + Math.Min(f.ClubSeasons, 10) * 0.4 - Math.Max(f.Clubs - 1, 0) * 0.4 + (f.OneClub && f.Seasons >= 5 ? 2.5 : 0), 7, 20);
         // лидерство: капитанская «С» и ассистентская «А» в сезоне 2026-27, награды за лидерство, опыт
         s.Lead = I(10 + 2.2 * N(rng) + Math.Min(f.Gp / 300.0, 3) + (Aw("leader") ? 4 : 0) + (age >= 28 && p.Level >= 15 ? 1.5 : 0)
-                   + (f.Cap == "C" ? 5 : f.Cap == "A" ? 2.5 : 0), 7, 20);
-        s.Temp = I(12.5 + 1.8 * N(rng) - Math.Min(f.Fights, 8) * 0.6 + (Aw("fair") ? 3 : 0), 6, 20);
+                   + (f.Cap == "C" ? 5 : f.Cap == "A" ? 2.5 : 0) + Math.Min(f.Clancy, 2) * 1.5, 7, 20);
+        // самообладание: случайная часть не опускается ниже 9 — «вспыльчивость» только по данным (драки за сезон за 5 сезонов)
+        s.Temp = I(Math.Max(9, 12.5 + 1.8 * N(rng)) - Math.Min(f.Fights / 4.0, 6) * 0.7 + (Aw("fair") ? 3 : 0), 6, 20);
         s.Adapt = I(11.5 + 2.3 * N(rng) + Math.Min(Math.Max(f.Clubs - 1, 0), 3) * 0.6, 7, 20);
         double missRate = (f.MissLong + 3.0) / (f.Span + 60.0);
         s.Inj = I(13 + 1.5 * N(rng) - 60 * (missRate - 0.05), 5, 19);

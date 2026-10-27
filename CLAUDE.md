@@ -11,9 +11,11 @@
 - Модель игрока (ТЗ — документ «HM27 — модель игрока»): `data/fetch_pbp.py` (workflow «Сырые данные» → релиз raw-data: протоколы, смены, страницы игроков, EDGE) →
   `data/derive.py` (xG, RAPM, характеристики 1–20 с погрешностью → `data/derived.json.gz`, ревью `data/review.py`, ручные поправки `data/overrides.json`) →
   `data/history.py` (возрастные кривые по сводкам MoneyPuck 2010–2026 → `data/age_curves.json`) →
-  `data/merge_model.py` (в базу игры, формат 3; капитаны — `data/leaders.json`; тёзки в одном клубе — `overrides.json` → namesakes). Ассеты релиза качать через REST: `gh api -H "Accept: application/octet-stream" repos/Levastak/HM27/releases/assets/<id>`.
+  `data/merge_model.py` (в базу игры, формат 3; капитаны — `data/leaders.json`; номинации на Мастертон/Кинг Клэнси — `data/character.json`;
+  тёзки в одном клубе — `overrides.json` → namesakes; темпы за 5 сезонов для раздачи голов/передач — ixg60/fin/apg; реальный сезон 2025-26 — `real` для сверки). Ассеты релиза качать через REST: `gh api -H "Accept: application/octet-stream" repos/Levastak/HM27/releases/assets/<id>`.
 - Роли считаются в ядре из характеристик (`Roles` в `PlayerModel.cs`); проверка «роли без противоречий» в HM27.Check.
-- В ядре: `PlayerModel.cs` — истинные значения (разыгрываются от сида вокруг данных), видимые (знание клуба), потенциал, характер; `Development` — раз в неделю.
+- В ядре: `PlayerModel.cs` — истинные значения (разыгрываются от сида вокруг данных), видимые (знание клуба), КА/ПА 1–200, характер; `Development` — раз в неделю.
+  ПА — потолок, а не прогноз: рост зависит от условий (характер, минуты и роль, удача сезона, оценки, травмы); до ПА доходят ~25% (проверка в HM27.Check).
   Движок учитывает сдвиг «истинный уровень − данные + форма» (LVL_K, G_LVL, D_LVL); база калибровки считается после розыгрыша, поэтому состав по умолчанию = сила модели.
 
 ## Принципы движка

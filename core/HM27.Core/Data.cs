@@ -105,6 +105,10 @@ public sealed class CareerFacts
     [JsonPropertyName("draft")] public int? DraftYear { get; set; }
     /// <summary>Капитан (C) или ассистент (A) в сезоне 2026-27.</summary>
     [JsonPropertyName("cap")] public string Cap { get; set; }
+    /// <summary>Номинации клуба на Мастертон (упорство, самоотдача) за последние сезоны.</summary>
+    [JsonPropertyName("masterton")] public int Masterton { get; set; }
+    /// <summary>Номинации клуба на Кинг Клэнси (лидерство, работа с обществом) за последние сезоны.</summary>
+    [JsonPropertyName("clancy")] public int Clancy { get; set; }
     /// <summary>Вся карьера в НХЛ — в одном клубе.</summary>
     [JsonPropertyName("one_club")] public bool OneClub { get; set; }
 }
