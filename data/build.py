@@ -88,8 +88,147 @@ def pct_rank(values):
     return out
 
 
-def main(src, out_path):
+# ------------------------------------------------------------------ расширенные характеристики
+SEASON_W = (1.0, 0.8, 0.64)   # текущий сезон и два прошлых
+K_TOI = 300 * 60              # сжатие к среднему позиции: 300 «виртуальных» минут
+
+
+def pool(rows, seasons, keys):
+    """Сумма показателей за сезоны с весами; rows = {сезон: {...}}."""
+    out = {k: 0.0 for k in keys}
+    for i, s in enumerate(seasons):
+        d = rows.get(str(s))
+        if not d:
+            continue
+        w = SEASON_W[i]
+        for k in keys:
+            v = d.get(k)
+            if v is not None:
+                out[k] += w * v
+    return out
+
+
+def extended(fw, dm, gk, extra):
+    """14 характеристик полевых и 4 вратарских из MoneyPuck и NHL EDGE. Каждая — перцентиль 1–99 среди позиции."""
+    seasons = extra["seasons"]
+    SK, GK, ED = extra.get("skaters", {}), extra.get("goalies", {}), extra.get("edge", {})
+    keys = ["gp", "toi", "ixg", "a1", "a2", "sa", "hits", "tk", "gv", "blk", "fow", "fol", "pen", "pend",
+            "on_xgf", "on_xga", "off_xgf", "off_xga", "toi5", "on_cf", "on_ca", "off_cf", "off_ca"]
+    for grp in (fw, dm):
+        raw = []
+        for p in grp:
+            d = pool(SK.get(str(p["id"]), {}), seasons, keys)
+            p["_x"] = d
+            raw.append(d)
+        tot_toi = sum(d["toi"] for d in raw) or 1
+
+        def mean_rate(k):
+            return sum(d[k] for d in raw) / tot_toi
+        def per60(d, k):
+            m = mean_rate(k)
+            return (d[k] + m * K_TOI) / (d["toi"] + K_TOI) * 3600
+        for p in grp:
+            d = p["_x"]
+            x = p.setdefault("x", {})
+            x["a1_60"] = round(per60(d, "a1"), 3)
+            x["sa_60"] = round(per60(d, "sa"), 2)
+            x["hit_60"] = round(per60(d, "hits"), 2)
+            x["tk_60"] = round(per60(d, "tk"), 3)
+            x["gv_60"] = round(per60(d, "gv"), 3)
+            x["blk_60"] = round(per60(d, "blk"), 3)
+            x["dis_60"] = round(per60(d, "pend") - per60(d, "pen"), 3)
+            fo = d["fow"] + d["fol"]
+            x["fo_pct"] = round((d["fow"] + 50) / (fo + 100), 4)
+            x["fo_n"] = int(fo)
+            # оборона: xG соперника при игроке на льду против времени без него (на 60 минут), сжато к нулю
+            off_t = max(d["gp"] * 3600 - d["toi"], 1)
+            on_r = d["on_xga"] / max(d["toi"], 1) * 3600
+            off_r = d["off_xga"] / off_t * 3600 if d["off_xga"] else on_r
+            rel = (on_r - off_r) * d["toi"] / (d["toi"] + K_TOI)
+            x["xga_rel"] = round(rel, 3)
+            # владение 5 на 5: доля попыток бросков при нём минус без него
+            on_n = d["on_cf"] + d["on_ca"]; off_n = d["off_cf"] + d["off_ca"]
+            cf_rel = (d["on_cf"] / on_n - d["off_cf"] / off_n) if on_n > 0 and off_n > 0 else 0.0
+            x["cf_rel"] = round(cf_rel * on_n / (on_n + 400), 4)
+            e = ED.get(str(p["id"])) or {}
+            x["speed"] = e.get("speed"); x["shot"] = e.get("shot")
+            x["has_mp"] = d["toi"] > 0
+        # перцентили
+        for key, field, inv in (("pas2", "a1_60", False), ("sht", "sa_60", False), ("hit", "hit_60", False), ("tka", "tk_60", False),
+                                ("blk", "blk_60", False), ("dis", "dis_60", False), ("fo", "fo_pct", False), ("dfn2", "xga_rel", True),
+                                ("cor", "cf_rel", False), ("hnd", "gv_60", True)):
+            vals = [(-1 if inv else 1) * p["x"][field] for p in grp]
+            for p, r in zip(grp, pct_rank(vals)):
+                p["r"][key] = r
+        for key, field in (("spd", "speed"), ("pwr", "shot")):
+            have = [p for p in grp if p["x"][field]]
+            ranks = dict(zip([id(p) for p in have], pct_rank([p["x"][field] for p in have]))) if have else {}
+            for p in grp:
+                if id(p) in ranks:
+                    p["r"][key] = ranks[id(p)]
+                else:
+                    p["r"][key] = 40; p.setdefault("est", []).append(key)   # нет трекинга — оценка ниже середины
+        for p in grp:
+            r = p["r"]
+            # пас: первые передачи за 60 (MoneyPuck) вместе с передачами за матч в этом сезоне
+            r["pas"] = round(0.6 * r.pop("pas2") + 0.4 * r["pas"])
+            # оборона: у защитников — xG против на льду и доверие (время), у нападающих — xG против на льду
+            r["dfn"] = round(0.65 * r.pop("dfn2") + 0.35 * r["dfn"]) if p["pos"] == "D" else round(0.8 * r.pop("dfn2") + 0.2 * r["dfn"])
+            # вбрасывание имеет смысл только для тех, кто их берёт
+            if p["x"]["fo_n"] < 80:
+                r["fo"] = min(r["fo"], 35); p.setdefault("est", []).append("fo")
+            if not p["x"]["has_mp"]:
+                for k in ("sht", "hit", "tka", "blk", "dis", "cor", "hnd"):
+                    r[k] = 40
+                p.setdefault("est", []).append("mp")
+            del p["_x"]
+    # вратари
+    gkeys = ["gp", "toi", "xga", "ga", "hd_xg", "hd_g", "md_xg", "md_g", "ld_xg", "ld_g", "reb", "xreb"]
+    for p in gk:
+        d = pool(GK.get(str(p["id"]), {}), seasons, gkeys)
+        x = p.setdefault("x", {})
+        x["hd"] = round((d["hd_xg"] - d["hd_g"]) / (d["hd_xg"] + 40), 4)
+        x["ldmd"] = round(((d["ld_xg"] + d["md_xg"]) - (d["ld_g"] + d["md_g"])) / (d["ld_xg"] + d["md_xg"] + 60), 4)
+        x["reb"] = round((d["xreb"] - d["reb"]) / (d["xreb"] + 40), 4)
+        x["gp_w"] = round(d["gp"], 1)
+    for key, field in (("hd", "hd"), ("ld", "ldmd"), ("reb", "reb"), ("gsta", "gp_w")):
+        vals = [p["x"][field] for p in gk]
+        for p, r in zip(gk, pct_rank(vals)):
+            p["r"][key] = r
+
+
+ROLES_F = [("Снайпер", dict(att=0.35, fin=0.15, sht=0.25, pwr=0.25)),
+           ("Плеймейкер", dict(pas=0.5, att=0.2, cor=0.2, hnd=0.1)),
+           ("Двусторонний форвард", dict(dfn=0.35, cor=0.25, tka=0.2, att=0.2)),
+           ("Силовой форвард", dict(hit=0.4, blk=0.15, dfn=0.2, att=0.25)),
+           ("Скоростной форвард", dict(spd=0.45, att=0.3, tka=0.25))]
+ROLES_C = [("Центр-распасовщик", dict(pas=0.4, fo=0.3, att=0.15, cor=0.15)),
+           ("Оборонительный центр", dict(fo=0.35, dfn=0.4, blk=0.1, tka=0.15))]
+ROLES_D = [("Атакующий защитник", dict(pas=0.35, att=0.25, sht=0.2, cor=0.2)),
+           ("Защитник-домосед", dict(dfn=0.45, blk=0.3, hit=0.25)),
+           ("Универсальный защитник", dict(dfn=0.3, pas=0.25, cor=0.25, sta=0.2)),
+           ("Силовой защитник", dict(hit=0.45, blk=0.25, dfn=0.3))]
+
+
+def roles(p):
+    """Пригодность к ролям 1–99 (в игре — звёзды): взвешенные характеристики."""
+    r = p["r"]
+    lst = ROLES_D if p["pos"] == "D" else (ROLES_F + (ROLES_C if p["pos"] == "C" else []))
+    out = []
+    for name, w in lst:
+        have = {k: v for k, v in w.items() if k in r}
+        if sum(have.values()) < 0.6:
+            continue   # без расширенных данных роль не оценить
+        out.append([name, round(sum(r[k] * v for k, v in have.items()) / sum(have.values()))])
+    return sorted(out, key=lambda x: -x[1])
+
+
+def main(src, out_path, extra_path=None):
     D = json.load(open(os.path.join(src, "site/data.json"), encoding="utf-8"))
+    extra = None
+    if extra_path and os.path.exists(extra_path):
+        import gzip
+        extra = json.load(gzip.open(extra_path, "rt", encoding="utf-8"))
     P = json.load(open(os.path.join(src, "scripts/prior.json"), encoding="utf-8"))
     RU = json.load(open(os.path.join(src, "site/names_ru.json"), encoding="utf-8"))
 
@@ -197,21 +336,30 @@ def main(src, out_path):
     for grp in (fw, dm):
         rate(grp, "ixg60", "att"); rate(grp, "apg", "pas"); rate(grp, "toi", "sta")
         if grp is dm:
-            rate(grp, "toi", "dfn")   # v0: оборона защитника — доверие тренера (время); в v1 — xG против при нём на льду
+            rate(grp, "toi", "dfn")   # без расширенных данных: оборона защитника — доверие тренера (время)
         for p in grp:
             r = p["r"]
             # реализация — почти везение: узкая шкала вокруг 50
             r["fin"] = max(30, min(80, round(50 + (p["fin"] - 1) * 150)))
             if grp is fw:
                 r["dfn"] = max(35, min(65, round(50 + (p["toi"] - POS_TOI[p["pos"]]) * 3)))
+    rate(gk, "gsax", "gk")
+    if extra:
+        extended(fw, dm, gk, extra)
+    for grp in (fw, dm):
         for p in grp:
             r = p["r"]
-            ovr = (0.4 * r["att"] + 0.3 * r["pas"] + 0.05 * r["fin"] + 0.1 * r["dfn"] + 0.15 * r["sta"]) if p["pos"] != "D" else \
-                  (0.3 * r["dfn"] + 0.25 * r["sta"] + 0.2 * r["att"] + 0.2 * r["pas"] + 0.05 * r["fin"])
-            r["ovr"] = round(ovr)
-    rate(gk, "gsax", "gk")
+            if p["pos"] != "D":
+                w = dict(att=0.3, pas=0.22, sta=0.15, dfn=0.1, cor=0.08, fin=0.05, spd=0.05, sht=0.05)
+            else:
+                w = dict(dfn=0.24, sta=0.2, pas=0.16, cor=0.12, att=0.12, spd=0.06, blk=0.05, sht=0.05)
+            have = {k: v for k, v in w.items() if k in r}
+            r["ovr"] = round(sum(r[k] * v for k, v in have.items()) / sum(have.values()))
+            p["roles"] = roles(p)
     for p in gk:
-        p["r"]["ovr"] = p["r"]["gk"]
+        r = p["r"]
+        r["ovr"] = round(0.7 * r["gk"] + 0.15 * r.get("hd", r["gk"]) + 0.15 * r.get("gsta", r["gk"])) if "hd" in r else r["gk"]
+        p["roles"] = [["Вратарь", r["ovr"]]]
 
     # ---------------- звенья клубов (по именам → id)
     def ids(names):
@@ -225,7 +373,7 @@ def main(src, out_path):
         tm["record"] = dict(gp=s.get("gp", 0), w=s.get("w", 0), l=s.get("l", 0), otl=s.get("otl", 0), pts=s.get("pts", 0), gf=s.get("gf", 0), ga=s.get("ga", 0))
 
     pack = dict(
-        format=1, season=2026, built=dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"), data_date=D.get("results_date"),
+        format=2, season=2026, extended=bool(extra), built=dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%MZ"), data_date=D.get("results_date"),
         source="NHL-STATS.RU (github.com/Levastak/nhl-svodka): API НХЛ, MoneyPuck.com (некоммерческое использование), DailyFaceoff",
         league=dict(goals_pg=round(lg, 3)),
         teams=teams, players=sorted(players, key=lambda p: (p["team"], p["pos"], -(p.get("r", {}).get("ovr", 0)))),
@@ -236,8 +384,9 @@ def main(src, out_path):
     missing = [(t["abbr"], len(sum(t["lines"]["f"], [])), len(sum(t["lines"]["d"], [])), len(t["lines"]["g"])) for t in teams
                if len(sum(t["lines"]["f"], [])) < 12 or len(sum(t["lines"]["d"], [])) < 6 or len(t["lines"]["g"]) < 2]
     print(f"Клубов {len(teams)}, игроков {len(players)} (нападающих {len(fw)}, защитников {len(dm)}, вратарей {len(gk)}); "
+          f"расширенные данные: {'да (' + str(len(extra.get('skaters', {}))) + ' полевых в MoneyPuck, ' + str(len(extra.get('edge', {}))) + ' в EDGE)' if extra else 'нет'}; "
           f"голов за матч на команду {lg:.3f}; неполные звенья: {missing or 'нет'}; файл {out_path} ({os.path.getsize(out_path) // 1024} КБ)")
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else "game/data/hm27-data.json")
+    main(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else "game/data/hm27-data.json", sys.argv[3] if len(sys.argv) > 3 else None)
