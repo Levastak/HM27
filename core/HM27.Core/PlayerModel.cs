@@ -179,11 +179,14 @@ public static class PlayerModel
             s.A[d.Key] = C(v);
         }
         // потенциал: средний рост для возраста, у сильных для своего возраста — больше; разброс тем шире, чем моложе
-        double rem = Remaining(c.Data, p, age) * Math.Clamp(0.6 + 0.08 * (s.Lvl - 10), 0.6, 1.4);
-        double sd = age <= 20 ? 1.8 : age <= 23 ? 1.3 : age <= 25 ? 0.7 : 0.3;
+        // у потолка шкалы расти некуда: рост и разброс сжимаются по мере приближения к 20
+        double head = Math.Pow(Math.Clamp((19.9 - s.Lvl) / 8.9, 0.02, 1.0), 0.8);
+        double talent = Math.Clamp(0.7 + 0.06 * (s.Lvl - 10), 0.6, 1.2);           // сильный для своих лет — растёт быстрее
+        double rem = Remaining(c.Data, p, age) * talent * head;
+        double sd = (age <= 20 ? 1.8 : age <= 23 ? 1.3 : age <= 25 ? 0.7 : 0.3) * Math.Max(head, 0.25);
         double pot = s.Lvl + rem + N(rng) * sd;
-        if (age <= 25 && rng.NextDouble() < 0.03) pot += 2.5;                       // «поздно раскрывшийся»
-        if (f.Pick is <= 10 && f.Gp < 200) pot += 0.4;
+        if (age <= 25 && rng.NextDouble() < 0.03) pot += 2.5 * head;                // «поздно раскрывшийся»
+        if (f.Pick is <= 10 && f.Gp < 200) pot += 0.4 * head;
         s.Pot = age >= 28 ? s.Lvl + 0.2f : C(Math.Max(pot, s.Lvl));
         // характер: из фактов карьеры, недостающее — мягкая генерация (у реальных игроков не ниже 7)
         bool Aw(string t) => f.Awards?.Contains(t) == true;

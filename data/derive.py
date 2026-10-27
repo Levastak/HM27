@@ -259,47 +259,60 @@ def _auc(p, y):
 
 # ───────────────────────────── 3. RAPM ─────────────────────────────
 
-def rapm(rows_off, rows_def, y, w, home, folds, P, lambdas):
-    """Гребневая регрессия: y (за 60) ~ нападение + оборона + площадка.
-    Нормальные уравнения считаются по фолдам один раз, кросс-валидация — вычитанием фолда.
-    Возвращает (off, def, лучшая лямбда, ошибки CV, эффект площадки)."""
-    n = len(y)
-    lens = np.array([len(o) + len(d) + (1 if h else 0) for o, d, h in zip(rows_off, rows_def, home)])
-    r_idx = np.repeat(np.arange(n), lens)
-    c_idx = np.fromiter((c for o, d, h in zip(rows_off, rows_def, home) for c in (*o, *(P + q for q in d), *((2 * P,) if h else ()))),
-                        np.int64, count=int(lens.sum()))
-    X = sparse.csr_matrix((np.ones(len(r_idx)), (r_idx, c_idx)), shape=(n, 2 * P + 1))
-    w = np.asarray(w, float); y = np.asarray(y, float)
-    parts = []
-    for f in range(5):
-        m = folds == f
-        Xm, ym, wm = X[m], y[m], w[m]
-        Wx = Xm.multiply(wm[:, None]).tocsr()
-        parts.append({"A": (Xm.T @ Wx).toarray(), "c": Xm.T @ (wm * ym), "d": Xm.T @ wm,
-                      "sw": wm.sum(), "swy": (wm * ym).sum(), "swyy": (wm * ym * ym).sum()})
-    tot = {k: sum(p_[k] for p_ in parts) for k in parts[0]}
+class Rapm:
+    """Гребневая регрессия по стинтам 5 на 5: y (за 60) ~ нападение + оборона + площадка хозяев.
+    Нормальные уравнения копятся по группам строк (фолды, сезоны) один раз; решения — вычитанием групп.
+    Сжатие идёт не к нулю, а к априорному значению b0 (если задано): «RAPM с априорной оценкой по личной статистике»."""
 
-    def solve(t, lam):
-        mu = t["swy"] / t["sw"]
-        pen = np.full(2 * P + 1, lam); pen[-1] = 1e-6
-        beta = np.linalg.solve(t["A"] + np.diag(pen), t["c"] - mu * t["d"])
-        return beta, mu
+    def __init__(self, rows_off, rows_def, home, w, P):
+        n = len(w)
+        lens = np.array([len(o) + len(d) + (1 if h else 0) for o, d, h in zip(rows_off, rows_def, home)])
+        r_idx = np.repeat(np.arange(n), lens)
+        c_idx = np.fromiter((c for o, d, h in zip(rows_off, rows_def, home) for c in (*o, *(P + q for q in d), *((2 * P,) if h else ()))),
+                            np.int64, count=int(lens.sum()))
+        self.X = sparse.csr_matrix((np.ones(len(r_idx)), (r_idx, c_idx)), shape=(n, 2 * P + 1))
+        self.w = np.asarray(w, float)
+        self.P = P
 
-    errs = {}
-    for lam in lambdas:
-        e = 0.0
-        for f in range(5):
-            tr = {k: tot[k] - parts[f][k] for k in tot}
-            beta, mu = solve(tr, lam)
-            te = parts[f]
-            sse0 = te["swyy"] - 2 * mu * te["swy"] + mu * mu * te["sw"]
-            cross = beta @ (te["c"] - mu * te["d"])
-            e += sse0 - 2 * cross + beta @ te["A"] @ beta
-        errs[lam] = e / tot["sw"]
-    best = min(errs, key=errs.get)
-    beta, mu = solve(tot, best)
-    return beta[:P], beta[P:2 * P], best, {str(k): round(float(v), 4) for k, v in errs.items()}, float(beta[-1])
+    def parts(self, groups, ys):
+        """groups: массив меток строк; ys: {имя: y}. Возвращает {метка: {A, c_имя, d, sw, swy_имя, swyy_имя}}."""
+        out = {}
+        for gv in np.unique(groups):
+            m = groups == gv
+            Xm, wm = self.X[m], self.w[m]
+            Wx = Xm.multiply(wm[:, None]).tocsr()
+            d = {"A": (Xm.T @ Wx).toarray(), "d": Xm.T @ wm, "sw": wm.sum()}
+            for k, y in ys.items():
+                ym = y[m]
+                d["c_" + k] = Xm.T @ (wm * ym); d["swy_" + k] = (wm * ym).sum(); d["swyy_" + k] = (wm * ym * ym).sum()
+            out[gv] = d
+        return out
 
+    @staticmethod
+    def total(parts, keys):
+        ks = list(parts[keys[0]].keys())
+        return {k: sum(parts[g][k] for g in keys) for k in ks}
+
+    def solve(self, t, y, lam, b0=None):
+        mu = t["swy_" + y] / t["sw"]
+        pen = np.full(2 * self.P + 1, float(lam)); pen[-1] = 1e-6
+        rhs = t["c_" + y] - mu * t["d"]
+        if b0 is not None:
+            rhs = rhs + pen * b0
+        return np.linalg.solve(t["A"] + np.diag(pen), rhs), mu
+
+    @staticmethod
+    def err(te, y, beta, mu):
+        sse0 = te["swyy_" + y] - 2 * mu * te["swy_" + y] + mu * mu * te["sw"]
+        return float((sse0 - 2 * beta @ (te["c_" + y] - mu * te["d"]) + beta @ te["A"] @ beta) / te["sw"])
+
+
+def box_prior(beta_off, feats, wts, regs_mask):
+    """Априорная оценка атакующего вклада по личной статистике: взвешенная регрессия RAPM-атаки на признаки."""
+    F = np.column_stack([feats, np.ones(len(feats))])
+    W = wts * regs_mask
+    coef = np.linalg.lstsq(F * np.sqrt(W)[:, None], beta_off * np.sqrt(W), rcond=None)[0]
+    return F @ coef, coef
 
 # целевое распределение уровня у регулярных игроков НХЛ: (доля игроков ниже, уровень)
 LEVEL_TARGET = [(0.0, 5.0), (0.03, 7.0), (0.20, 10.0), (0.65, 13.0), (0.90, 16.0), (0.975, 18.0), (0.997, 19.5), (1.0, 19.8)]
@@ -452,6 +465,7 @@ def main():
     ap.add_argument("--report", default=None)
     ap.add_argument("--extra", default="data/extra.json.gz", help="MoneyPuck (data/fetch_extra.py) — второе мнение по вратарям")
     ap.add_argument("--seasons", nargs="+", default=list(SEASON_W))
+    ap.add_argument("--curves", default="data/age_curves.json", help="возрастные кривые (data/history.py)")
     a = ap.parse_args()
     meta = {"built": time.strftime("%Y-%m-%d"), "seasons": a.seasons, "scale": {"mid": MID, "sd": SCALE}}
 
@@ -543,24 +557,108 @@ def main():
     P = len(pids); pidx = {p: i for i, p in enumerate(pids)}
     log(f"полевых в стинтах: {P}")
 
-    # ── RAPM 5 на 5 (xG и попытки бросков) ──
+    # ── RAPM 5 на 5 (xG и попытки бросков) с априорной оценкой по личной статистике ──
+    pg = pd.concat(pg_dfs, ignore_index=True)
+    del pg_dfs
     ev = st[(st["nh"] == 5) & (st["na"] == 5) & (st["hg"] > 0) & (st["ag"] > 0) & (st["dur"] > 0) & (st["per"] <= 3)]
     fold_of = {g: i % 5 for i, g in enumerate(sorted(ev["gid"].unique()))}
-    off, dfn, home, ys_xg, ys_cf, ws, folds = [], [], [], [], [], [], []
+    # «сменившие клуб»: команда в последнем полном сезоне не та, что в предыдущем — для проверки на них
+    pteam = pg.groupby(["pid", "season"])["team"].agg(lambda x: x.value_counts().index[0])
+    test_season = "20252026"
+    movers = {p_ for (p_, se_), t_ in pteam.items() if se_ == test_season and (p_, "20242025") in pteam and pteam[(p_, "20242025")] != t_}
+    off, dfn, home, ys_xg, ys_cf, ws, folds, seas, mov = [], [], [], [], [], [], [], [], []
     for r in ev.itertuples():
         h = [pidx[p] for p in r.hs]; aw = [pidx[p] for p in r.aw]
         f = fold_of[r.gid]
+        anym = any(p in movers for p in r.hs) or any(p in movers for p in r.aw)
         for o, d, hm, xg_, cf_ in ((h, aw, 1, r.xg_h, r.cf_h), (aw, h, 0, r.xg_a, r.cf_a)):
             off.append(o); dfn.append(d); home.append(hm)
             ys_xg.append(xg_ * 3600 / r.dur); ys_cf.append(cf_ * 3600 / r.dur)
-            ws.append(r.dur * r.sw); folds.append(f)
-    folds = np.array(folds)
-    lam_grid = [4000, 8000, 16000, 32000, 64000, 128000]
-    xo, xd, lam, errs, hxg = rapm(off, dfn, ys_xg, ws, home, folds, P, lam_grid)
-    co, cd, lam_cf, _, _ = rapm(off, dfn, ys_cf, ws, home, folds, P, [lam])
-    meta["rapm"] = {"stints": int(len(ev)), "lambda": lam, "cv": errs, "home_xg60": round(hxg, 3)}
+            ws.append(r.dur * r.sw); folds.append(f); seas.append(r.season); mov.append(anym)
+    folds, seas, mov = np.array(folds), np.array(seas), np.array(mov)
+    ys = {"xg": np.array(ys_xg), "cf": np.array(ys_cf)}
+    R = Rapm(off, dfn, home, ws, P)
+    del off, dfn, home, ys_xg, ys_cf
+    fparts = R.parts(folds, ys)
+    lam_grid = [8000, 16000, 32000, 64000, 128000]
+    cv = {}
+    for lam_ in lam_grid:
+        e_ = 0.0
+        for f in range(5):
+            tr = Rapm.total(fparts, [g for g in range(5) if g != f])
+            beta, mu = R.solve(tr, "xg", lam_)
+            e_ += Rapm.err(fparts[f], "xg", beta, mu) * fparts[f]["sw"]
+        cv[lam_] = e_ / sum(fparts[g]["sw"] for g in range(5))
+    lam = min(cv, key=cv.get)
+    full = Rapm.total(fparts, list(range(5)))
+    b_plain, _ = R.solve(full, "xg", lam)
+    c_plain, _ = R.solve(full, "cf", lam)
+
+    # признаки личной статистики (с весами сезонов, сжатые к среднему): очки, личный xG, первые передачи за 60, защитник
+    def box_feats(season_mask=None):
+        sh_ = shots if season_mask is None else shots[shots["season"].isin(season_mask)]
+        pg_ = pg if season_mask is None else pg[pg["season"].isin(season_mask)]
+        w_ = sh_["season"].map(SEASON_W).fillna(0.5)
+        toi_ = (pg_["sec"] * pg_["season"].map(SEASON_W).fillna(0.5)).groupby(pg_["pid"]).sum().reindex(pids).fillna(0).values / 60
+        goal = sh_["type"] == "goal"
+        def by(col):
+            k = sh_.loc[goal, col].fillna(-1).astype(np.int64)
+            return w_[goal].groupby(k).sum().reindex(pids).fillna(0).values
+        pts_ = by("shooter") + by("a1") + by("a2")
+        a1_ = by("a1")
+        fz = sh_["type"].isin(UNBLOCKED) & (sh_["en"] == 0)
+        ixg_ = (sh_.loc[fz, "xg"] * w_[fz]).groupby(sh_.loc[fz, "shooter"]).sum().reindex(pids).fillna(0).values
+        k_ = 300.0
+        def shr(x):
+            m_ = x.sum() / max(toi_.sum(), 1)
+            return (x + k_ * m_) / (toi_ + k_) * 60
+        isd = np.array([1.0 if pos_of.get(p) == "D" else 0.0 for p in pids])
+        return np.column_stack([shr(pts_), shr(ixg_), shr(a1_), isd]), toi_
+
+    toi5_ = np.zeros(P)
+    for col in ("hs", "aw"):
+        for t_, d_ in zip(ev[col].values, (ev["dur"] * ev["sw"]).values):
+            for p_ in t_:
+                toi5_[pidx[p_]] += d_
+    toi5_ /= 60
+    regmask = (toi5_ >= 500).astype(float)
+
+    def prior_vec(beta_xg, beta_cf, feats, m):
+        bx, cx = box_prior(beta_xg[:P], feats, toi5_, regmask)
+        bc, cc = box_prior(beta_cf[:P], feats, toi5_, regmask)
+        b0x = np.zeros(2 * P + 1); b0x[:P] = m * bx
+        b0c = np.zeros(2 * P + 1); b0c[:P] = m * bc
+        return b0x, b0c, cx
+
+    # проверка по времени: обучение на сезонах до 2025-26, проверка на 2025-26 (в т. ч. на стинтах со сменившими клуб)
+    train_seasons = [x for x in a.seasons if x < test_season]
+    grp = np.where(seas == test_season, 1, 0) + np.where(mov & (seas == test_season), 1, 0)   # 0 обучение, 1 проверка, 2 проверка + сменившие
+    sparts = R.parts(grp, ys)
+    tr = sparts[0]
+    te_all = Rapm.total(sparts, [g for g in (1, 2) if g in sparts])
+    te_mov = sparts.get(2)
+    bt_plain, mu_t = R.solve(tr, "xg", lam)
+    ct_plain, _ = R.solve(tr, "cf", lam)
+    feats_tr, _ = box_feats(train_seasons)
+    val = {"plain": {"all": Rapm.err(te_all, "xg", bt_plain, mu_t), "movers": Rapm.err(te_mov, "xg", bt_plain, mu_t) if te_mov else None}}
+    for m_ in (0.5, 1.0, 1.5):
+        b0x, _, _ = prior_vec(bt_plain, ct_plain, feats_tr, m_)
+        bt, mu_ = R.solve(tr, "xg", lam, b0x)
+        val[f"prior_{m_}"] = {"all": Rapm.err(te_all, "xg", bt, mu_), "movers": Rapm.err(te_mov, "xg", bt, mu_) if te_mov else None}
+    best_m = min((k for k in val if k.startswith("prior")), key=lambda k: val[k]["movers"] or val[k]["all"])
+    use_prior = (val[best_m]["movers"] or val[best_m]["all"]) < (val["plain"]["movers"] or val["plain"]["all"])
+    m_best = float(best_m.split("_")[1]) if use_prior else 0.0
+    feats_all, _ = box_feats()
+    b0x, b0c, coef = prior_vec(b_plain, c_plain, feats_all, m_best)
+    bx, _ = R.solve(full, "xg", lam, b0x if use_prior else None)
+    bc, _ = R.solve(full, "cf", lam, b0c if use_prior else None)
+    xo, xd, hxg = bx[:P], bx[P:2 * P], float(bx[-1])
+    co, cd = bc[:P], bc[P:2 * P]
+    meta["rapm"] = {"stints": int(len(ev)), "lambda": lam, "cv": {str(k): round(v, 4) for k, v in cv.items()}, "home_xg60": round(hxg, 3),
+                    "validation_2025_26": {k: {kk: (round(vv, 5) if vv is not None else None) for kk, vv in v.items()} for k, v in val.items()},
+                    "movers": len(movers), "prior": m_best, "prior_coef": [round(float(x), 4) for x in coef]}
     log("RAPM:", meta["rapm"])
-    del off, dfn, home, ys_xg, ys_cf, ws
+    del R, fparts, sparts, ws
 
     # ── время на льду и ситуации по игрокам ──
     flat_cache = {}
@@ -632,8 +730,6 @@ def main():
     S["rapm_c"] = S["rapm_co"] + S["rapm_cd"]
 
     # ── игровое время по матчам (все ситуации) и сыгранные матчи ──
-    pg = pd.concat(pg_dfs, ignore_index=True)
-    del pg_dfs
     pg = pg.groupby(["gid", "season", "pid", "team"], as_index=False)["sec"].sum()
     pg["w"] = pg["season"].map(SEASON_W).fillna(0.5)
     pg["type"] = pg["gid"].map(games["type"])
@@ -853,8 +949,35 @@ def main():
     log("сильно связанные характеристики:", meta["attr_corr_high"])
     meta["reliability"] = ks
 
+    # ── поправка на возраст: данные — средние за прошлые сезоны, а игрок уже старше (молодые выросли, ветераны сдали) ──
+    curves = load_curves(a.curves)
+    born = {int(k): v.get("birthDate") for k, v in pages.items()}
+    mid_age = pg.assign(age=[_age_on(born.get(p_), int(se_[:4]) + 1, 2, 1) for p_, se_ in zip(pg["pid"], pg["season"])],
+                        ww=pg["sec"] * pg["w"]).dropna(subset=["age"])
+    mean_age = (mid_age["age"] * mid_age["ww"]).groupby(mid_age["pid"]).sum() / mid_age["ww"].groupby(mid_age["pid"]).sum()
+    now_age = pd.Series({p_: _age_on(born.get(p_), 2026, 10, 1) for p_ in S.index})
+    adj = {}
+    if curves:
+        for p_ in S.index:
+            a0, a1 = mean_age.get(p_), now_age.get(p_)
+            if a0 is None or a1 is None or pd.isna(a0) or pd.isna(a1):
+                continue
+            adj[p_] = {g: _curve_integral(curves[g], a0, a1) for g in ("shoot", "pass", "def", "mind", "phys")}
+        dl = pd.Series({p_: np.mean(list(v.values())) for p_, v in adj.items()}).reindex(S.index).fillna(0)
+        S["level"] = (S["level"] + dl).clip(1, 19.9)
+        for k_, v_ in A.items():
+            gk = CURVE_GROUP.get(k_, "mind")
+            d_ = pd.Series({p_: adj[p_][gk] for p_ in adj}).reindex(S.index).fillna(0)
+            nv = v_["v"] + d_
+            if CAPS[v_["kind"]] is not None:
+                lo_, hi_ = CAPS[v_["kind"]]
+                nv = S["level"] + (nv - S["level"]).clip(lo_, hi_)
+            v_["v"] = nv.clip(1, 19.9)
+        meta["age_adjust"] = {"mean": round(float(dl.mean()), 3), "max": round(float(dl.max()), 2), "min": round(float(dl.min()), 2)}
+        log("поправка на возраст:", meta["age_adjust"])
+
     # ── вратари ──
-    G = goalies(shots, pg, pages, games, a.extra)
+    G = goalies(shots, pg, pages, games, a.extra, curves, born)
 
     # ── факты карьеры (скрытые качества) ──
     facts = {p: career_facts(pages.get(str(p))) for p in list(S.index) + list(G.index)}
@@ -892,6 +1015,42 @@ def main():
 
 
 # ───────────────────────────── вспомогательное ─────────────────────────────
+
+CURVE_GROUP = {**{k: "phys" for k in ("spd", "acc", "sta", "str")}, **{k: "shoot" for k in ("fin", "pwr", "lng", "net")},
+               **{k: "pass" for k in ("pas", "hnd", "vis", "pp")}, **{k: "def" for k in ("dfn", "tka", "blk", "hit", "pk")}}
+
+
+def load_curves(path):
+    if not path or not os.path.exists(path):
+        return None
+    with open(path, encoding="utf-8") as f:
+        c = json.load(f)["groups"]
+    return {g: {int(a): v for a, v in vals.items()} for g, vals in c.items()}
+
+
+def _age_on(birth, y, m, d):
+    """Возраст в годах (дробный) на дату."""
+    if not birth:
+        return None
+    try:
+        by, bm, bd = map(int, birth[:10].split("-"))
+    except Exception:
+        return None
+    return (y - by) + ((m - bm) * 30.44 + (d - bd)) / 365.25
+
+
+def _curve_integral(curve, a0, a1, step=0.1):
+    """Изменение за отрезок возраста [a0, a1] (ед. шкалы): кривая — изменение за сезон в возрасте a → a+1."""
+    if a0 is None or a1 is None or a1 <= a0:
+        return 0.0 if (a0 is None or a1 is None or a1 == a0) else -_curve_integral(curve, a1, a0, step)
+    tot, x = 0.0, a0
+    while x < a1 - 1e-9:
+        h = min(step, a1 - x)
+        ai = int(np.floor(x)); f = x - ai
+        v = curve.get(min(max(ai, 18), 40), 0) * (1 - f) + curve.get(min(max(ai + 1, 18), 40), 0) * f
+        tot += v * h; x += h
+    return tot
+
 
 def apply_overrides(out, path, meta):
     """Ручные поправки (data/overrides.json): [{"player": имя или id, "attr": "level"|ключ, "v": 1–20, "why": "…"}]."""
@@ -1034,7 +1193,7 @@ def availability(pg, games):
     return out
 
 
-def goalies(shots, pg, pages, games, extra_path=None):
+def goalies(shots, pg, pages, games, extra_path=None, curves=None, born=None):
     sh = shots[shots["type"].isin(UNBLOCKED) & (shots["en"] == 0) & shots["goalie"].notna()].copy()
     sh["goalie"] = sh["goalie"].astype(np.int64)
     sh["gsax"] = sh["xg"] - sh["g"]
@@ -1100,6 +1259,17 @@ def goalies(shots, pg, pages, games, extra_path=None):
     regs = [i for i in agg.index if reg[i]]
     zG = (zl - zl[regs].mean()) / zl[regs].std()
     level = to_scale(zG).clip(1, 20)
+    # поправка на возраст (как у полевых): средний возраст сезонов в данных → возраст сейчас
+    if curves and born:
+        gpg = pg[pg["pid"].isin(agg.index)]
+        ages = pd.Series([_age_on(born.get(p_), int(se_[:4]) + 1, 2, 1) for p_, se_ in zip(gpg["pid"], gpg["season"])], index=gpg.index)
+        ww = gpg["sec"] * gpg["w"]
+        ok_ = ages.notna()
+        ma = (ages[ok_] * ww[ok_]).groupby(gpg.loc[ok_, "pid"]).sum() / ww[ok_].groupby(gpg.loc[ok_, "pid"]).sum()
+        gadj = pd.Series({p_: _curve_integral(curves["goalie"], ma[p_], _age_on(born.get(p_), 2026, 10, 1))
+                          for p_ in agg.index if p_ in ma.index and _age_on(born.get(p_), 2026, 10, 1) is not None}).reindex(agg.index).fillna(0)
+        level = (level + gadj).clip(1, 19.9)
+        zG = zG + gadj / SCALE
     se_l = (0.65 * SCALE * np.sqrt(k / (agg["n"] + k))).clip(0.6, 3.0)
     res = {}
     for key, kind, x, n, kk, sign in (
