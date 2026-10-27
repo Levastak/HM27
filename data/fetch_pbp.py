@@ -122,7 +122,7 @@ def season_games(season, out_dir, workers, report):
     # регулярный сезон: <сезон начала>02<номер>; плей-офф: 03<раунд><серия><матч>
     y = season[:4]
     ids = [f"{y}02{n:04d}" for n in range(1, GAMES_PER_SEASON + 1)]
-    ids += [f"{y}03{r}{s}{g}" for r in range(1, 5) for s in range(1, 9 if r == 1 else (5 if r == 2 else (3 if r == 3 else 2))) for g in range(1, 8)]
+    ids += [f"{y}030{r}{s}{g}" for r in range(1, 5) for s in range(1, 9 if r == 1 else (5 if r == 2 else (3 if r == 3 else 2))) for g in range(1, 8)]
     todo = [g for g in ids if g not in pbp or (g not in shifts or not shifts[g])]
     log(f"{season}: в кэше {len(pbp)}, к загрузке {len(todo)}")
     stat = {"done": 0, "future": 0, "missing": 0, "no_shifts": 0}
