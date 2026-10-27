@@ -147,6 +147,16 @@ jobs:
           kill $PID 2>/dev/null || true
           tail -30 run-mac-gfx.log
           test -f mac-hub.png
+      - name: Логи в служебный релиз ci-logs
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view ci-logs -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create ci-logs -R "$GITHUB_REPOSITORY" --prerelease --title "Служебное: логи автопроверок" --notes "Логи запуска сборок на CI. Не для игры."
+          for f in smoke-mac.txt run-mac.log run-mac-gfx.log mac-hub.png; do
+            [ -f "$f" ] && gh release upload ci-logs "$f" -R "$GITHUB_REPOSITORY" --clobber || true
+          done
       - uses: actions/upload-artifact@v4
         if: always()
         with:
