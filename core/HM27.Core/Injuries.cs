@@ -53,7 +53,8 @@ public static class InjuryModel
             // у игрока может быть несколько записей — снимаем, только если активных больше нет
             if (c.Injuries.Any(x => x.Id == i.Id && x.Until >= c.Today)) continue;
             c.Injured.Remove(i.Id);
-            if (c.Data.PlayerById.TryGetValue(i.Id, out var p) && p.Team == c.UserTeam)
+            // о возвращении пишем только после травм дольше недели — короткие помощник отслеживает сам
+            if (c.Data.PlayerById.TryGetValue(i.Id, out var p) && p.Team == c.UserTeam && i.Until.DayNumber - i.From.DayNumber >= 7)
                 InboxWriter.Add(c, "Медицинский отдел", $"{p.NameRu} готов играть",
                     $"{p.NameRu} восстановился ({i.Kind}) и может вернуться в состав. Сейчас он в запасе — поставьте его в звено, если нужно.",
                     "medical", $"player:{p.Id}");
