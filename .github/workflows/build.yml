@@ -135,7 +135,7 @@ jobs:
           sw_vers; uname -m
       - name: Самопроверка без окна
         run: |
-          ./HM27.app/Contents/MacOS/HM27 --headless -- --smoke=30 --smoke-out="$PWD/smoke-mac.txt" > run-mac.log 2>&1 || true
+          ./HM27.app/Contents/MacOS/HM27 --headless --verbose -- --smoke=30 --smoke-out="$PWD/smoke-mac.txt" > run-mac.log 2>&1; echo "Код выхода: $?" >> run-mac.log
           tail -40 run-mac.log
           cat smoke-mac.txt
           grep -q "SMOKE OK" smoke-mac.txt
@@ -154,9 +154,20 @@ jobs:
         run: |
           gh release view ci-logs -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
             gh release create ci-logs -R "$GITHUB_REPOSITORY" --prerelease --title "Служебное: логи автопроверок" --notes "Логи запуска сборок на CI. Не для игры."
+          ls -la
           for f in smoke-mac.txt run-mac.log run-mac-gfx.log mac-hub.png; do
-            [ -f "$f" ] && gh release upload ci-logs "$f" -R "$GITHUB_REPOSITORY" --clobber || true
+            if [ -f "$f" ]; then gh release upload ci-logs "$f" -R "$GITHUB_REPOSITORY" --clobber || echo "::warning::не загрузился $f"; fi
           done
+          # хвост лога — в аннотации (их видно через API даже без доступа к логам)
+          if [ -f run-mac.log ]; then
+            n=0
+            grep -vE "^\s*$" run-mac.log | grep -iE "error|exception|fail|abort|signal|crash|dotnet|\.NET|hostfxr|SMOKE|Godot Engine|dyld|Library" | head -9 | while IFS= read -r line; do
+              echo "::warning title=mac-log::${line:0:900}"
+            done
+            echo "::warning title=mac-log-tail::$(tail -c 900 run-mac.log | tr '\n' '|')"
+          else
+            echo "::warning title=mac-log::run-mac.log не создан"
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
