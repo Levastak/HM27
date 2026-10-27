@@ -9,11 +9,12 @@ namespace HM27.UI;
 /// <summary>Характеристики игрока: ключ, название, группа, как показать сырое значение.</summary>
 public static class Attrs
 {
-    public static string Verdict(PlayerData p, double level)
+    /// <summary>Оценка словами по КА (1–200).</summary>
+    public static string Verdict(PlayerData p, double ca)
     {
         string who = p.IsGoalie ? "вратарей" : p.IsDefense ? "защитников" : "нападающих";
-        return level >= 18 ? $"Один из лучших {who} мира" : level >= 16 ? $"Один из лучших {who} лиги" : level >= 13 ? "Сильный игрок уровня НХЛ" :
-               level >= 10 ? "Твёрдый игрок состава НХЛ" : level >= 7 ? "Игрок ротации" : "Игрок глубокого резерва";
+        return ca >= 180 ? $"Один из лучших {who} мира" : ca >= 165 ? $"Один из лучших {who} лиги" : ca >= 145 ? "Сильный игрок уровня НХЛ" :
+               ca >= 120 ? "Твёрдый игрок состава НХЛ" : ca >= 100 ? "Игрок ротации" : "Игрок глубокого резерва";
     }
 
     public static double Stars(int v) => Math.Clamp(Math.Round(v / 20.0 * 2) / 2, 0.5, 5);
@@ -180,11 +181,11 @@ public partial class PlayerPage : Control
         // способности
         var ab = Ui.V(6);
         var st = PlayerModel.State(C, p.Id);
-        double lvl = PlayerModel.Visible(C, p, "lvl");
+        double ca = PlayerModel.Visible(C, p, "ca");
         var (plo, phi) = PlayerModel.PotentialStars(C, p);
         ab.AddChild(Ui.L("ТЕКУЩИЕ СПОСОБНОСТИ", 10, Ui.Dim, Ui.Bold));
-        ab.AddChild(Ui.Stars((int)Math.Round(lvl * 5), 22));
-        ab.AddChild(Ui.L(Attrs.Verdict(p, lvl), 13, Ui.Text, Ui.Semi));
+        ab.AddChild(Ui.Stars(PlayerModel.StarsOvr(ca), 22).Also(x => x.TooltipText = "Текущие способности по оценке тренерского штаба"));
+        ab.AddChild(Ui.L(Attrs.Verdict(p, ca), 13, Ui.Text, Ui.Semi));
         ab.AddChild(Ui.Spacer(false, 4));
         ab.AddChild(Ui.L("ПОТЕНЦИАЛ", 10, Ui.Dim, Ui.Bold));
         ab.AddChild(Ui.H(6, Ui.Stars((int)Math.Round(phi * 20), 16),

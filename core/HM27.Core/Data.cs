@@ -163,6 +163,10 @@ public sealed class PlayerData
     /// <summary>Уровень по данным (если модели нет — из старой оценки ovr).</summary>
     [JsonIgnore] public double Level => Lvl is { Length: > 0 } ? Lvl[0] : Math.Clamp(R.GetValueOrDefault("ovr", 50) / 5.0, 1, 20);
     [JsonIgnore] public double LevelSe => Lvl is { Length: > 1 } ? Lvl[1] : 3.0;
+    /// <summary>Текущие способности (КА) 1–200 по данным, как в FM: линейно по силе; средний игрок НХЛ ≈ 120, лучший ≈ 190.</summary>
+    [JsonPropertyName("ca")] public double[] CaData { get; set; }
+    [JsonIgnore] public double CaEst => CaData is { Length: > 0 } ? CaData[0] : 120 + (Level - 11) * PlayerModel.CA_PER_LVL;
+    [JsonIgnore] public double CaSe => CaData is { Length: > 1 } ? CaData[1] : 18;
     /// <summary>Характеристика по данным; если нет — уровень игрока (с большой погрешностью).</summary>
     public double AttrEst(string k) => A != null && A.TryGetValue(k, out var v) && v.Length > 0 ? v[0] : Level;
     public double AttrSe(string k) => A != null && A.TryGetValue(k, out var v) && v.Length > 1 ? v[1] : 3.0;

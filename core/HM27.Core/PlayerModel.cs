@@ -80,8 +80,14 @@ public sealed class PlayerState
     public float Lvl { get; set; }
     /// <summary>Уровень в начале сезона — для стрелок развития.</summary>
     public float Lvl0 { get; set; }
-    /// <summary>Потенциал — потолок уровня.</summary>
+    /// <summary>Потенциал — потолок уровня (шкала 1–20, внутреннее).</summary>
     public float Pot { get; set; }
+    /// <summary>Текущие способности (КА) 1–200 — истинные; движок и звёзды считаются от них.</summary>
+    public float Ca { get; set; }
+    /// <summary>КА в начале сезона — для стрелок развития.</summary>
+    public float Ca0 { get; set; }
+    /// <summary>Потенциальные способности (ПА) 1–200 — потолок КА.</summary>
+    public float Pa { get; set; }
     public Dictionary<string, float> A { get; set; } = new();
     public Dictionary<string, float> A0 { get; set; } = new();
     // Скрытые качества 1–20
@@ -108,6 +114,8 @@ public static class PlayerModel
     public const double D_LVL = 1.3;
     /// <summary>Форма ±1 = ±0,35 единицы уровня.</summary>
     public const double FORM_U = 0.35;
+    /// <summary>Пунктов КА (1–200) на единицу шкалы 1–20.</summary>
+    public const double CA_PER_LVL = 6.0;
     /// <summary>Видимая ошибка при нулевом знании: стандартное отклонение, ед. шкалы.</summary>
     public const double VIEW_ERR = 2.4;
 
@@ -172,22 +180,23 @@ public static class PlayerModel
         var f = p.Fx ?? new CareerFacts();
         int age = p.Age(c.Today) ?? 26;
         double dl = noise ? N(rng) * p.LevelSe * 0.8 : 0;
-        var s = new PlayerState { Lvl = C(p.Level + dl) };
+        var s = new PlayerState { Lvl = C(p.Level + dl), Ca = (float)Math.Clamp(p.CaEst + dl * CA_PER_LVL, 30, 200) };
         foreach (var d in Attrs.For(p))
         {
             double v = p.AttrEst(d.Key) + (noise ? 0.7 * dl + N(rng) * p.AttrSe(d.Key) * 0.6 : 0);
             s.A[d.Key] = C(v);
         }
         // потенциал: средний рост для возраста, у сильных для своего возраста — больше; разброс тем шире, чем моложе
-        // у потолка шкалы расти некуда: рост и разброс сжимаются по мере приближения к 20
-        double head = Math.Pow(Math.Clamp((19.9 - s.Lvl) / 8.9, 0.02, 1.0), 0.8);
-        double talent = Math.Clamp(0.7 + 0.06 * (s.Lvl - 10), 0.6, 1.2);           // сильный для своих лет — растёт быстрее
-        double rem = Remaining(c.Data, p, age) * talent * head;
-        double sd = (age <= 20 ? 1.8 : age <= 23 ? 1.3 : age <= 25 ? 0.7 : 0.3) * Math.Max(head, 0.25);
-        double pot = s.Lvl + rem + N(rng) * sd;
-        if (age <= 25 && rng.NextDouble() < 0.03) pot += 2.5 * head;                // «поздно раскрывшийся»
-        if (f.Pick is <= 10 && f.Gp < 200) pot += 0.4 * head;
-        s.Pot = age >= 28 ? s.Lvl + 0.2f : C(Math.Max(pot, s.Lvl));
+        // ПА на шкале 1–200: средний рост для возраста; у сильных для своих лет — больше; у самого потолка (200) — меньше
+        double head = Math.Pow(Math.Clamp((200 - s.Ca) / 80.0, 0.03, 1.0), 0.6);
+        double talent = Math.Clamp(0.7 + 0.015 * (s.Ca - 110), 0.6, 1.6);
+        double grow = Remaining(c.Data, p, age) * CA_PER_LVL * talent * head;
+        double sd = (age <= 20 ? 1.8 : age <= 23 ? 1.3 : age <= 25 ? 0.7 : 0.3) * CA_PER_LVL * Math.Max(head, 0.3);
+        double pa = s.Ca + grow + N(rng) * sd;
+        if (age <= 25 && rng.NextDouble() < 0.03) pa += 15 * head;                  // «поздно раскрывшийся»
+        if (f.Pick is <= 10 && f.Gp < 200) pa += 2.5 * head;
+        s.Pa = age >= 28 ? s.Ca + 1 : (float)Math.Clamp(Math.Max(pa, s.Ca), 1, 200);
+        s.Pot = C(s.Lvl + (s.Pa - s.Ca) / CA_PER_LVL);
         // характер: из фактов карьеры, недостающее — мягкая генерация (у реальных игроков не ниже 7)
         bool Aw(string t) => f.Awards?.Contains(t) == true;
         s.Prof = I(12 + 2.2 * N(rng) + (f.Seasons >= 10 ? 1 : 0) + (age >= 33 && p.Level >= 12 ? 1.5 : 0) + (Aw("pro") ? 3 : 0), 7, 20);
@@ -203,6 +212,7 @@ public static class PlayerModel
         // знание: свой клуб — с первого дня неплохо, чужие — по известности
         s.Know = p.Team == c.UserTeam ? 0.55f : (float)Math.Clamp(0.25 + 0.04 * f.Seasons + (p.Level >= 16 ? 0.15 : 0), 0.25, 0.75);
         s.Lvl0 = s.Lvl;
+        s.Ca0 = s.Ca;
         s.A0 = new Dictionary<string, float>(s.A);
         return s;
     }
@@ -213,7 +223,7 @@ public static class PlayerModel
     public static double Delta(Career c, PlayerData p)
     {
         var s = State(c, p.Id);
-        return s == null ? 0 : s.Lvl - p.Level + FORM_U * s.Form;
+        return s == null ? 0 : (s.Ca - p.CaEst) / CA_PER_LVL + FORM_U * s.Form;
     }
 
     static int KeyIndex(string key)
@@ -230,7 +240,8 @@ public static class PlayerModel
     public static double Visible(Career c, PlayerData p, string key)
     {
         var s = State(c, p.Id);
-        if (s == null) return key == "lvl" ? p.Level : p.AttrEst(key);
+        if (s == null) return key == "lvl" ? p.Level : key == "ca" ? p.CaEst : p.AttrEst(key);
+        if (key == "ca") return Math.Clamp(s.Ca + ViewErr(c, p.Id, key) * VIEW_ERR * CA_PER_LVL * (1 - s.Know), 1, 200);
         double t = key == "lvl" ? s.Lvl : s.A.GetValueOrDefault(key, s.Lvl);
         return Math.Clamp(t + ViewErr(c, p.Id, key) * VIEW_ERR * (1 - s.Know), 1, 20);
     }
@@ -249,12 +260,17 @@ public static class PlayerModel
     public static (double lo, double hi) PotentialStars(Career c, PlayerData p)
     {
         var s = State(c, p.Id);
-        if (s == null) return (p.Level / 4, p.Level / 4);
-        double v = s.Pot + ViewErr(c, p.Id, "pot") * 1.5 * (1 - s.Know);
-        double w = 2.2 * (1 - s.Know) + 0.3;
-        static double St(double x) => Math.Clamp(Math.Round(x / 4 * 2) / 2, 0.5, 5);
-        return (St(Math.Max(v - w, s.Lvl)), St(v + w));
+        if (s == null) return (Stars(p.CaEst), Stars(p.CaEst));
+        double v = s.Pa + ViewErr(c, p.Id, "pot") * 1.5 * CA_PER_LVL * (1 - s.Know);
+        double w = (2.2 * (1 - s.Know) + 0.3) * CA_PER_LVL;
+        return (Stars(Math.Max(v - w, Visible(c, p, "ca"))), Stars(Math.Max(v + w, Visible(c, p, "ca"))));
     }
+
+    /// <summary>Звёзды из КА/ПА (1–200): 190 → 5★, 160 → 4★, 140 → 3★, 120 → 2★, 100 → 1★.</summary>
+    public static double Stars(double ca) => Math.Clamp(Math.Round((ca - 80) / 20 * 2, MidpointRounding.AwayFromZero) / 2, 0.5, 5);
+
+    /// <summary>Значение для Ui.Stars (там звёзды = v / 20).</summary>
+    public static int StarsOvr(double ca) => (int)Math.Round(Stars(ca) * 20);
 
     /// <summary>Описание личности, как в FM. Только нейтральные и позитивные формулировки.</summary>
     public static string Personality(PlayerState s)
@@ -295,7 +311,8 @@ public static class Development
             double share = tgp == 0 ? 0.7 : Math.Min(1, gp / (double)tgp);
             double mins = p.IsGoalie ? 0.7 + 0.5 * share : 0.6 + 0.6 * share;
             double room = Math.Clamp((s.Pot - s.Lvl) / 1.5, 0, 1.3);
-            double sumD = 0; int n = 0;
+            double roomCa = Math.Clamp((s.Pa - s.Ca) / 9.0, 0, 1.3);
+            double sumD = 0, sumCa = 0; int n = 0;
             foreach (var d in Attrs.For(p))
             {
                 double cv = PlayerModel.Curve(c.Data, Attrs.CurveGroup(d.Key), age);
@@ -303,12 +320,17 @@ public static class Development
                 if (inj.Contains(p.Id)) g = 0;
                 double dec = Math.Min(cv, 0) * (1.15 - 0.03 * (s.Prof - 10));
                 double dv = (g + dec) / WEEKS + 0.04 * N(rng);
+                double gCa = Math.Max(cv, 0) * roomCa * (0.7 + 0.06 * (s.Prof - 10)) * mins;
+                if (inj.Contains(p.Id)) gCa = 0;
+                sumCa += (gCa + dec) / WEEKS;
                 float old = s.A.GetValueOrDefault(d.Key, s.Lvl);
                 float nv = (float)Math.Clamp(old + dv, 1, 20);
                 s.A[d.Key] = nv;
                 sumD += nv - old; n++;
             }
             if (n > 0) s.Lvl = (float)Math.Clamp(s.Lvl + sumD / n, 1, Math.Max(s.Pot + 0.3, s.Lvl));
+            // КА растёт по кривым без «упора» в 20 у характеристик — у элиты рост виден так же, как у остальных
+            if (n > 0) s.Ca = (float)Math.Clamp(s.Ca + sumCa / n * PlayerModel.CA_PER_LVL + 0.15 * N(rng), 1, Math.Max(s.Pa + 2, s.Ca));
             // форма: плавное случайное блуждание, у стабильных — тише
             double con = s.A.GetValueOrDefault(p.IsGoalie ? "gcon" : "con", 11);
             s.Form = (float)Math.Clamp(0.85 * s.Form + 0.25 * (1.3 - 0.03 * (con - 10)) * N(rng), -1, 1);

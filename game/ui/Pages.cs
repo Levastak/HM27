@@ -270,7 +270,7 @@ public partial class SquadPage : Control
             new() { Title = "Страна", Width = 50, Cell = p => Ui.L(p.Country ?? "", 11, Ui.Muted), Sort = p => p.Country ?? "", Desc = false },
             new() { Title = "Рост", Width = 40, Cell = p => Ui.L(p.Height?.ToString() ?? "", 12, Ui.Muted), Sort = p => p.Height ?? 0 },
             new() { Title = "В составе", Width = 92, Align = HorizontalAlignment.Left, Cell = p => { var r = P.Role(p.Id, _abbr); return Ui.L(r, 12, r == "Травма" ? Ui.Loss : r == "Запас" ? Ui.Dim : Ui.Muted); }, Sort = p => RoleOrder(p.Id), Desc = false },
-            new() { Title = "Способности", Width = 86, Cell = p => Ui.Stars((int)Math.Round(PlayerModel.Visible(C, p, "lvl") * 5), 13), Sort = p => PlayerModel.Visible(C, p, "lvl"), Tip = "Оценка тренерского штаба" },
+            new() { Title = "Способности", Width = 86, Cell = p => Ui.Stars(PlayerModel.StarsOvr(PlayerModel.Visible(C, p, "ca")), 13), Sort = p => PlayerModel.Visible(C, p, "ca"), Tip = "Оценка тренерского штаба" },
             new() { Title = "Потенциал", Width = 86, Cell = p => Ui.Stars((int)Math.Round(PlayerModel.PotentialStars(C, p).hi * 20), 13), Sort = p => PlayerModel.PotentialStars(C, p).hi, Tip = "Потолок по оценке скаутов (верхняя граница)" },
         };
         if (!gk)

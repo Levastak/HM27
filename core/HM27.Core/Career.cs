@@ -141,6 +141,15 @@ public sealed class Career
         c.Attach(data);
         // сохранения до модели игрока: истинные значения = данные (без розыгрыша), сила клубов не меняется
         if (c.Players.Count == 0) { PlayerModel.Generate(c, noise: false); c.Version = 2; }
+        // сохранения до КА/ПА (1–200): досчитать от данных со сдвигом, который был у уровня
+        if (c.Players.Values.Any(s => s.Ca == 0))
+            foreach (var p in data.Players)
+                if (c.Players.TryGetValue(p.Id, out var st) && st.Ca == 0)
+                {
+                    var fresh = PlayerModel.Make(c, p, noise: false);
+                    float shift = (float)((st.Lvl - p.Level) * PlayerModel.CA_PER_LVL);
+                    st.Ca = fresh.Ca + shift; st.Ca0 = st.Ca; st.Pa = Math.Max(fresh.Pa + shift, st.Ca);
+                }
         foreach (var p in data.Players)   // новые игроки в базе
             if (!c.Players.ContainsKey(p.Id)) c.Players[p.Id] = PlayerModel.Make(c, p, noise: false);
         return c;

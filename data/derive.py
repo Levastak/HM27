@@ -29,6 +29,8 @@ SEASON_W = {"20262027": 1.0, "20252026": 1.0, "20242025": 0.8, "20232024": 0.64,
 MID, SCALE = 11.0, 3.4          # шкала 1–20: середина и цена одного стандартного отклонения
 # общий уровень: ценность за матч (общая шкала F и D), очки за 60, игровое время, доля сыгранных матчей
 LEVEL_W = {"value": 0.5, "pts": 0.25, "toi": 0.15, "share": 0.10}
+CA_MID, CA_TOP, CA_TOP_G = 120.0, 190.0, 182.0   # КА: средний регулярный игрок, лучший полевой, лучший вратарь
+CA_PER_LVL = 6.0                                # единица шкалы 1–20 ≈ 6 пунктов КА (1 ст. откл. ≈ 3,4 ед. ≈ 20 КА)
 REG_MIN = 400                   # «регулярный» игрок: от 400 взвешенных минут (полевые), 1000 (вратари)
 NET_X = 89.0
 SHOT_TYPES = ["wrist", "snap", "slap", "backhand", "tip-in", "deflected", "wrap-around"]
@@ -508,6 +510,11 @@ def main():
         del all_shots, all_events, stint_rows, pg_rows
     shots = pd.concat(shot_dfs, ignore_index=True); events = pd.concat(event_dfs, ignore_index=True)
     del shot_dfs, event_dfs
+    # строки → категории: в разы меньше памяти (в рабочем окружении 8 ГБ)
+    for df_, cols_ in ((shots, ("gid", "season", "type", "stype", "zone", "reason")), (events, ("gid", "season", "type", "venue", "pen"))):
+        for c_ in cols_:
+            if c_ in df_.columns:
+                df_[c_] = df_[c_].astype("category")
     games = pd.DataFrame(games).set_index("gid")
     log(f"бросков {len(shots)}, событий {len(events)}, стинтов {sum(len(x) for x in stint_dfs)}")
 
@@ -522,6 +529,7 @@ def main():
     # ── стинты: суммы xG/бросков/голов по командам ──
     st = pd.concat(stint_dfs, ignore_index=True)
     del stint_dfs
+    st["gid"] = st["gid"].astype("category"); st["season"] = st["season"].astype("category")
     st["dur"] = st["t1"] - st["t0"]
     st["nh"], st["na"] = st["hs"].map(len), st["aw"].map(len)
     st["key0"], st["key1"] = st["per"] * 10000 + st["t0"], st["per"] * 10000 + st["t1"]
@@ -859,8 +867,15 @@ def main():
     raw = LEVEL_W["value"] * zv + LEVEL_W["pts"] * zp + LEVEL_W["toi"] * zt + LEVEL_W["share"] * zs
     regs = [i for i in S.index if reg[i]]
     S["level"] = level_map(raw, regs)
+    # КА 1–200 (как в FM): линейно по силе, без сжатия верха. Средний регулярный игрок НХЛ = 120,
+    # лучший = CA_TOP; одна единица шкалы 1–20 ≈ CA_PER_LVL пунктов КА (для развития и движка)
+    z_raw = (raw - raw[regs].mean()) / raw[regs].std()
+    s_ca = float(np.clip((CA_TOP - CA_MID) / z_raw[regs].max(), 14, 26))
+    S["ca"] = (CA_MID + s_ca * z_raw).clip(40, 199)
+    meta["ca_scale"] = {"mid": CA_MID, "per_sd": round(s_ca, 2), "top": CA_TOP}
     zG = (S["level"] - MID) / SCALE                       # для априорных значений характеристик
     S["level_se"] = (SCALE * np.sqrt(500 / (S["toi_min"] + 500))).clip(0.6, 3.0)
+    S["ca_se"] = (s_ca * np.sqrt(500 / (S["toi_min"] + 500))).clip(4, 18)
     meta["level_weights"] = LEVEL_W
     top = S[S["toi_min"] >= REG_MIN].sort_values("level", ascending=False)
     meta["d_share"] = {n: round(float((top.head(n)["grp"] == "D").mean()), 3) for n in (10, 25, 50, 100)}
@@ -965,6 +980,7 @@ def main():
             adj[p_] = {g: _curve_integral(curves[g], a0, a1) for g in ("shoot", "pass", "def", "mind", "phys")}
         dl = pd.Series({p_: np.mean(list(v.values())) for p_, v in adj.items()}).reindex(S.index).fillna(0)
         S["level"] = (S["level"] + dl).clip(1, 19.9)
+        S["ca"] = (S["ca"] + CA_PER_LVL * dl).clip(40, 199)
         for k_, v_ in A.items():
             gk = CURVE_GROUP.get(k_, "mind")
             d_ = pd.Series({p_: adj[p_][gk] for p_ in adj}).reindex(S.index).fillna(0)
@@ -991,6 +1007,7 @@ def main():
             "name": _name(pg_), "pos": S.at[p, "pos"], "age": _age(pg_),
             "toi": round(float(S.at[p, "toi_min"]), 0), "gp": round(float(S.at[p, "gp_w"]), 1), "toi_gp": round(float(S.at[p, "toi_gp"]), 1),
             "level": [round(float(S.at[p, "level"]), 2), round(float(S.at[p, "level_se"]), 2)],
+            "ca": [round(float(S.at[p, "ca"]), 1), round(float(S.at[p, "ca_se"]), 1)],
             "a": {k: [round(float(v["v"][p]), 2), round(float(v["se"][p]), 2)] for k, v in A.items() if pd.notna(v["v"][p])},
             "raw": {"rapm_x": round(float(S.at[p, "rapm_x"]), 3), "rapm_xo": round(float(S.at[p, "rapm_xo"]), 3), "rapm_xd": round(float(S.at[p, "rapm_xd"]), 3),
                     "rapm_c": round(float(S.at[p, "rapm_c"]), 2), "pts60": round(float(per60("pts")[p]), 2), "gax": round(float(S.at[p, "gax"]), 1)},
@@ -1254,11 +1271,13 @@ def goalies(shots, pg, pages, games, extra_path=None, curves=None, born=None):
     # доля стартов в сезонах (с весами): нагрузка — признак доверия
     # мало бросков — тянем не к среднему, а к уровню запасного (незнакомые вратари в среднем ниже основных)
     z = z + (1 - agg["n"] / (agg["n"] + k)) * (-0.8)
-    zw = Scale(agg["starts"] / agg["gp"].clip(lower=1), agg["gp"] * 10, 1e-6, grp, reg, None, prior_on_level=False).z
+    zw = Scale(agg["starts"] / agg["gp"].clip(lower=1), agg["gp"], 30.0, grp, reg, None, prior_on_level=False).z   # мало матчей — к среднему
     zl = 0.75 * z.fillna(0) + 0.25 * zw.fillna(0)
     regs = [i for i in agg.index if reg[i]]
     zG = (zl - zl[regs].mean()) / zl[regs].std()
     level = to_scale(zG).clip(1, 20)
+    s_cg = float(np.clip((CA_TOP_G - CA_MID) / zG[regs].max(), 12, 26))
+    ca = (CA_MID + s_cg * zG).clip(40, 199)
     # поправка на возраст (как у полевых): средний возраст сезонов в данных → возраст сейчас
     if curves and born:
         gpg = pg[pg["pid"].isin(agg.index)]
@@ -1269,6 +1288,7 @@ def goalies(shots, pg, pages, games, extra_path=None, curves=None, born=None):
         gadj = pd.Series({p_: _curve_integral(curves["goalie"], ma[p_], _age_on(born.get(p_), 2026, 10, 1))
                           for p_ in agg.index if p_ in ma.index and _age_on(born.get(p_), 2026, 10, 1) is not None}).reindex(agg.index).fillna(0)
         level = (level + gadj).clip(1, 19.9)
+        ca = (ca + CA_PER_LVL * gadj).clip(40, 199)
         zG = zG + gadj / SCALE
     se_l = (0.65 * SCALE * np.sqrt(k / (agg["n"] + k))).clip(0.6, 3.0)
     res = {}
@@ -1294,6 +1314,7 @@ def goalies(shots, pg, pages, games, extra_path=None, curves=None, born=None):
     for p in agg.index:
         out[p] = {"toi": round(float(agg.at[p, "toi"]), 0), "gp": round(float(agg.at[p, "gp"]), 1),
                   "level": [round(float(level[p]), 2), round(float(se_l[p]), 2)],
+                  "ca": [round(float(ca[p]), 1), round(float(np.clip(se_l[p] * s_cg / SCALE, 4, 18)), 1)],
                   "a": {k_: [round(float(v[p]), 2), round(float(se[p]), 2)] for k_, (v, se) in res.items() if pd.notna(v[p])},
                   "raw": {"gsax": round(float(agg.at[p, "gsax"]), 1), "shots": round(float(agg.at[p, "n"]), 0)}}
     return pd.DataFrame({"out": pd.Series(out)})

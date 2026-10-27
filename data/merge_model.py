@@ -115,6 +115,7 @@ def main(db_path="game/data/hm27-data.json", model_path="data/derived.json.gz", 
         src = (m["goalies"] if p["pos"] == "G" else m["skaters"]).get(str(p["id"]))
         if src and src.get("toi", 0) > 0:
             p["lvl"] = [round(src["level"][0], 2), round(src["level"][1], 2)]
+            p["ca"] = [round(src["ca"][0], 1), round(src["ca"][1], 1)]
             p["a"] = {k: [round(v[0], 2), round(v[1], 2)] for k, v in src["a"].items()}
             p["fx"] = facts(src.get("facts"))
             found += 1
@@ -123,10 +124,12 @@ def main(db_path="game/data/hm27-data.json", model_path="data/derived.json.gz", 
             pct = (p.get("r") or {}).get("ovr", 40) / 100
             lv = min(12.0, soft(MID + SD * inv_norm(pct) * 0.7))
             p["lvl"] = [round(lv, 2), 3.0]
+            p["ca"] = [round(120 + (lv - 11) * 6, 1), 18.0]
             p["a"] = {}
             p["fx"] = {}
             fallback += 1
-        p.setdefault("r", {})["ovr"] = int(round(p["lvl"][0] * 5))
+        # для сортировок и звёзд: ovr = КА − 80 (звёзды = ovr / 20: КА 190 → 5★, 160 → 4★, 120 → 2★)
+        p.setdefault("r", {})["ovr"] = int(max(10, min(100, round(p["ca"][0] - 80))))
     # капитаны и ассистенты: при тёзках в одном клубе (два Элиаса Петтерссона в «Ванкувере») — у кого больше матчей в НХЛ
     by_key = {}
     for p in db["players"]:

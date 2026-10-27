@@ -188,8 +188,13 @@ Check("Плей-офф", playoffsOk, $"15 серий и чемпион в каж
     var old = data.Players.Where(p => p.Age(c1.Today) is >= 34).Select(p => c1.Players[p.Id].Lvl - start[p.Id]).ToList();
     double all = data.Players.Average(p => c1.Players[p.Id].Lvl - start[p.Id]);
     double know = data.Roster("MIN").Average(p => c1.Players[p.Id].Know);
-    Check("Модель игрока: развитие", young.Average() > 0.25 && old.Average() < -0.2 && Math.Abs(all) < 0.35 && know > 0.95,
-        $"за сезон: до 22 лет {young.Average():+0.00;-0.00} ({young.Count}), от 34 {old.Average():+0.00;-0.00} ({old.Count}), вся лига {all:+0.00;-0.00}; знание своего клуба {know:P0}");
+    var youngCa = data.Players.Where(p => p.Age(c1.Today) is <= 22).Select(p => c1.Players[p.Id].Ca - c1.Players[p.Id].Ca0).ToList();
+    var oldCa = data.Players.Where(p => p.Age(c1.Today) is >= 34).Select(p => c1.Players[p.Id].Ca - c1.Players[p.Id].Ca0).ToList();
+    var eliteYoung = data.Players.Where(p => p.Age(c1.Today) is <= 22 && p.CaEst >= 150).Select(p => c1.Players[p.Id].Pa - c1.Players[p.Id].Ca0).ToList();
+    Check("Модель игрока: развитие", young.Average() > 0.25 && old.Average() < -0.2 && Math.Abs(all) < 0.35 && know > 0.95
+                                       && youngCa.Average() > 2 && oldCa.Average() < -1.5 && eliteYoung.Count > 0 && eliteYoung.Average() > 8,
+        $"за сезон (шкала 1–20): до 22 лет {young.Average():+0.00;-0.00} ({young.Count}), от 34 {old.Average():+0.00;-0.00} ({old.Count}), вся лига {all:+0.00;-0.00}; " +
+        $"КА (1–200): до 22 {youngCa.Average():+0.0;-0.0}, от 34 {oldCa.Average():+0.0;-0.0}; запас роста у элитной молодёжи (КА 150+) ПА − КА = {eliteYoung.DefaultIfEmpty().Average():+0.0} ({eliteYoung.Count}); знание своего клуба {know:P0}");
     var p0 = data.Players.First(p => p.Name == "Connor McDavid");
     var (lo, hi) = PlayerModel.Range(c2, p0, "pas");
     var opp = data.Players.Where(p => p.Team != "MIN" && !p.IsGoalie).OrderBy(p => p.Fx.Seasons).First();
