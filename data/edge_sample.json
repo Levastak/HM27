@@ -1,0 +1,358 @@
+{
+ "player": {
+  "id": 8475798,
+  "firstName": {
+   "default": "Mikael"
+  },
+  "lastName": {
+   "default": "Granlund"
+  },
+  "birthDate": "1992-02-26",
+  "shootsCatches": "L",
+  "sweaterNumber": 64,
+  "position": "C",
+  "slug": "mikael-granlund-8475798",
+  "headshot": "https://assets.nhle.com/mugs/nhl/20262027/ANA/8475798.png",
+  "goals": 2,
+  "assists": 6,
+  "points": 8,
+  "gamesPlayed": 10,
+  "team": {
+   "commonName": {
+    "default": "Ducks"
+   },
+   "placeNameWithPreposition": {
+    "default": "Anaheim",
+    "fr": "d'Anaheim"
+   },
+   "abbrev": "ANA",
+   "teamLogo": {
+    "light": "https://assets.nhle.com/logos/nhl/svg/ANA_light.svg",
+    "dark": "https://assets.nhle.com/logos/nhl/svg/ANA_dark.svg"
+   }
+  }
+ },
+ "seasonsWithEdgeStats": [
+  {
+   "id": 20212022,
+   "gameTypes": [
+    2,
+    3
+   ]
+  },
+  {
+   "id": 20222023,
+   "gameTypes": [
+    2
+   ]
+  },
+  {
+   "id": 20232024,
+   "gameTypes": [
+    2
+   ]
+  },
+  {
+   "id": 20242025,
+   "gameTypes": [
+    2,
+    3
+   ]
+  },
+  {
+   "id": 20252026,
+   "gameTypes": [
+    2,
+    3
+   ]
+  },
+  {
+   "id": 20262027,
+   "gameTypes": [
+    2
+   ]
+  }
+ ],
+ "topShotSpeed": {
+  "imperial": 79.32,
+  "metric": 127.6532,
+  "percentile": 0.414,
+  "leagueAvg": {
+   "imperial": 79.518,
+   "metric": 127.9718
+  },
+  "overlay": {
+   "player": {
+    "firstName": {
+     "default": "Mikael"
+    },
+    "lastName": {
+     "default": "Granlund"
+    }
+   },
+   "gameDate": "2026-10-09",
+   "awayTeam": {
+    "abbrev": "ANA",
+    "score": 5
+   },
+   "homeTeam": {
+    "abbrev": "WPG",
+    "score": 1
+   },
+   "gameOutcome": {
+    "lastPeriodType": "REG"
+   },
+   "periodDescriptor": {
+    "maxRegulationPeriods": 3,
+    "number": 3,
+    "periodType": "REG"
+   },
+   "timeInPeriod": "14:06",
+   "gameType": 2
+  }
+ },
+ "skatingSpeed": {
+  "speedMax": {
+   "imperial": 21.8159,
+   "metric": 35.1092,
+   "percentile": 0.5485,
+   "leagueAvg": {
+    "imperial": 21.7317,
+    "metric": 34.9737
+   },
+   "overlay": {
+    "player": {
+     "firstName": {
+      "default": "Mikael"
+     },
+     "lastName": {
+      "default": "Granlund"
+     }
+    },
+    "gameDate": "2026-10-04",
+    "awayTeam": {
+     "abbrev": "FLA",
+     "score": 2
+    },
+    "homeTeam": {
+     "abbrev": "ANA",
+     "score": 3
+    },
+    "gameOutcome": {
+     "lastPeriodType": "OT",
+     "otPeriods": 1
+    },
+    "periodDescriptor": {
+     "maxRegulationPeriods": 3,
+     "number": 4,
+     "periodType": "OT"
+    },
+    "timeInPeriod": "02:40",
+    "gameType": 2
+   }
+  },
+  "burstsOver20": {
+   "value": 9,
+   "percentile": 0.3565,
+   "leagueAvg": {
+    "value": 15.0337
+   }
+  }
+ },
+ "totalDistanceSkated": {
+  "imperial": 28.3247,
+  "metric": 45.582,
+  "percentile": 0.6456,
+  "leagueAvg": {
+   "imperial": 22.9097,
+   "metric": 36.8678
+  }
+ },
+ "distanceMaxGame": {
+  "imperial": 3.1641,
+  "metric": 5.0918,
+  "percentile": 0.7236,
+  "leagueAvg": {
+   "imperial": 2.7832,
+   "metric": 4.4788
+  },
+  "overlay": {
+   "player": {
+    "firstName": {
+     "default": "Mikael"
+    },
+    "lastName": {
+     "default": "Granlund"
+    }
+   },
+   "gameDate": "2026-10-04",
+   "awayTeam": {
+    "abbrev": "FLA",
+    "score": 2
+   },
+   "homeTeam": {
+    "abbrev": "ANA",
+    "score": 3
+   },
+   "gameOutcome": {
+    "lastPeriodType": "OT",
+    "otPeriods": 1
+   },
+   "periodDescriptor": {
+    "maxRegulationPeriods": 3,
+    "number": 2,
+    "periodType": "REG"
+   },
+   "gameType": 2
+  }
+ },
+ "sogSummary": [
+  {
+   "locationCode": "all",
+   "shots": 17,
+   "shotsPercentile": 0.6189,
+   "shotsLeagueAvg": 15.7284,
+   "goals": 2,
+   "goalsPercentile": 0.6653,
+   "goalsLeagueAvg": 2.1011,
+   "shootingPctg": 0.1176,
+   "shootingPctgPercentile": 0.4122,
+   "shootingPctgLeagueAvg": 0.1336
+  },
+  {
+   "locationCode": "high",
+   "shots": 7,
+   "shotsPercentile": 0.7095,
+   "shotsLeagueAvg": 5.8526,
+   "goals": 1,
+   "goalsPercentile": 0.6989,
+   "goalsLeagueAvg": 1.1326,
+   "shootingPctg": 0.1429,
+   "shootingPctgPercentile": 0.4088,
+   "shootingPctgLeagueAvg": 0.1935
+  },
+  {
+   "locationCode": "long",
+   "shots": 2,
+   "shotsPercentile": 0.8316,
+   "shotsLeagueAvg": 1.3137,
+   "goals": 1,
+   "goalsPercentile": 0.9958,
+   "goalsLeagueAvg": 0.0674,
+   "shootingPctg": 0.5,
+   "shootingPctgPercentile": 0.9692,
+   "shootingPctgLeagueAvg": 0.0513
+  },
+  {
+   "locationCode": "mid",
+   "shots": 0,
+   "shotsPercentile": 0.1242,
+   "shotsLeagueAvg": 4.9832,
+   "goals": 0,
+   "goalsPercentile": 0.6147,
+   "goalsLeagueAvg": 0.6168,
+   "shootingPctgLeagueAvg": 0.1238
+  }
+ ],
+ "sogDetails": [
+  {
+   "area": "Behind the Net",
+   "shots": 0,
+   "shotsPercentile": 0.84
+  },
+  {
+   "area": "Beyond Red Line",
+   "shots": 0,
+   "shotsPercentile": 0.7389
+  },
+  {
+   "area": "Center Point",
+   "shots": 1,
+   "shotsPercentile": 0.8779
+  },
+  {
+   "area": "Crease",
+   "shots": 0,
+   "shotsPercentile": 0.5684
+  },
+  {
+   "area": "High Slot",
+   "shots": 0,
+   "shotsPercentile": 0.3158
+  },
+  {
+   "area": "L Circle",
+   "shots": 0,
+   "shotsPercentile": 0.3137
+  },
+  {
+   "area": "L Corner",
+   "shots": 0,
+   "shotsPercentile": 0.9621
+  },
+  {
+   "area": "L Net Side",
+   "shots": 0,
+   "shotsPercentile": 0.6526
+  },
+  {
+   "area": "L Point",
+   "shots": 1,
+   "shotsPercentile": 0.9158
+  },
+  {
+   "area": "Low Slot",
+   "shots": 7,
+   "shotsPercentile": 0.7579
+  },
+  {
+   "area": "Offensive Neutral Zone",
+   "shots": 1,
+   "shotsPercentile": 0.9347
+  },
+  {
+   "area": "Outside L",
+   "shots": 1,
+   "shotsPercentile": 0.7768
+  },
+  {
+   "area": "Outside R",
+   "shots": 3,
+   "shotsPercentile": 0.9684
+  },
+  {
+   "area": "R Circle",
+   "shots": 0,
+   "shotsPercentile": 0.3032
+  },
+  {
+   "area": "R Corner",
+   "shots": 0,
+   "shotsPercentile": 0.9768
+  },
+  {
+   "area": "R Net Side",
+   "shots": 3,
+   "shotsPercentile": 0.9895
+  },
+  {
+   "area": "R Point",
+   "shots": 0,
+   "shotsPercentile": 0.6821
+  }
+ ],
+ "zoneTimeDetails": {
+  "offensiveZonePctg": 0.42665451,
+  "offensiveZonePercentile": 0.6169665809769,
+  "offensiveZoneLeagueAvg": 0.44342257,
+  "offensiveZoneEvPctg": 0.40177709,
+  "offensiveZoneEvPercentile": 0.3676092544987,
+  "offensiveZoneEvLeagueAvg": 0.43847195,
+  "neutralZonePctg": 0.18048444,
+  "neutralZonePercentile": 0.4858611825193,
+  "neutralZoneLeagueAvg": 0.15756342,
+  "defensiveZonePctg": 0.39286105,
+  "defensiveZonePercentile": 0.5629820051414,
+  "defensiveZoneLeagueAvg": 0.39901402
+ }
+}
