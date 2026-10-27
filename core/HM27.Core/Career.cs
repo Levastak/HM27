@@ -72,7 +72,7 @@ public enum Phase { Regular, Playoffs, Finished }
 /// </summary>
 public sealed class Career
 {
-    public int Version { get; set; } = 1;
+    public int Version { get; set; } = 2;
     public int Seed { get; set; }
     public int Season { get; set; }
     public string UserTeam { get; set; }
@@ -96,6 +96,8 @@ public sealed class Career
     /// <summary>Сколько стартов подряд у основного вратаря (ИИ даёт отдых).</summary>
     public Dictionary<string, int> GoalieStreak { get; set; } = new();
     public List<Message> Messages { get; set; } = new();
+    /// <summary>Модель игрока: истинные характеристики, потенциал, характер, знание клуба, форма.</summary>
+    public Dictionary<int, PlayerState> Players { get; set; } = new();
 
     [JsonIgnore] public GameData Data { get; private set; }
 
@@ -110,14 +112,15 @@ public sealed class Career
         foreach (var id in c.Injured)
             c.Injuries.Add(new Injury { Id = id, From = c.Today.AddDays(-irng.Next(3, 30)), Until = c.Today.AddDays(irng.Next(5, 45)), Kind = InjuryModel.Kinds[irng.Next(InjuryModel.Kinds.Length)] });
         var inj = c.Injured.ToHashSet();
+        PlayerModel.Generate(c);
         foreach (var t in data.Teams)
         {
             var l = Lineup.FromTeam(data, t, inj);
             c.Lineups[t.Abbr] = l;
-            // База калибровки — состав по умолчанию: такие же звенья дают ровно силу модели
-            c.BaseOff[t.Abbr] = MatchEngine.OffIndex(data, l);
-            c.BaseDef[t.Abbr] = MatchEngine.DefIndex(data, l);
-            c.BaseGsax[t.Abbr] = 0.8 * MatchEngine.GsaxOf(data, l.G1) + 0.2 * MatchEngine.GsaxOf(data, l.G2);
+            // База калибровки — состав по умолчанию с разыгранными истинными уровнями: такие же звенья дают ровно силу модели
+            c.BaseOff[t.Abbr] = MatchEngine.OffIndex(data, l, c.Dl);
+            c.BaseDef[t.Abbr] = MatchEngine.DefIndex(data, l, c.Dl);
+            c.BaseGsax[t.Abbr] = 0.8 * MatchEngine.GsaxOf(data, l.G1, c.Dl) + 0.2 * MatchEngine.GsaxOf(data, l.G2, c.Dl);
             c.Table[t.Abbr] = new StandingRow { Team = t.Abbr };
         }
         InboxWriter.Welcome(c);
@@ -126,6 +129,9 @@ public sealed class Career
 
     public void Attach(GameData data) => Data = data;
 
+    /// <summary>Сдвиг силы игрока для движка (модель игрока).</summary>
+    public double Dl(int id) => Data.PlayerById.TryGetValue(id, out var p) ? PlayerModel.Delta(this, p) : 0;
+
     // ------------------------------------------------------------------ сохранение
     static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = false, Converters = { new JsonStringEnumConverter() } };
     public string ToJson() => JsonSerializer.Serialize(this, JsonOpts);
@@ -133,6 +139,10 @@ public sealed class Career
     {
         var c = JsonSerializer.Deserialize<Career>(json, JsonOpts);
         c.Attach(data);
+        // сохранения до модели игрока: истинные значения = данные (без розыгрыша), сила клубов не меняется
+        if (c.Players.Count == 0) { PlayerModel.Generate(c, noise: false); c.Version = 2; }
+        foreach (var p in data.Players)   // новые игроки в базе
+            if (!c.Players.ContainsKey(p.Id)) c.Players[p.Id] = PlayerModel.Make(c, p, noise: false);
         return c;
     }
 
@@ -163,7 +173,7 @@ public sealed class Career
             goalie = Data.Roster(abbr).Where(p => p.IsGoalie).OrderByDescending(p => p.Gsax).Select(p => p.Id).FirstOrDefault();
         return new MatchSide
         {
-            Team = Data.TeamByAbbr[abbr], Lineup = l, BaseOff = BaseOff[abbr], BaseDef = BaseDef[abbr], BaseGsax = BaseGsax[abbr], Goalie = goalie, B2B = b2b,
+            Team = Data.TeamByAbbr[abbr], Lineup = l, BaseOff = BaseOff[abbr], BaseDef = BaseDef[abbr], BaseGsax = BaseGsax[abbr], Goalie = goalie, B2B = b2b, Dl = Dl,
         };
     }
 
@@ -232,6 +242,7 @@ public sealed class Career
         }
         Today = Today.AddDays(1);
         InjuryModel.Heal(this);
+        if (Today.DayOfWeek == DayOfWeek.Monday) Development.Week(this);   // развитие, форма, знание — раз в неделю
         if (Phase == Phase.Playoffs) SchedulePlayoffDay();
         InboxWriter.Periodic(this);
     }

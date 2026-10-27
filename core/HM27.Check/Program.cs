@@ -157,6 +157,42 @@ Check("Плей-офф", playoffsOk, $"15 серий и чемпион в каж
         $"сыграно своих матчей {userGames} (82 + {poGames} в плей-офф), чемпион {c.Champion}; сохранение/загрузка каждые 50 шагов совпадают");
 }
 
+// ---------------------------------------------------------------- 6. Модель игрока: розыгрыш, развитие, видимые значения
+{
+    var c1 = Career.New(data, "MIN", 2027);
+    var c2 = Career.New(data, "MIN", 2027);
+    bool same = System.Text.Json.JsonSerializer.Serialize(c1.Players) == System.Text.Json.JsonSerializer.Serialize(c2.Players);
+    var regs = data.Players.Where(p => p.Lvl is { Length: > 1 } && p.LevelSe < 2.0).ToList();
+    double meanShift = regs.Average(p => c1.Players[p.Id].Lvl - p.Level);
+    double sdShift = Math.Sqrt(regs.Average(p => Math.Pow(c1.Players[p.Id].Lvl - p.Level, 2)));
+    Check("Модель игрока: розыгрыш", same && Math.Abs(meanShift) < 0.15 && sdShift is > 0.4 and < 1.6,
+        $"тот же сид → те же игроки: {same}; истинный уровень − данные: среднее {meanShift:+0.00;-0.00}, разброс {sdShift:F2} (у регулярных)");
+
+    // защита от абсурда: техника не выше уровня + 3 (по данным)
+    string[] tech = { "fin", "pas", "hnd", "dfn", "dec", "vis", "tm" };
+    int viol = data.Players.Sum(p => tech.Count(k => p.A.TryGetValue(k, out var v) && v[0] > p.Level + 3.05));
+    var stars = new[] { "Connor McDavid", "Nathan MacKinnon", "Nikita Kucherov", "Leon Draisaitl", "Cale Makar", "Kirill Kaprizov" };
+    var low = stars.Select(n => data.Players.FirstOrDefault(p => p.Name == n)).Where(p => p == null || p.Level < 17).Select(p => p?.Name ?? "?").ToList();
+    Check("Модель игрока: баланс", viol == 0 && low.Count == 0,
+        $"техника выше уровня +3: {viol}; эталонные звёзды ниже 17: {(low.Count == 0 ? "нет" : string.Join(", ", low))}");
+
+    // сезон развития
+    var start = c1.Players.ToDictionary(kv => kv.Key, kv => kv.Value.Lvl);
+    c1.SimToEnd();
+    var young = data.Players.Where(p => p.Age(c1.Today) is <= 22).Select(p => c1.Players[p.Id].Lvl - start[p.Id]).ToList();
+    var old = data.Players.Where(p => p.Age(c1.Today) is >= 34).Select(p => c1.Players[p.Id].Lvl - start[p.Id]).ToList();
+    double all = data.Players.Average(p => c1.Players[p.Id].Lvl - start[p.Id]);
+    double know = data.Roster("MIN").Average(p => c1.Players[p.Id].Know);
+    Check("Модель игрока: развитие", young.Average() > 0.25 && old.Average() < -0.2 && Math.Abs(all) < 0.35 && know > 0.95,
+        $"за сезон: до 22 лет {young.Average():+0.00;-0.00} ({young.Count}), от 34 {old.Average():+0.00;-0.00} ({old.Count}), вся лига {all:+0.00;-0.00}; знание своего клуба {know:P0}");
+    var p0 = data.Players.First(p => p.Name == "Connor McDavid");
+    var (lo, hi) = PlayerModel.Range(c2, p0, "pas");
+    var opp = data.Players.Where(p => p.Team != "MIN" && !p.IsGoalie).OrderBy(p => p.Fx.Seasons).First();
+    var (lo2, hi2) = PlayerModel.Range(c2, opp, "pas");
+    Check("Модель игрока: взгляд скаута", hi - lo <= 3 && hi2 - lo2 >= hi - lo,
+        $"Макдэвид, передача: {lo}–{hi} (знание {c2.Players[p0.Id].Know:P0}); {opp.NameRu}: {lo2}–{hi2} (знание {c2.Players[opp.Id].Know:P0}); личность Макдэвида — {PlayerModel.Personality(c2.Players[p0.Id])}");
+}
+
 Console.WriteLine(fails.Count == 0 ? "\nВсе критерии выполнены." : $"\nНе выполнено: {string.Join(", ", fails)}");
 return fails.Count == 0 ? 0 : 1;
 

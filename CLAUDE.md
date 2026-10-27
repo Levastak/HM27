@@ -8,6 +8,11 @@
   `dotnet run -c Release --project core/HM27.Check -- game/data/hm27-data.json 10`
 - `game/` — проект Godot 4.7.2 .NET. Интерфейс строится кодом (`game/ui/*.cs`), без .tscn-сцен, кроме корневых.
 - `data/build.py` — база `game/data/hm27-data.json` из файлов nhl-svodka (`site/data.json`, `site/names_ru.json`, `scripts/prior.json`).
+- Модель игрока (ТЗ — документ «HM27 — модель игрока»): `data/fetch_pbp.py` (workflow «Сырые данные» → релиз raw-data: протоколы, смены, страницы игроков, EDGE) →
+  `data/derive.py` (xG, RAPM, характеристики 1–20 с погрешностью → `data/derived.json.gz`, ревью `data/review.py`, ручные поправки `data/overrides.json`) →
+  `data/merge_model.py` (в базу игры, формат 3). Ассеты релиза качать через REST: `gh api -H "Accept: application/octet-stream" repos/Levastak/HM27/releases/assets/<id>`.
+- В ядре: `PlayerModel.cs` — истинные значения (разыгрываются от сида вокруг данных), видимые (знание клуба), потенциал, характер; `Development` — раз в неделю.
+  Движок учитывает сдвиг «истинный уровень − данные + форма» (LVL_K, G_LVL, D_LVL); база калибровки считается после розыгрыша, поэтому состав по умолчанию = сила модели.
 
 ## Принципы движка
 - Состав по умолчанию (звенья из данных) даёт ровно силу модели: эффект решений игрока считается как отличие от базы (`BaseOff`, `BaseDef`, `BaseGsax` в `Career`).

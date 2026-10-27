@@ -270,13 +270,15 @@ public partial class SquadPage : Control
             new() { Title = "Страна", Width = 50, Cell = p => Ui.L(p.Country ?? "", 11, Ui.Muted), Sort = p => p.Country ?? "", Desc = false },
             new() { Title = "Рост", Width = 40, Cell = p => Ui.L(p.Height?.ToString() ?? "", 12, Ui.Muted), Sort = p => p.Height ?? 0 },
             new() { Title = "В составе", Width = 92, Align = HorizontalAlignment.Left, Cell = p => { var r = P.Role(p.Id, _abbr); return Ui.L(r, 12, r == "Травма" ? Ui.Loss : r == "Запас" ? Ui.Dim : Ui.Muted); }, Sort = p => RoleOrder(p.Id), Desc = false },
-            new() { Title = "Способности", Width = 86, Cell = p => Ui.Stars(p.Ovr, 13), Sort = p => p.Ovr, Tip = "Оценка тренерского штаба (из статистики)" },
+            new() { Title = "Способности", Width = 86, Cell = p => Ui.Stars((int)Math.Round(PlayerModel.Visible(C, p, "lvl") * 5), 13), Sort = p => PlayerModel.Visible(C, p, "lvl"), Tip = "Оценка тренерского штаба" },
+            new() { Title = "Потенциал", Width = 86, Cell = p => Ui.Stars((int)Math.Round(PlayerModel.PotentialStars(C, p).hi * 20), 13), Sort = p => PlayerModel.PotentialStars(C, p).hi, Tip = "Потолок по оценке скаутов (верхняя граница)" },
         };
         if (!gk)
-            foreach (var (key, name, tip) in new[] { ("att", "Атк", "Атака: создание моментов (личный xG за 60 минут)"), ("pas", "Пас", "Передачи за матч"), ("fin", "Реал", "Реализация: голы относительно xG"), ("dfn", "Обор", "Оборона"), ("sta", "Вын", "Выносливость: доверие по игровому времени") })
-                cols.Add(new() { Title = name, Width = 38, Tip = tip, Cell = p => p.IsGoalie ? Ui.L("—", 12, Ui.Dim) : Ui.Attr(p.Rating(key)), Sort = p => p.IsGoalie ? -1 : p.Rating(key) });
+            foreach (var (key, name, tip) in new[] { ("fin", "Зав", "Завершение"), ("pas", "Пер", "Передача"), ("vis", "Вид", "Видение"), ("dfn", "Обор", "Позиционная оборона"), ("spd", "Скор", "Скорость"), ("sta", "Вын", "Выносливость") })
+                cols.Add(new() { Title = name, Width = 38, Tip = tip, Cell = p => p.IsGoalie ? Ui.L("—", 12, Ui.Dim) : Ui.AttrV(PlayerModel.Visible(C, p, key)), Sort = p => p.IsGoalie ? -1 : PlayerModel.Visible(C, p, key) });
         if (gk || _filter == 0)
-            cols.Add(new() { Title = "Вр", Width = 38, Tip = "Вратарское мастерство: сейвы сверх ожидаемого", Cell = p => p.IsGoalie ? Ui.Attr(p.Rating("gk")) : Ui.L("", 12), Sort = p => p.IsGoalie ? p.Rating("gk") : -1 });
+            foreach (var (key, name, tip) in new[] { ("rfx", "Реак", "Реакция: опасные броски"), ("gpos", "Поз", "Позиция: средние и дальние броски") })
+                cols.Add(new() { Title = name, Width = 38, Tip = tip, Cell = p => p.IsGoalie ? Ui.AttrV(PlayerModel.Visible(C, p, key)) : Ui.L("", 12), Sort = p => p.IsGoalie ? PlayerModel.Visible(C, p, key) : -1 });
         if (!gk)
         {
             cols.Add(new() { Title = "И", Width = 30, Cell = p => Ui.L($"{C.Skaters.GetValueOrDefault(p.Id)?.Gp ?? 0}", 12, Ui.Muted), Sort = p => C.Skaters.GetValueOrDefault(p.Id)?.Gp ?? 0 });

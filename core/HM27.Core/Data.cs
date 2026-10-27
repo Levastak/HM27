@@ -78,6 +78,21 @@ public sealed class RecordData
     [JsonPropertyName("pts")] public int Pts { get; set; }
 }
 
+public sealed class CareerFacts
+{
+    [JsonPropertyName("gp")] public int Gp { get; set; }
+    [JsonPropertyName("po")] public int Po { get; set; }
+    [JsonPropertyName("sea")] public int Seasons { get; set; }
+    [JsonPropertyName("clubs")] public int Clubs { get; set; }
+    [JsonPropertyName("club_sea")] public int ClubSeasons { get; set; }
+    [JsonPropertyName("miss")] public int MissLong { get; set; }
+    [JsonPropertyName("span")] public int Span { get; set; }
+    [JsonPropertyName("fights")] public double Fights { get; set; }
+    [JsonPropertyName("aw")] public List<string> Awards { get; set; } = new();
+    [JsonPropertyName("pick")] public int? Pick { get; set; }
+    [JsonPropertyName("draft")] public int? DraftYear { get; set; }
+}
+
 public sealed class RoleFit
 {
     [JsonPropertyName("n")] public string Name { get; set; }
@@ -121,6 +136,20 @@ public sealed class PlayerData
     /// <summary>Характеристики-оценки: нет данных (нет трекинга EDGE, мало вбрасываний и т. п.).</summary>
     [JsonPropertyName("est")] public List<string> Est { get; set; } = new();
     public double Xv(string k) => X != null && X.TryGetValue(k, out var v) && v.HasValue ? v.Value : double.NaN;
+
+    /// <summary>Модель игрока (формат 3): уровень 1–20 по данным и его погрешность.</summary>
+    [JsonPropertyName("lvl")] public double[] Lvl { get; set; }
+    /// <summary>Характеристики 1–20 по данным: ключ → [значение, погрешность] (см. <see cref="Attrs"/>).</summary>
+    [JsonPropertyName("a")] public Dictionary<string, double[]> A { get; set; } = new();
+    /// <summary>Факты карьеры для скрытых качеств: матчи, драфт, награды, клубы, пропуски, драки.</summary>
+    [JsonPropertyName("fx")] public CareerFacts Fx { get; set; } = new();
+
+    /// <summary>Уровень по данным (если модели нет — из старой оценки ovr).</summary>
+    [JsonIgnore] public double Level => Lvl is { Length: > 0 } ? Lvl[0] : Math.Clamp(R.GetValueOrDefault("ovr", 50) / 5.0, 1, 20);
+    [JsonIgnore] public double LevelSe => Lvl is { Length: > 1 } ? Lvl[1] : 3.0;
+    /// <summary>Характеристика по данным; если нет — уровень игрока (с большой погрешностью).</summary>
+    public double AttrEst(string k) => A != null && A.TryGetValue(k, out var v) && v.Length > 0 ? v[0] : Level;
+    public double AttrSe(string k) => A != null && A.TryGetValue(k, out var v) && v.Length > 1 ? v[1] : 3.0;
 
     [JsonIgnore] public bool IsGoalie => Pos == "G";
     [JsonIgnore] public bool IsDefense => Pos == "D";

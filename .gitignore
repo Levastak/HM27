@@ -9,3 +9,4 @@ obj/
 # сборки
 build/
 *.zip
+data/__pycache__/

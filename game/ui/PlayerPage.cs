@@ -57,26 +57,25 @@ public static class Attrs
     /// <summary>Какие характеристики важны для роли (подсветка, как в FM).</summary>
     public static readonly Dictionary<string, string[]> RoleKeys = new()
     {
-        ["Снайпер"] = new[] { "att", "fin", "sht", "pwr" },
-        ["Плеймейкер"] = new[] { "pas", "att", "cor", "hnd" },
-        ["Двусторонний форвард"] = new[] { "dfn", "imp", "cor", "tka", "att" },
-        ["Силовой форвард"] = new[] { "hit", "blk", "dfn", "att" },
-        ["Скоростной форвард"] = new[] { "spd", "att", "tka" },
-        ["Центр-распасовщик"] = new[] { "pas", "fo", "att", "cor" },
-        ["Оборонительный центр"] = new[] { "fo", "dfn", "blk", "tka" },
-        ["Атакующий защитник"] = new[] { "pas", "att", "sht", "cor" },
-        ["Защитник-домосед"] = new[] { "dfn", "blk", "hit" },
-        ["Универсальный защитник"] = new[] { "imp", "dfn", "pas", "cor", "sta" },
-        ["Силовой защитник"] = new[] { "hit", "blk", "dfn" },
-        ["Вратарь"] = new[] { "gk", "hd" },
+        ["Снайпер"] = new[] { "fin", "pwr", "net", "lng" },
+        ["Плеймейкер"] = new[] { "pas", "vis", "hnd", "dec" },
+        ["Двусторонний форвард"] = new[] { "dfn", "vis", "hnd", "tka", "wrk" },
+        ["Силовой форвард"] = new[] { "hit", "str", "net", "wrk" },
+        ["Скоростной форвард"] = new[] { "spd", "acc", "hnd" },
+        ["Центр-распасовщик"] = new[] { "pas", "fo", "vis", "dec" },
+        ["Оборонительный центр"] = new[] { "fo", "dfn", "pk", "tka" },
+        ["Атакующий защитник"] = new[] { "pas", "vis", "pwr", "pp" },
+        ["Защитник-домосед"] = new[] { "dfn", "blk", "hit", "pk" },
+        ["Универсальный защитник"] = new[] { "dfn", "pas", "hnd", "sta", "dec" },
+        ["Силовой защитник"] = new[] { "hit", "str", "blk" },
+        ["Вратарь"] = new[] { "rfx", "gpos" },
     };
 
-    public static string Verdict(PlayerData p)
+    public static string Verdict(PlayerData p, double level)
     {
-        int o = p.Ovr;
         string who = p.IsGoalie ? "вратарей" : p.IsDefense ? "защитников" : "нападающих";
-        return o >= 95 ? $"Один из лучших {who} мира" : o >= 85 ? $"Один из лучших {who} лиги" : o >= 70 ? $"Сильный игрок уровня НХЛ" :
-               o >= 50 ? "Твёрдый игрок состава НХЛ" : o >= 30 ? "Игрок ротации" : "Игрок глубокого резерва";
+        return level >= 18 ? $"Один из лучших {who} мира" : level >= 16 ? $"Один из лучших {who} лиги" : level >= 13 ? "Сильный игрок уровня НХЛ" :
+               level >= 10 ? "Твёрдый игрок состава НХЛ" : level >= 7 ? "Игрок ротации" : "Игрок глубокого резерва";
     }
 
     public static double Stars(int v) => Math.Clamp(Math.Round(v / 20.0 * 2) / 2, 0.5, 5);
@@ -242,10 +241,22 @@ public partial class PlayerPage : Control
 
         // способности
         var ab = Ui.V(6);
+        var st = PlayerModel.State(C, p.Id);
+        double lvl = PlayerModel.Visible(C, p, "lvl");
+        var (plo, phi) = PlayerModel.PotentialStars(C, p);
         ab.AddChild(Ui.L("ТЕКУЩИЕ СПОСОБНОСТИ", 10, Ui.Dim, Ui.Bold));
-        ab.AddChild(Ui.Stars(p.Ovr, 22));
-        ab.AddChild(Ui.L(Attrs.Verdict(p), 13, Ui.Text, Ui.Semi));
-        ab.AddChild(Ui.L($"Общий рейтинг {p.Ovr} из 99", 11, Ui.Muted));
+        ab.AddChild(Ui.Stars((int)Math.Round(lvl * 5), 22));
+        ab.AddChild(Ui.L(Attrs.Verdict(p, lvl), 13, Ui.Text, Ui.Semi));
+        ab.AddChild(Ui.Spacer(false, 4));
+        ab.AddChild(Ui.L("ПОТЕНЦИАЛ", 10, Ui.Dim, Ui.Bold));
+        ab.AddChild(Ui.H(6, Ui.Stars((int)Math.Round(phi * 20), 16),
+            Ui.L(plo == phi ? "" : $"{plo:0.#}–{phi:0.#} ★", 11, Ui.Muted)).Also(x => x.TooltipText = "Оценка скаутов: чем лучше клуб знает игрока, тем уже диапазон"));
+        ab.AddChild(Ui.Spacer(false, 4));
+        ab.AddChild(Ui.L("ЛИЧНОСТЬ", 10, Ui.Dim, Ui.Bold));
+        ab.AddChild(Ui.L(st == null || st.Know < 0.5f ? "Нужно больше наблюдений" : PlayerModel.Personality(st), 13, Ui.Text, Ui.Semi)
+            .Also(l => l.TooltipText = st == null || st.Know < 0.5f ? "Характер станет известен, когда клуб лучше узнает игрока" :
+                $"Профессионализм: {PlayerModel.Word(st.Prof)}\nАмбиции: {PlayerModel.Word(st.Amb)}\nЛояльность: {PlayerModel.Word(st.Loy)}\n" +
+                $"Лидерство: {PlayerModel.Word(st.Lead)}\nСамообладание: {PlayerModel.Word(st.Temp)}\nАдаптивность: {PlayerModel.Word(st.Adapt)}\nТравмоустойчивость: {PlayerModel.Word(st.Inj)}"));
         ab.AddChild(Ui.Spacer(false, 6));
         ab.AddChild(Ui.L("ЛУЧШАЯ РОЛЬ", 10, Ui.Dim, Ui.Bold));
         var best = p.Roles.FirstOrDefault();
@@ -287,32 +298,51 @@ public partial class PlayerPage : Control
     // ---------------------------------------------------------------- характеристики
     Control AttrGrid(PlayerData p)
     {
-        var groups = p.IsGoalie ? Attrs.Goalie : Attrs.Skater;
+        var defs = HM27.Core.Attrs.For(p);
+        var columns = p.IsGoalie
+            ? new[] { new[] { "Вратарь" } }
+            : new[] { new[] { "Атака" }, new[] { "Оборона", "Физика" }, new[] { "Мышление" } };
         var key = Attrs.RoleKeys.GetValueOrDefault(p.Roles.FirstOrDefault()?.Name ?? "") ?? Array.Empty<string>();
+        var st = PlayerModel.State(C, p.Id);
+        bool known = st != null && st.Know >= 0.6f;
         var h = Ui.H(18);
-        foreach (var (title, defs) in groups)
+        foreach (var groups in columns)
         {
             var col = Ui.Expand(Ui.V(2));
-            col.AddChild(Ui.L(title, 11, Ui.Muted, Ui.Bold));
-            col.AddChild(Ui.Rule());
-            foreach (var d in defs)
+            foreach (var grp in groups)
             {
-                int pct = p.Rating(d.Key);
-                int v20 = Ui.Attr20(pct);
-                bool est = p.Est.Contains(d.Key) || (p.Est.Contains("mp") && d.Key is "sht" or "hit" or "tka" or "blk" or "dis" or "cor" or "hnd" or "imp");
-                var row = new PanelContainer { TooltipText = $"{d.Tip}\n{d.Raw(p)}{(est ? "\nМало данных — оценка" : "")}", MouseFilter = MouseFilterEnum.Stop };
-                var sb = Ui.Box(key.Contains(d.Key) ? new Color(Ui.AccentBright, 0.16f) : new Color(0, 0, 0, 0), 2, null, 6);
-                sb.ContentMarginTop = sb.ContentMarginBottom = 3;
-                row.AddThemeStyleboxOverride("panel", sb);
-                var val = Ui.L(est ? "~" + v20 : v20.ToString(), 14, est ? new Color(Ui.AttrColor(v20), 0.55f) : Ui.AttrColor(v20), Ui.Bold, HorizontalAlignment.Right);
-                val.CustomMinimumSize = new Vector2(30, 0);
-                row.AddChild(Ui.H(6, Ui.Expand(Ui.L(d.Name, 13, Ui.Text)), val).Also(x => x.MouseFilter = MouseFilterEnum.Ignore));
-                col.AddChild(row);
+                if (grp != groups[0]) col.AddChild(Ui.Spacer(false, 8));
+                col.AddChild(Ui.L(grp.ToUpperInvariant(), 11, Ui.Muted, Ui.Bold));
+                col.AddChild(Ui.Rule());
+                foreach (var d in defs.Where(d => d.Group == grp))
+                {
+                    var (lo, hi) = PlayerModel.Range(C, p, d.Key);
+                    int av = (int)Math.Round(PlayerModel.Visible(C, p, d.Key));
+                    bool est = !p.A.ContainsKey(d.Key) || p.AttrSe(d.Key) >= 2.5;
+                    string arrow = "";
+                    Color arrowCol = Ui.Muted;
+                    if (known && st.A0.TryGetValue(d.Key, out var a0) && st.A.TryGetValue(d.Key, out var a1))
+                    {
+                        if (a1 - a0 >= 0.5f) { arrow = "▲"; arrowCol = Ui.Win; }
+                        else if (a1 - a0 <= -0.5f) { arrow = "▼"; arrowCol = Ui.Loss; }
+                    }
+                    string data = p.A.TryGetValue(d.Key, out var e) ? $"По данным: {e[0]:0.0} ± {e[1]:0.0}" : "Нет данных — оценка по уровню игрока";
+                    var row = new PanelContainer { TooltipText = $"{d.Tip}\n{data}{(lo != hi ? $"\nСкауты: {lo}–{hi}" : "")}", MouseFilter = MouseFilterEnum.Stop };
+                    var sb = Ui.Box(key.Contains(d.Key) ? new Color(Ui.AccentBright, 0.16f) : new Color(0, 0, 0, 0), 2, null, 6);
+                    sb.ContentMarginTop = sb.ContentMarginBottom = 3;
+                    row.AddThemeStyleboxOverride("panel", sb);
+                    string text = lo != hi ? $"{lo}–{hi}" : (est ? "~" : "") + av;
+                    var val = Ui.L(text, lo != hi ? 12 : 14, lo != hi || est ? new Color(Ui.AttrColor(av), 0.7f) : Ui.AttrColor(av), Ui.Bold, HorizontalAlignment.Right);
+                    val.CustomMinimumSize = new Vector2(lo != hi ? 44 : 30, 0);
+                    row.AddChild(Ui.H(4, Ui.Expand(Ui.L(d.Name, 13, Ui.Text)), Ui.L(arrow, 10, arrowCol), val).Also(x => x.MouseFilter = MouseFilterEnum.Ignore));
+                    col.AddChild(row);
+                }
             }
             h.AddChild(col);
         }
         var v = Ui.V(10, h);
-        v.AddChild(Ui.L("Шкала 1–20: место среди игроков той же позиции в лиге. Наведите на строку — увидите реальную цифру. «~» — мало данных, оценка. Подсвечены важные для лучшей роли.", 11, Ui.Dim)
+        v.AddChild(Ui.L("Шкала 1–20, средний игрок НХЛ ≈ 11. Диапазон — клуб знает игрока не до конца: скауты и время в клубе сужают его. " +
+                        "▲▼ — изменения с начала сезона. «~» — мало данных. Подсвечены важные для лучшей роли.", 11, Ui.Dim)
             .Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart));
         return v;
     }

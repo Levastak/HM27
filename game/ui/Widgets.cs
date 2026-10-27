@@ -116,15 +116,15 @@ public static class PlayerCard
         head.AddChild(Ui.Rating(p.Ovr, 22, 58));
         v.AddChild(head);
         v.AddChild(Ui.Rule());
-        var keys = p.IsGoalie ? new[] { ("gk", "Вратарское мастерство") } :
-            new[] { ("att", "Атака (создание моментов)"), ("pas", "Пас"), ("fin", "Реализация"), ("dfn", "Оборона"), ("sta", "Выносливость") };
+        var keys = p.IsGoalie ? new[] { ("rfx", "Реакция"), ("gpos", "Позиция"), ("reb", "Контроль отскока"), ("gcon", "Стабильность") } :
+            new[] { ("fin", "Завершение"), ("pas", "Передача"), ("vis", "Видение"), ("dfn", "Позиционная оборона"), ("spd", "Скорость"), ("sta", "Выносливость") };
         foreach (var (k, name) in keys)
         {
-            int r = p.Rating(k);
+            double a = PlayerModel.Visible(c, p, k);
             var h = Ui.H(10);
             h.AddChild(Ui.Expand(Ui.L(name, 14)));
-            h.AddChild(Ui.Bar(r / 99.0, RatingColor(r), 160, 6));
-            h.AddChild(Ui.Rating(r));
+            h.AddChild(Ui.Bar(a / 20.0, Ui.AttrColor((int)Math.Round(a)), 160, 6));
+            h.AddChild(Ui.AttrV(a, 14));
             v.AddChild(h);
         }
         v.AddChild(Ui.Rule());

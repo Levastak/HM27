@@ -11,6 +11,8 @@ public sealed class MatchSide
     public double BaseGsax;
     public int Goalie;
     public bool B2B;
+    /// <summary>Сдвиг силы игрока (ед. шкалы 1–20): истинный уровень − уровень по данным + форма. null — без модели игрока.</summary>
+    public Func<int, double> Dl;
 }
 
 public sealed class GoalEvent
@@ -94,32 +96,36 @@ public static class MatchEngine
     }
 
     /// <summary>Атакующий индекс состава: ожидаемый личный xG всех полевых за матч при их минутах.</summary>
-    public static double OffIndex(GameData data, Lineup l)
+    public static double OffIndex(GameData data, Lineup l, Func<int, double> dl = null)
     {
         double s = 0;
         foreach (var id in l.Skaters.Distinct())
-            if (data.PlayerById.TryGetValue(id, out var p)) s += p.Ixg60 * l.MinutesOf(id) / 60.0;
+            if (data.PlayerById.TryGetValue(id, out var p)) s += p.Ixg60 * Lvl(dl, id) * l.MinutesOf(id) / 60.0;
         return s;
     }
 
+    /// <summary>Множитель личного xG от модели игрока: e^(LVL_K × сдвиг уровня).</summary>
+    public static double Lvl(Func<int, double> dl, int id) => dl == null ? 1 : Math.Exp(PlayerModel.LVL_K * dl(id));
+
     /// <summary>Индекс защиты: у защитников — «доверие» (реальное время сверх 16 минут) пропорционально их минутам.</summary>
-    public static double DefIndex(GameData data, Lineup l)
+    public static double DefIndex(GameData data, Lineup l, Func<int, double> dl = null)
     {
         double s = 0;
         foreach (var pair in l.D)
             foreach (var id in pair)
                 if (id != 0 && data.PlayerById.TryGetValue(id, out var p))
-                    s += (p.IsDefense ? D_K * (p.Toi - D_BASE) : -0.06) * l.MinutesOf(id) / Math.Max(p.Toi, 12);
+                    s += (p.IsDefense ? D_K * (p.Toi - D_BASE + PlayerModel.D_LVL * (dl?.Invoke(id) ?? 0)) : -0.06) * l.MinutesOf(id) / Math.Max(p.Toi, 12);
         return s / 2;  // пара делит эффект
     }
 
-    public static double GoalieFactor(GameData data, int goalie, double baseGsax)
+    public static double GoalieFactor(GameData data, int goalie, double baseGsax, Func<int, double> dl = null)
     {
-        double gs = goalie != 0 && data.PlayerById.TryGetValue(goalie, out var g) ? g.Gsax : -0.12;
+        double gs = GsaxOf(data, goalie, dl);
         return Math.Clamp((1 - G_W * gs) / (1 - G_W * baseGsax), 0.85, 1.15);
     }
 
-    public static double GsaxOf(GameData data, int id) => id != 0 && data.PlayerById.TryGetValue(id, out var g) ? g.Gsax : -0.12;
+    public static double GsaxOf(GameData data, int id, Func<int, double> dl = null) =>
+        id != 0 && data.PlayerById.TryGetValue(id, out var g) ? g.Gsax + PlayerModel.G_LVL * (dl?.Invoke(id) ?? 0) : -0.12;
 
     public static MatchOdds Odds(GameData data, MatchSide home, MatchSide away, bool playoff = false, bool neutral = false)
     {
@@ -128,13 +134,13 @@ public static class MatchEngine
         double bh = Math.Exp(mu + home.Team.Att + away.Team.Dfn + ha);
         double ba = Math.Exp(mu + away.Team.Att + home.Team.Dfn - ha);
 
-        double dOffH = OffIndex(data, home.Lineup) - home.BaseOff, dOffA = OffIndex(data, away.Lineup) - away.BaseOff;
-        double dDefH = DefIndex(data, home.Lineup) - home.BaseDef, dDefA = DefIndex(data, away.Lineup) - away.BaseDef;
+        double dOffH = OffIndex(data, home.Lineup, home.Dl) - home.BaseOff, dOffA = OffIndex(data, away.Lineup, away.Dl) - away.BaseOff;
+        double dDefH = DefIndex(data, home.Lineup, home.Dl) - home.BaseDef, dDefA = DefIndex(data, away.Lineup, away.Dl) - away.BaseDef;
         double adjH = Math.Clamp(K_FOR * dOffH - K_AGAINST * dOffA + dDefH - dDefA, -0.9, 0.9);
         double adjA = Math.Clamp(K_FOR * dOffA - K_AGAINST * dOffH + dDefA - dDefH, -0.9, 0.9);
 
-        double lh = Math.Max(0.6, bh + adjH) * GoalieFactor(data, away.Goalie, away.BaseGsax);
-        double la = Math.Max(0.6, ba + adjA) * GoalieFactor(data, home.Goalie, home.BaseGsax);
+        double lh = Math.Max(0.6, bh + adjH) * GoalieFactor(data, away.Goalie, away.BaseGsax, away.Dl);
+        double la = Math.Max(0.6, ba + adjA) * GoalieFactor(data, home.Goalie, home.BaseGsax, home.Dl);
         if (home.B2B && !away.B2B) { lh *= B2B; la /= B2B; }
         if (away.B2B && !home.B2B) { la *= B2B; lh /= B2B; }
         if (playoff) { lh *= PO_TOT; la *= PO_TOT; }
@@ -271,7 +277,7 @@ public static class MatchEngine
             double mins = unit != null ? 1 : l.MinutesOf(id);
             if (ot) mins *= l.UnitOf(id) is 0 or 10 ? 3 : 1;   // в ОТ играют лучшие
             if (ev.Kind == "sh") mins *= p.IsDefense ? 1 : (l.UnitOf(id) is 2 or 3 ? 1.5 : 0.7);
-            return p.Ixg60 * p.Fin * mins;
+            return p.Ixg60 * p.Fin * mins * Lvl(side.Dl, id);
         }, rng);
 
         // Передачи: без передач ~7%, одна ~27%, две ~66%; партнёры по звену — в 3 раза чаще

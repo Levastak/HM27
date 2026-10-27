@@ -128,6 +128,13 @@ public static class Ui
 
     public static Color AttrColor(int v20) => v20 >= 16 ? new Color("5DD879") : v20 >= 11 ? new Color("B7E06A") : v20 >= 6 ? new Color("E8C25A") : new Color("E0705A");
 
+    /// <summary>Характеристика по шкале 1–20 (модель игрока).</summary>
+    public static Label AttrV(double v, int size = 13)
+    {
+        int i = Math.Clamp((int)Math.Round(v), 1, 20);
+        return L(i.ToString(), size, AttrColor(i), Bold, HorizontalAlignment.Center);
+    }
+
     public static Label Attr(int pct, int size = 13)
     {
         int v = Attr20(pct);

@@ -707,7 +707,7 @@ def main():
             "a": {k: [round(float(v["v"][p]), 2), round(float(v["se"][p]), 2)] for k, v in A.items() if pd.notna(v["v"][p])},
             "raw": {"rapm_x": round(float(S.at[p, "rapm_x"]), 3), "rapm_xo": round(float(S.at[p, "rapm_xo"]), 3), "rapm_xd": round(float(S.at[p, "rapm_xd"]), 3),
                     "rapm_c": round(float(S.at[p, "rapm_c"]), 2), "pts60": round(float(per60("pts")[p]), 2), "gax": round(float(S.at[p, "gax"]), 1)},
-            "facts": {**facts.get(p, {}), **avail.get(p, {})},
+            "facts": {**facts.get(p, {}), **avail.get(p, {}), "fights": round(float(S.at[p, "fight"]), 1), "pen60": round(float(per60("pen")[p]), 2)},
         }
     for p in G.index:
         pg_ = pages.get(str(p)) or {}
@@ -819,11 +819,21 @@ def career_facts(page):
         tag = next((t for k, t in AWARD_TAGS.items() if k.lower() in name.lower()), "")
         awards.append({"name": name, "tag": tag, "n": len(aw.get("seasons") or [])})
     leagues = sorted({s.get("leagueAbbrev") for s in page.get("seasonTotals") or [] if s.get("leagueAbbrev")})
+    nhl = sorted(((s.get("season"), (s.get("teamName") or {}).get("default")) for s in page.get("seasonTotals") or []
+                  if s.get("leagueAbbrev") == "NHL" and s.get("gameTypeId") == 2), key=lambda x: x[0] or 0)
+    clubs = len({t for _, t in nhl if t})
+    same = 0
+    if nhl:
+        last = nhl[-1][1]
+        for _, t in reversed(nhl):
+            if t != last:
+                break
+            same += 1
     seasons_nhl = len({s.get("season") for s in page.get("seasonTotals") or [] if s.get("leagueAbbrev") == "NHL" and s.get("gameTypeId") == 2})
     return {
         "nhl_gp": rs.get("gamesPlayed"), "po_gp": po.get("gamesPlayed"), "nhl_seasons": seasons_nhl,
         "draft": {k: dd.get(k) for k in ("year", "round", "overallPick")} if dd else None,
-        "awards": awards, "leagues": leagues,
+        "awards": awards, "leagues": leagues, "clubs": clubs, "club_seasons": len({x for x, t in nhl if t == (nhl[-1][1] if nhl else None)}) if nhl else 0,
         "h": page.get("heightInCentimeters"), "w": page.get("weightInKilograms"), "shoots": page.get("shootsCatches"),
         "country": page.get("birthCountry"), "born": page.get("birthDate"),
     }
