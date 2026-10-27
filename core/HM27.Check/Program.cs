@@ -38,6 +38,9 @@ var buckets = new double[20]; var bucketWins = new double[20]; var bucketN = new
 var corr = new List<(double strength, double pts)>();
 var champions = new Dictionary<string, int>();
 bool playoffsOk = true;
+// сверка с реальностью: очки и голы игроков на 82 матча против реального сезона 2025-26
+var pPts = new Dictionary<int, double>(); var pG = new Dictionary<int, double>(); var pGp = new Dictionary<int, double>();
+var top10 = new List<double>(); var topSnipers = new List<int>();
 for (int s = 0; s < seasons; s++)
 {
     var c = Career.New(data, "MIN", 1000 + s);
@@ -55,6 +58,9 @@ for (int s = 0; s < seasons; s++)
         buckets[b] += fav; bucketWins[b] += favWon ? 1 : 0; bucketN[b]++;
     }
     foreach (var t in data.Teams) corr.Add((t.Att - t.Dfn, c.Table[t.Abbr].Pts));
+    foreach (var (id, l) in c.Skaters) { pPts[id] = pPts.GetValueOrDefault(id) + l.G + l.A; pG[id] = pG.GetValueOrDefault(id) + l.G; pGp[id] = pGp.GetValueOrDefault(id) + l.Gp; }
+    top10.Add(c.Skaters.Values.Where(l => l.Gp >= 60).Select(l => (l.G + l.A) * 82.0 / l.Gp).OrderByDescending(x => x).Take(10).Average());
+    topSnipers.AddRange(c.Skaters.OrderByDescending(x => x.Value.G).Take(10).Select(x => x.Key));
     if (c.Champion == null || c.Bracket.Count != 15 || c.Games.Count(g => g.Playoff) < 15 * 4) playoffsOk = false;
     else champions[c.Champion] = champions.GetValueOrDefault(c.Champion) + 1;
 }
@@ -76,6 +82,19 @@ for (int b = 10; b < 20; b++)
 Check("Калибровка", calOk, "движок выигрывает с той частотой, которую сам обещает (допуск 2 п.п. + шум выборки)");
 double rr = Pearson(corr.Select(x => x.strength).ToList(), corr.Select(x => x.pts).ToList());
 Check("Сила → очки", rr >= 0.6, $"корреляция силы клуба и очков за сезон r = {rr:F2} (ТЗ: ≥ 0,7 против реальной таблицы — проверим на исторических сезонах в этапе 1)");
+{
+    var real = data.Players.Where(p => p.Real != null && p.Real["gp"] >= 60 && pGp.GetValueOrDefault(p.Id) >= 50.0 * seasons).ToList();
+    var gameP = real.Select(p => pPts[p.Id] / pGp[p.Id] * 82).ToList(); var realP = real.Select(p => (p.Real["g"] + p.Real["a"]) * 82.0 / p.Real["gp"]).ToList();
+    var gameG = real.Select(p => pG[p.Id] / pGp[p.Id] * 82).ToList(); var realG = real.Select(p => p.Real["g"] * 82.0 / p.Real["gp"]).ToList();
+    double rP = Pearson(gameP, realP), rG = Pearson(gameG, realG);
+    double realTop = data.Players.Where(p => p.Real != null && p.Real["gp"] >= 60).Select(p => (p.Real["g"] + p.Real["a"]) * 82.0 / p.Real["gp"]).OrderByDescending(x => x).Take(10).Average();
+    double gameTop = top10.Average();
+    // среди 10 лучших снайперов сезона — нет игроков с реальным временем меньше 14 минут за матч
+    var fringe = topSnipers.Where(id => data.PlayerById[id].Toi < 14).Select(id => data.PlayerById[id].Name).Distinct().ToList();
+    Check("Сверка с реальностью: игроки", rP >= 0.8 && rG >= 0.8 && Math.Abs(gameTop / realTop - 1) <= 0.10 && fringe.Count == 0,
+        $"корреляция с сезоном 2025-26 ({real.Count} игроков): очки r = {rP:F2}, голы r = {rG:F2}; средние на 82: очки {gameP.Average():F1}/{realP.Average():F1}; " +
+        $"топ-10 бомбардиров {gameTop:F0}/{realTop:F0} очков на 82 ({(gameTop / realTop - 1) * 100:+0;-0}%); игроки с малым временем в топ-10 снайперов: {(fringe.Count == 0 ? "нет" : string.Join(", ", fringe.Take(4)))}");
+}
 Check("Плей-офф", playoffsOk, $"15 серий и чемпион в каждом сезоне; чемпионы: {string.Join(", ", champions.OrderByDescending(x => x.Value).Take(6).Select(x => $"{x.Key} {x.Value}"))}");
 
 // ---------------------------------------------------------------- 4. Вратарь и звенья

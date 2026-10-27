@@ -964,6 +964,29 @@ def main():
     log("сильно связанные характеристики:", meta["attr_corr_high"])
     meta["reliability"] = ks
 
+    # ── темпы для движка: кто забивает и отдаёт внутри команды (5 сезонов, сжатие к среднему позиции) ──
+    rt = pd.DataFrame(index=S.index)
+    K_RT = 700.0
+    for g_, idx_ in groups.items():
+        rg = [i for i in idx_ if reg[i]]
+        mu_x = S.loc[rg, "ixg"].sum() / S.loc[rg, "toi_min"].sum()
+        mu_a = (S.loc[rg, "a1"] + S.loc[rg, "a2"]).sum() / S.loc[rg, "toi_min"].sum()
+        # мало минут — тянем не к среднему регулярного игрока, а ниже: у игроков с малым временем настоящий уровень в среднем ниже
+        pr = 0.8 + 0.2 * (S.loc[idx_, "toi_min"] / 2000).clip(upper=1)
+        rt.loc[idx_, "ixg60"] = (S.loc[idx_, "ixg"] + K_RT * mu_x * pr) / (S.loc[idx_, "toi_min"] + K_RT) * 60
+        rt.loc[idx_, "a60"] = (S.loc[idx_, "a1"] + S.loc[idx_, "a2"] + K_RT * mu_a * pr) / (S.loc[idx_, "toi_min"] + K_RT) * 60
+    gax_shr = S["gax"] * S["fsh"] / (S["fsh"] + k_fin) / S["fsh"].clip(lower=1) * S["fsh"]   # реализация сверх xG, сжатая
+    rt["gx"] = (1 + gax_shr / S["ixg"].clip(lower=1)).clip(0.75, 1.35)
+    meta["rates"] = {"k_min": K_RT, "gx_range": [round(float(rt["gx"].min()), 2), round(float(rt["gx"].max()), 2)]}
+    # реальный сезон 2025-26 (MoneyPuck) — для сверки сезонов игры с реальностью
+    real25 = {}
+    hp = os.path.join(a.raw, "mp_hist.json.gz")
+    if os.path.exists(hp):
+        for pid_, ss_ in gz(hp).get("skaters", {}).items():
+            v_ = ss_.get("2025")
+            if v_ and (v_.get("gp") or 0) >= 20:
+                real25[int(pid_)] = {"gp": int(v_["gp"]), "g": int(v_.get("g") or 0), "a": int((v_.get("a1") or 0) + (v_.get("a2") or 0))}
+
     # ── поправка на возраст: данные — средние за прошлые сезоны, а игрок уже старше (молодые выросли, ветераны сдали) ──
     curves = load_curves(a.curves)
     born = {int(k): v.get("birthDate") for k, v in pages.items()}
@@ -993,7 +1016,7 @@ def main():
         log("поправка на возраст:", meta["age_adjust"])
 
     # ── вратари ──
-    G = goalies(shots, pg, pages, games, a.extra, curves, born)
+    G = goalies(shots, pg, pages, games, a.extra, curves, born, a.raw)
 
     # ── факты карьеры (скрытые качества) ──
     facts = {p: career_facts(pages.get(str(p))) for p in list(S.index) + list(G.index)}
@@ -1012,6 +1035,8 @@ def main():
             "raw": {"rapm_x": round(float(S.at[p, "rapm_x"]), 3), "rapm_xo": round(float(S.at[p, "rapm_xo"]), 3), "rapm_xd": round(float(S.at[p, "rapm_xd"]), 3),
                     "rapm_c": round(float(S.at[p, "rapm_c"]), 2), "pts60": round(float(per60("pts")[p]), 2), "gax": round(float(S.at[p, "gax"]), 1)},
             "facts": {**facts.get(p, {}), **avail.get(p, {}), "fights": round(float(S.at[p, "fight"]), 1), "pen60": round(float(per60("pen")[p]), 2)},
+            "rt": {k_: round(float(rt.at[p, k_]), 4) for k_ in ("ixg60", "a60", "gx")},
+            **({"real": real25[p]} if p in real25 else {}),
         }
     for p in G.index:
         pg_ = pages.get(str(p)) or {}
@@ -1210,7 +1235,7 @@ def availability(pg, games):
     return out
 
 
-def goalies(shots, pg, pages, games, extra_path=None, curves=None, born=None):
+def goalies(shots, pg, pages, games, extra_path=None, curves=None, born=None, raw_dir=None):
     sh = shots[shots["type"].isin(UNBLOCKED) & (shots["en"] == 0) & shots["goalie"].notna()].copy()
     sh["goalie"] = sh["goalie"].astype(np.int64)
     sh["gsax"] = sh["xg"] - sh["g"]
@@ -1251,10 +1276,18 @@ def goalies(shots, pg, pages, games, extra_path=None, curves=None, born=None):
     reg = (agg["toi"] >= 1000).to_dict()
     grp = {"G": list(agg.index)}
     z = Scale(agg["gsax"] / agg["n"].clip(lower=1), agg["n"], k, grp, reg, None, prior_on_level=False).z
-    # второе мнение: GSAx по модели MoneyPuck (у неё больше признаков броска), сезоны 2024-25 и новее
-    if extra_path and os.path.exists(extra_path):
+    # второе мнение: GSAx по модели MoneyPuck за 2021–2026 (сводки сезонов; у неё больше признаков броска)
+    hist_path = os.path.join(raw_dir, "mp_hist.json.gz") if raw_dir else None
+    if hist_path and os.path.exists(hist_path):
+        mp = gz(hist_path).get("goalies", {})
+        mpw = {"2026": 1.0, "2025": 1.0, "2024": 0.8, "2023": 0.64, "2022": 0.5, "2021": 0.4}
+    elif extra_path and os.path.exists(extra_path):
         mp = gz(extra_path).get("goalies", {})
         mpw = {"2026": 1.0, "2025": 1.0, "2024": 0.8}
+    else:
+        mp, mpw = {}, {}
+    n_eff = agg["n"].copy()
+    if mp:
         rows = {}
         for pid, seas in mp.items():
             num = den = 0.0
@@ -1268,9 +1301,10 @@ def goalies(shots, pg, pages, games, extra_path=None, curves=None, born=None):
         mn = pd.Series({p: rows[p][1] for p in agg.index if p in rows}, dtype=float).reindex(agg.index).fillna(0)
         zm = Scale(mx, mn, k * 0.7, grp, reg, None, prior_on_level=False).z
         z = pd.Series(np.where(mx.notna(), 0.5 * z.fillna(0) + 0.5 * zm.fillna(0), z), index=agg.index)
+        n_eff = np.maximum(agg["n"], mn * 1.35)        # броски в створ MoneyPuck → все неблокированные (≈ ×1,35)
     # доля стартов в сезонах (с весами): нагрузка — признак доверия
     # мало бросков — тянем не к среднему, а к уровню запасного (незнакомые вратари в среднем ниже основных)
-    z = z + (1 - agg["n"] / (agg["n"] + k)) * (-0.8)
+    z = z + (1 - n_eff / (n_eff + k)) * (-0.8)
     zw = Scale(agg["starts"] / agg["gp"].clip(lower=1), agg["gp"], 30.0, grp, reg, None, prior_on_level=False).z   # мало матчей — к среднему
     zl = 0.75 * z.fillna(0) + 0.25 * zw.fillna(0)
     regs = [i for i in agg.index if reg[i]]
@@ -1290,7 +1324,7 @@ def goalies(shots, pg, pages, games, extra_path=None, curves=None, born=None):
         level = (level + gadj).clip(1, 19.9)
         ca = (ca + CA_PER_LVL * gadj).clip(40, 199)
         zG = zG + gadj / SCALE
-    se_l = (0.65 * SCALE * np.sqrt(k / (agg["n"] + k))).clip(0.6, 3.0)
+    se_l = (0.65 * SCALE * np.sqrt(k / (n_eff + k))).clip(0.6, 3.0)
     res = {}
     for key, kind, x, n, kk, sign in (
         ("rfx", "tech", agg["gsax_hd"] / agg["n_hd"].clip(lower=1), agg["n_hd"], k * 0.25, 1.0),

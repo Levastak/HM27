@@ -118,6 +118,18 @@ def main(db_path="game/data/hm27-data.json", model_path="data/derived.json.gz", 
             p["ca"] = [round(src["ca"][0], 1), round(src["ca"][1], 1)]
             p["a"] = {k: [round(v[0], 2), round(v[1], 2)] for k, v in src["a"].items()}
             p["fx"] = facts(src.get("facts"))
+            rt = src.get("rt")
+            if rt and p["pos"] != "G":
+                # движок раздаёт голы и передачи внутри команды по темпам за 5 сезонов (а не по 10 матчам текущего)
+                toi = p.get("toi") or 15.0
+                # гармонизация по времени (как в build.py): «за 60» у игроков с малым временем завышено лёгкими соперниками,
+                # у звёзд — занижено; при переводе в звено с другими минутами это иначе перекосит раздачу голов
+                pos_toi = {"C": 16.5, "LW": 15.5, "RW": 15.5, "D": 19.5}.get(p["pos"], 16.0)
+                x60 = rt["ixg60"] * toi / ((toi + pos_toi) / 2)
+                p["ixg60"] = round(x60, 4); p["ixg_pg"] = round(x60 * toi / 60, 4)
+                p["fin"] = rt["gx"]; p["apg"] = round(rt["a60"] * toi / 60, 4)
+            if src.get("real"):
+                p["real"] = src["real"]
             found += 1
         else:
             # дебютант без матчей в протоколах: уровень из старой перцентильной оценки, не выше 12, большая погрешность

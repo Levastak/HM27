@@ -159,6 +159,8 @@ public sealed class PlayerData
     [JsonPropertyName("a")] public Dictionary<string, double[]> A { get; set; } = new();
     /// <summary>Факты карьеры для скрытых качеств: матчи, драфт, награды, клубы, пропуски, драки.</summary>
     [JsonPropertyName("fx")] public CareerFacts Fx { get; set; } = new();
+    /// <summary>Реальный сезон 2025-26 (MoneyPuck): gp, g, a — для сверки сезонов игры с реальностью (HM27.Check).</summary>
+    [JsonPropertyName("real")] public Dictionary<string, int> Real { get; set; }
 
     /// <summary>Уровень по данным (если модели нет — из старой оценки ovr).</summary>
     [JsonIgnore] public double Level => Lvl is { Length: > 0 } ? Lvl[0] : Math.Clamp(R.GetValueOrDefault("ovr", 50) / 5.0, 1, 20);
