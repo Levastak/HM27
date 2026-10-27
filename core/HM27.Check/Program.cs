@@ -222,6 +222,32 @@ Check("Плей-офф", playoffsOk, $"15 серий и чемпион в каж
         $"Макдэвид, передача: {lo}–{hi} (знание {c2.Players[p0.Id].Know:P0}); {opp.NameRu}: {lo2}–{hi2} (знание {c2.Players[opp.Id].Know:P0}); личность Макдэвида — {PlayerModel.Personality(c2.Players[p0.Id])}");
 }
 
+// ---------------------------------------------------------------- 7. ПА — потолок, а не прогноз (лабораторно: 10 лет развития молодых)
+{
+    var young = data.Players.Where(p => p.Age(new DateOnly(2026, 10, 6)) is <= 22 && p.CaEst >= 100).ToList();
+    var rows = new List<(double pa, double peak, double exp)>();
+    for (int seed = 1; seed <= 4; seed++)
+    {
+        var c = Career.New(data, "MIN", 700 + seed);
+        var st = young.ToDictionary(p => p.Id, p => c.Players[p.Id]);
+        var start = st.ToDictionary(kv => kv.Key, kv => (pa: (double)kv.Value.Pa, exp: (double)kv.Value.Peak));
+        var best = st.ToDictionary(kv => kv.Key, kv => (double)kv.Value.Ca);
+        c.Players = st;
+        for (int y = 0; y < 10; y++)
+        {
+            Development.NewSeason(c);
+            for (int w = 0; w < 26; w++) { c.Today = c.Today.AddDays(7); Development.Week(c); foreach (var kv in st) best[kv.Key] = Math.Max(best[kv.Key], kv.Value.Ca); }
+            c.Today = c.Today.AddDays(365 - 26 * 7);
+        }
+        rows.AddRange(young.Select(p => (start[p.Id].pa, best[p.Id], start[p.Id].exp)));
+    }
+    double reach = rows.Count(r => r.peak >= r.pa - 5) / (double)rows.Count;
+    double gap = rows.Average(r => r.peak - r.exp);
+    Check("Модель игрока: ПА — потолок", reach is >= 0.15 and <= 0.4 && Math.Abs(gap) <= 4,
+        $"молодые (до 22 лет, КА 100+), 10 лет развития, {rows.Count} карьер: дошли до ПА (±5) {reach:P0} (цель 20–30%); " +
+        $"средний пик относительно ожидаемого {gap:+0.0;-0.0}; ПА выше пика в среднем на {rows.Average(r => r.pa - r.peak):F1}");
+}
+
 Console.WriteLine(fails.Count == 0 ? "\nВсе критерии выполнены." : $"\nНе выполнено: {string.Join(", ", fails)}");
 return fails.Count == 0 ? 0 : 1;
 

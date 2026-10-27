@@ -86,8 +86,12 @@ public sealed class PlayerState
     public float Ca { get; set; }
     /// <summary>КА в начале сезона — для стрелок развития.</summary>
     public float Ca0 { get; set; }
-    /// <summary>Потенциальные способности (ПА) 1–200 — потолок КА.</summary>
+    /// <summary>Потенциальные способности (ПА) 1–200 — потолок КА при идеальных условиях. Дойти до него не обязательно.</summary>
     public float Pa { get; set; }
+    /// <summary>Ожидаемый пик КА при обычных условиях (для скаутских отчётов и проверок).</summary>
+    public float Peak { get; set; }
+    /// <summary>«Удача развития» сезона: ×(0,4–1,7) к росту; разыгрывается заново каждый сезон.</summary>
+    public float Luck { get; set; } = 1f;
     public Dictionary<string, float> A { get; set; } = new();
     public Dictionary<string, float> A0 { get; set; } = new();
     // Скрытые качества 1–20
@@ -157,7 +161,7 @@ public static class PlayerModel
     }
 
     /// <summary>Рост, который ещё впереди в среднем: сумма положительной кривой от возраста до 30.</summary>
-    static double Remaining(GameData data, PlayerData p, int age)
+    public static double Remaining(GameData data, PlayerData p, int age)
     {
         double s = 0;
         for (int a = age; a < 32; a++) s += Math.Max(0, LevelCurve(data, p, a));
@@ -187,15 +191,16 @@ public static class PlayerModel
             s.A[d.Key] = C(v);
         }
         // потенциал: средний рост для возраста, у сильных для своего возраста — больше; разброс тем шире, чем моложе
-        // ПА на шкале 1–200: средний рост для возраста; у сильных для своих лет — больше; у самого потолка (200) — меньше
-        double head = Math.Pow(Math.Clamp((200 - s.Ca) / 80.0, 0.03, 1.0), 0.6);
-        double talent = Math.Clamp(0.7 + 0.015 * (s.Ca - 110), 0.6, 1.6);
-        double grow = Remaining(c.Data, p, age) * CA_PER_LVL * talent * head;
-        double sd = (age <= 20 ? 1.8 : age <= 23 ? 1.3 : age <= 25 ? 0.7 : 0.3) * CA_PER_LVL * Math.Max(head, 0.3);
-        double pa = s.Ca + grow + N(rng) * sd;
-        if (age <= 25 && rng.NextDouble() < 0.03) pa += 15 * head;                  // «поздно раскрывшийся»
-        if (f.Pick is <= 10 && f.Gp < 200) pa += 2.5 * head;
-        s.Pa = age >= 28 ? s.Ca + 1 : (float)Math.Clamp(Math.Max(pa, s.Ca), 1, 200);
+        // Ожидаемый пик: средний рост для возраста (кривые из данных) × талант (сильные для своих лет растут быстрее)
+        // × запас до 200. ПА — потолок при идеальных условиях: выше ожидаемого пика, с разбросом вверх.
+        double grow = ExpectedGrowth(c.Data, p, age, s.Ca);
+        double sd = (age <= 20 ? 1.8 : age <= 23 ? 1.3 : age <= 25 ? 0.7 : 0.3) * CA_PER_LVL * Math.Max(Head(s.Ca), 0.3);
+        s.Peak = (float)Math.Clamp(s.Ca + grow, 1, 200);
+        double pa = s.Ca + grow * PA_OVER + 0.8 * Math.Abs(N(rng)) * sd + N(rng) * sd * 0.3;
+        if (age <= 25 && rng.NextDouble() < 0.03) pa += 15 * Head(s.Ca);              // «поздно раскрывшийся»
+        if (f.Pick is <= 10 && f.Gp < 200) pa += 2.5 * Head(s.Ca);
+        s.Pa = age >= 28 ? s.Ca + 1 : (float)Math.Clamp(Math.Max(pa, s.Peak), 1, 200);
+        s.Luck = (float)Math.Clamp(1 + 0.3 * N(rng), 0.4, 1.7);
         s.Pot = C(s.Lvl + (s.Pa - s.Ca) / CA_PER_LVL);
         // характер: из фактов карьеры, недостающее — мягкая генерация (у реальных игроков не ниже 7)
         bool Aw(string t) => f.Awards?.Contains(t) == true;
@@ -216,6 +221,19 @@ public static class PlayerModel
         s.A0 = new Dictionary<string, float>(s.A);
         return s;
     }
+
+    /// <summary>ПА выше ожидаемого пика: ×PA_OVER к ожидаемому росту + разброс вверх.</summary>
+    public const double PA_OVER = 1.15;
+
+    /// <summary>Запас до потолка шкалы: у самых сильных расти некуда.</summary>
+    public static double Head(double ca) => Math.Pow(Math.Clamp((200 - ca) / 80.0, 0.03, 1.0), 0.6);
+
+    /// <summary>Талант для своих лет: сильные растут быстрее.</summary>
+    public static double Talent(double ca) => Math.Clamp(0.7 + 0.015 * (ca - 110), 0.6, 1.6);
+
+    /// <summary>Ожидаемый рост КА до пика при обычных условиях.</summary>
+    public static double ExpectedGrowth(GameData data, PlayerData p, int age, double ca) =>
+        Remaining(data, p, age) * CA_PER_LVL * Talent(ca) * Head(ca);
 
     public static PlayerState State(Career c, int id) => c.Players.TryGetValue(id, out var s) ? s : null;
 
@@ -296,6 +314,11 @@ public static class Development
 {
     public const double WEEKS = 26;
 
+    /// <summary>
+    /// Неделя развития. Рост не тянется к ПА сам: он зависит от условий —
+    /// возраст (кривые из данных), талант, профессионализм и амбиции, игровое время и роль, «удача сезона»,
+    /// оценки за игру (небольшой бонус за хорошую игру), травмы (пока травмирован — не растёт). ПА — только потолок.
+    /// </summary>
     public static void Week(Career c)
     {
         var inj = c.Injured.ToHashSet();
@@ -305,38 +328,87 @@ public static class Development
             if (!c.Players.TryGetValue(p.Id, out var s)) continue;
             var rng = new Random(unchecked(c.Seed * 15485863 ^ p.Id * 7 ^ c.Today.DayNumber));
             int age = p.Age(c.Today) ?? 26;
-            // игровое время: доля сыгранных матчей клуба в этом сезоне
-            int tgp = teamGp.GetValueOrDefault(p.Team);
-            int gp = p.IsGoalie ? (c.Goalies.TryGetValue(p.Id, out var gl) ? gl.Gp : 0) : (c.Skaters.TryGetValue(p.Id, out var sl) ? sl.Gp : 0);
-            double share = tgp == 0 ? 0.7 : Math.Min(1, gp / (double)tgp);
-            double mins = p.IsGoalie ? 0.7 + 0.5 * share : 0.6 + 0.6 * share;
-            double room = Math.Clamp((s.Pot - s.Lvl) / 1.5, 0, 1.3);
-            double roomCa = Math.Clamp((s.Pa - s.Ca) / 9.0, 0, 1.3);
+            double cond = Conditions(c, p, s, teamGp);
+            double talent = PlayerModel.Talent(s.Ca) * PlayerModel.Head(s.Ca);
+            double nearPa = Math.Clamp((s.Pa - s.Ca) / 4.0, 0, 1);        // у самого потолка рост затухает
+            bool hurt = inj.Contains(p.Id);
             double sumD = 0, sumCa = 0; int n = 0;
             foreach (var d in Attrs.For(p))
             {
                 double cv = PlayerModel.Curve(c.Data, Attrs.CurveGroup(d.Key), age);
-                double g = Math.Max(cv, 0) * room * (0.7 + 0.06 * (s.Prof - 10)) * mins;
-                if (inj.Contains(p.Id)) g = 0;
+                double g = hurt ? 0 : Math.Max(cv, 0) * talent * cond * nearPa;
                 double dec = Math.Min(cv, 0) * (1.15 - 0.03 * (s.Prof - 10));
+                sumCa += (g + dec) / WEEKS;
                 double dv = (g + dec) / WEEKS + 0.04 * N(rng);
-                double gCa = Math.Max(cv, 0) * roomCa * (0.7 + 0.06 * (s.Prof - 10)) * mins;
-                if (inj.Contains(p.Id)) gCa = 0;
-                sumCa += (gCa + dec) / WEEKS;
                 float old = s.A.GetValueOrDefault(d.Key, s.Lvl);
                 float nv = (float)Math.Clamp(old + dv, 1, 20);
                 s.A[d.Key] = nv;
                 sumD += nv - old; n++;
             }
-            if (n > 0) s.Lvl = (float)Math.Clamp(s.Lvl + sumD / n, 1, Math.Max(s.Pot + 0.3, s.Lvl));
-            // КА растёт по кривым без «упора» в 20 у характеристик — у элиты рост виден так же, как у остальных
-            if (n > 0) s.Ca = (float)Math.Clamp(s.Ca + sumCa / n * PlayerModel.CA_PER_LVL + 0.15 * N(rng), 1, Math.Max(s.Pa + 2, s.Ca));
+            if (n > 0)
+            {
+                s.Lvl = (float)Math.Clamp(s.Lvl + sumD / n, 1, 20);
+                // КА растёт по кривым без «упора» в 20 у характеристик — у элиты рост виден так же, как у остальных
+                s.Ca = (float)Math.Clamp(s.Ca + sumCa / n * PlayerModel.CA_PER_LVL + 0.15 * N(rng), 1, Math.Max(s.Pa, s.Ca));
+                s.Pot = (float)Math.Clamp(s.Lvl + (s.Pa - s.Ca) / PlayerModel.CA_PER_LVL, 1, 20);
+            }
             // форма: плавное случайное блуждание, у стабильных — тише
             double con = s.A.GetValueOrDefault(p.IsGoalie ? "gcon" : "con", 11);
             s.Form = (float)Math.Clamp(0.85 * s.Form + 0.25 * (1.3 - 0.03 * (con - 10)) * N(rng), -1, 1);
             // свой клуб узнаёт игроков за несколько недель
             if (p.Team == c.UserTeam) s.Know = Math.Min(1f, s.Know + 0.1f);
         }
+    }
+
+    /// <summary>Условия развития (≈1 у обычного игрока основы): характер × игровое время и роль × удача сезона × игра.</summary>
+    public static double Conditions(Career c, PlayerData p, PlayerState s, Dictionary<string, int> teamGp = null)
+    {
+        double character = 1 + 0.05 * (s.Prof - 12) + 0.02 * (s.Amb - 12);
+        int tgp = teamGp?.GetValueOrDefault(p.Team) ?? c.Table.GetValueOrDefault(p.Team)?.Gp ?? 0;
+        double share; double role; double rating = 0; int gp;
+        if (p.IsGoalie)
+        {
+            var gl = c.Goalies.GetValueOrDefault(p.Id); gp = gl?.Gp ?? 0;
+            share = tgp == 0 ? 0.6 : Math.Min(1, gp / (double)tgp);
+            role = c.Lineups.TryGetValue(p.Team, out var lg) && lg.G1 == p.Id ? 1.1 : 0.9;
+            rating = gl?.AvgRating ?? 0;
+        }
+        else
+        {
+            var sl = c.Skaters.GetValueOrDefault(p.Id); gp = sl?.Gp ?? 0;
+            share = tgp == 0 ? 0.8 : Math.Min(1, gp / (double)tgp);
+            int unit = c.Lineups.TryGetValue(p.Team, out var l) ? l.UnitOf(p.Id) : -1;
+            bool pp = l != null && (l.Pp1.Contains(p.Id) || l.Pp2.Contains(p.Id));
+            role = unit switch { 0 or 10 => 1.15, 1 or 11 => 1.05, 2 or 12 => 0.95, 3 => 0.85, _ => 0.6 } + (pp ? 0.05 : 0);
+            rating = sl?.AvgRating ?? 0;
+        }
+        // сидящий в запасе почти не растёт; основа на первых ролях — быстрее
+        double minutes = (0.35 + 0.65 * share) * role;
+        // хорошая игра — небольшой бонус (±15%), только при достаточном числе матчей
+        double perf = gp >= 10 && rating > 0 ? 1 + 0.15 * Math.Clamp((rating - 6.9) / 0.4, -1, 1) : 1;
+        return Math.Max(0, character) * minutes * s.Luck * perf;
+    }
+
+    /// <summary>Новый сезон (межсезонье): заново разыгрывается «удача развития». Вызывается при переходе к следующему сезону.</summary>
+    public static void NewSeason(Career c)
+    {
+        foreach (var (id, s) in c.Players)
+        {
+            var rng = new Random(unchecked(c.Seed * 31337 ^ id ^ c.Today.Year));
+            s.Luck = (float)Math.Clamp(1 + 0.3 * N(rng), 0.4, 1.7);
+            s.Ca0 = s.Ca; s.Lvl0 = s.Lvl; s.A0 = new Dictionary<string, float>(s.A);
+        }
+    }
+
+    /// <summary>Тяжёлая травма (2+ месяца): с шансом 35% навсегда срезает скорость, ускорение и немного КА.</summary>
+    public static void SeriousInjury(Career c, PlayerData p, int days, Random rng)
+    {
+        if (days < 60 || !c.Players.TryGetValue(p.Id, out var s) || rng.NextDouble() >= 0.35) return;
+        float hit = (float)(2 + 3 * rng.NextDouble());
+        s.Ca = Math.Max(1, s.Ca - hit);
+        s.Pa = Math.Max(s.Ca, s.Pa - hit);
+        foreach (var k in new[] { "spd", "acc" })
+            if (s.A.ContainsKey(k)) s.A[k] = (float)Math.Max(1, s.A[k] - (0.5 + rng.NextDouble()));
     }
 
     static double N(Random r) => Math.Sqrt(-2 * Math.Log(1 - r.NextDouble())) * Math.Cos(2 * Math.PI * r.NextDouble());

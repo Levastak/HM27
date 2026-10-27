@@ -36,6 +36,7 @@ public static class InjuryModel
                 var kind = Kinds[rng.Next(Kinds.Length)];
                 if (kind == "болезнь") days = Math.Min(days, 6);
                 c.Injuries.Add(new Injury { Id = id, From = g.Date, Until = g.Date.AddDays(days), Kind = kind });
+                Development.SeriousInjury(c, p, days, rng);
                 c.Injured.Add(id);
                 if (team == c.UserTeam)
                     InboxWriter.Add(c, "Медицинский отдел", $"Травма: {p.NameRu}",
