@@ -106,6 +106,11 @@ public sealed class PlayerState
     public float Know { get; set; }
     /// <summary>Настоящая форма −1…+1: небольшая поправка к силе, меняется плавно.</summary>
     public float Form { get; set; }
+    /// <summary>
+    /// Форма сезона (ед. шкалы), пока только у вратарей: разыгрывается на весь сезон.
+    /// Сезон вратаря в НХЛ примерно наполовину — талант, наполовину — то, что случилось именно в этом сезоне.
+    /// </summary>
+    public float Season { get; set; }
 }
 
 public static class PlayerModel
@@ -120,6 +125,20 @@ public static class PlayerModel
     public const double FORM_U = 0.35;
     /// <summary>Пунктов КА (1–200) на единицу шкалы 1–20.</summary>
     public const double CA_PER_LVL = 6.0;
+    /// <summary>
+    /// Вратари: доля погрешности данных, с которой разыгрывается истинный талант (у полевых — 1).
+    /// Талант вратаря по данным виден плохо (корреляция сезона со следующим ≈ 0,15–0,25 по MoneyPuck 2010–2026),
+    /// но в игре звёзды остаются звёздами: разброс сезонов даёт форма сезона, а не пожизненная ошибка таланта.
+    /// </summary>
+    public const double G_DRAW = 0.5;
+    /// <summary>
+    /// Вратари: стандартное отклонение формы сезона, ед. шкалы. По MoneyPuck 2022–2026 «сезонная» часть разброса
+    /// (сейвы сверх ожидаемого) примерно равна разбросу таланта: ≈ 0,04 доли ожидаемых голов = 2,5–2,7 ед. при G_LVL 0,015.
+    /// Сверка: разброс % отражённых у вратарей с 40+ матчами (НХЛ 0,009–0,013) — проверка «Вратари: разброс сезона».
+    /// </summary>
+    public const double G_SEASON = 2.5;
+    /// <summary>Вратари: «горячей руки» почти нет (отрезки по 10 матчей связаны на 0,07) — недельная форма слабее, чем у полевых.</summary>
+    public const double G_FORM = 0.5;
     /// <summary>Видимая ошибка при нулевом знании: стандартное отклонение, ед. шкалы.</summary>
     public const double VIEW_ERR = 2.4;
 
@@ -183,7 +202,7 @@ public static class PlayerModel
         var rng = new Random(unchecked(c.Seed * 7349 ^ (p.Id * 31 + 17)));
         var f = p.Fx ?? new CareerFacts();
         int age = p.Age(c.Today) ?? 26;
-        double dl = noise ? N(rng) * p.LevelSe * 0.8 : 0;
+        double dl = noise ? N(rng) * p.LevelSe * 0.8 * (p.IsGoalie ? G_DRAW : 1) : 0;
         var s = new PlayerState { Lvl = C(p.Level + dl), Ca = (float)Math.Clamp(p.CaEst + dl * CA_PER_LVL, 30, 200) };
         foreach (var d in Attrs.For(p))
         {
@@ -219,6 +238,7 @@ public static class PlayerModel
         s.Inj = I(13 + 1.5 * N(rng) - 60 * (missRate - 0.05), 5, 19);
         // знание: свой клуб — с первого дня неплохо, чужие — по известности
         s.Know = p.Team == c.UserTeam ? 0.55f : (float)Math.Clamp(0.25 + 0.04 * f.Seasons + (p.Level >= 16 ? 0.15 : 0), 0.25, 0.75);
+        s.Season = noise ? SeasonForm(c, p) : 0;
         s.Lvl0 = s.Lvl;
         s.Ca0 = s.Ca;
         s.A0 = new Dictionary<string, float>(s.A);
@@ -238,13 +258,23 @@ public static class PlayerModel
     public static double ExpectedGrowth(GameData data, PlayerData p, int age, double ca) =>
         Remaining(data, p, age) * CA_PER_LVL * Talent(ca) * Head(ca);
 
+    /// <summary>Форма сезона: у вратарей — случайная на весь сезон (свой генератор: не сдвигает розыгрыш остального).</summary>
+    public static float SeasonForm(Career c, PlayerData p) =>
+        p.IsGoalie ? (float)Math.Clamp(N(new Random(unchecked(c.Seed * 40503 ^ p.Id * 13 ^ c.Today.Year * 7919))) * G_SEASON, -2.5 * G_SEASON, 2.5 * G_SEASON) : 0f;
+
     public static PlayerState State(Career c, int id) => c.Players.TryGetValue(id, out var s) ? s : null;
 
-    /// <summary>Сдвиг силы для движка: истинный уровень − уровень по данным + форма (ед. шкалы).</summary>
-    public static double Delta(Career c, PlayerData p)
+    /// <summary>
+    /// Сдвиг силы для движка (ед. шкалы): истинный уровень − уровень по данным + форма (+ форма сезона у вратарей).
+    /// form = false — без формы: база калибровки клуба (форма — отклонение от ожидания, а не часть силы клуба).
+    /// </summary>
+    public static double Delta(Career c, PlayerData p, bool form = true)
     {
         var s = State(c, p.Id);
-        return s == null ? 0 : (s.Ca - p.CaEst) / CA_PER_LVL + FORM_U * s.Form;
+        if (s == null) return 0;
+        double d = (s.Ca - p.CaEst) / CA_PER_LVL;
+        if (form) d += FORM_U * s.Form * (p.IsGoalie ? G_FORM : 1) + s.Season;
+        return d;
     }
 
     static int KeyIndex(string key)
@@ -399,6 +429,7 @@ public static class Development
         {
             var rng = new Random(unchecked(c.Seed * 31337 ^ id ^ c.Today.Year));
             s.Luck = (float)Math.Clamp(1 + 0.3 * N(rng), 0.4, 1.7);
+            if (c.Data.PlayerById.TryGetValue(id, out var p)) s.Season = PlayerModel.SeasonForm(c, p);
             s.Ca0 = s.Ca; s.Lvl0 = s.Lvl; s.A0 = new Dictionary<string, float>(s.A);
         }
     }

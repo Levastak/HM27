@@ -233,9 +233,12 @@ public static class MatchEngine
             if (homeWins) r.HomeGoals++; else r.AwayGoals++;
         }
 
-        // 4. Броски в створ: около 29 на команду, больше у создающей моменты
-        r.HomeShots = Math.Max(r.HomeGoals + 8, (int)Math.Round(Normal(rng, 28.5 * Math.Pow(o.LamHome / 3.0, 0.6), 4.5)));
-        r.AwayShots = Math.Max(r.AwayGoals + 8, (int)Math.Round(Normal(rng, 28.5 * Math.Pow(o.LamAway / 3.0, 0.6), 4.5)));
+        // 4. Броски в створ: около 29 на команду, больше у создающей моменты. Вратарь соперника меняет голы, а не броски:
+        //    без его поправки сильный вратарь «срезал» бы и броски, и его % отражённых почти не отличался бы от среднего
+        double shH = o.LamHome / GoalieFactor(data, away.Goalie, away.BaseGsax, away.Dl);
+        double shA = o.LamAway / GoalieFactor(data, home.Goalie, home.BaseGsax, home.Dl);
+        r.HomeShots = Math.Max(r.HomeGoals + 8, (int)Math.Round(Normal(rng, 28.5 * Math.Pow(shH / 3.0, 0.6), 4.5)));
+        r.AwayShots = Math.Max(r.AwayGoals + 8, (int)Math.Round(Normal(rng, 28.5 * Math.Pow(shA / 3.0, 0.6), 4.5)));
         return r;
     }
 

@@ -117,10 +117,11 @@ public sealed class Career
         {
             var l = Lineup.FromTeam(data, t, inj);
             c.Lineups[t.Abbr] = l;
-            // База калибровки — состав по умолчанию с разыгранными истинными уровнями: такие же звенья дают ровно силу модели
-            c.BaseOff[t.Abbr] = MatchEngine.OffIndex(data, l, c.Dl);
-            c.BaseDef[t.Abbr] = MatchEngine.DefIndex(data, l, c.Dl);
-            c.BaseGsax[t.Abbr] = 0.8 * MatchEngine.GsaxOf(data, l.G1, c.Dl) + 0.2 * MatchEngine.GsaxOf(data, l.G2, c.Dl);
+            // База калибровки — состав по умолчанию с разыгранными истинными уровнями: такие же звенья дают ровно силу модели.
+            // Форма (и форма сезона вратаря) в базу не входит: это отклонение от ожидания, оно и должно менять результат.
+            c.BaseOff[t.Abbr] = MatchEngine.OffIndex(data, l, c.DlBase);
+            c.BaseDef[t.Abbr] = MatchEngine.DefIndex(data, l, c.DlBase);
+            c.BaseGsax[t.Abbr] = 0.8 * MatchEngine.GsaxOf(data, l.G1, c.DlBase) + 0.2 * MatchEngine.GsaxOf(data, l.G2, c.DlBase);
             c.Table[t.Abbr] = new StandingRow { Team = t.Abbr };
         }
         InboxWriter.Welcome(c);
@@ -131,6 +132,9 @@ public sealed class Career
 
     /// <summary>Сдвиг силы игрока для движка (модель игрока).</summary>
     public double Dl(int id) => Data.PlayerById.TryGetValue(id, out var p) ? PlayerModel.Delta(this, p) : 0;
+
+    /// <summary>Сдвиг силы без формы — для базы калибровки клубов.</summary>
+    public double DlBase(int id) => Data.PlayerById.TryGetValue(id, out var p) ? PlayerModel.Delta(this, p, form: false) : 0;
 
     // ------------------------------------------------------------------ сохранение
     static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = false, Converters = { new JsonStringEnumConverter() } };
