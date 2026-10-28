@@ -1418,6 +1418,12 @@ def availability(pg, games):
         acc[pid][0] += missed; acc[pid][1] += len(span)
     for pid, (m, n) in acc.items():
         out[int(pid)] = {"miss_long": m, "span": n}
+    # «железный человек»: доля сыгранных матчей регулярки в завершённых сезонах (где игрок был в НХЛ), не меньше трёх сезонов
+    done = reg[reg["season"] != reg["season"].max()]
+    per = pg[pg["gid"].isin(done["gid"])].groupby(["pid", "season"])["gid"].nunique()
+    for pid, grp in per.groupby(level=0):
+        if len(grp) >= 3:
+            out.setdefault(int(pid), {})["gp82"] = round(float(np.clip(grp / 82.0, 0, 1).mean()), 3)
     return out
 
 

@@ -111,6 +111,18 @@ public sealed class CareerFacts
     [JsonPropertyName("masterton")] public int Masterton { get; set; }
     /// <summary>Номинации клуба на Кинг Клэнси (лидерство, работа с обществом) за последние сезоны.</summary>
     [JsonPropertyName("clancy")] public int Clancy { get; set; }
+    /// <summary>Сезонов капитаном («С») с 2010-11 по 2025-26 в любых клубах.</summary>
+    [JsonPropertyName("cap_sea")] public int CapSeasons { get; set; }
+    /// <summary>Mark Messier Leadership Award (лидерство).</summary>
+    [JsonPropertyName("messier")] public int Messier { get; set; }
+    /// <summary>Lady Byng (честная игра).</summary>
+    [JsonPropertyName("byng")] public int Byng { get; set; }
+    /// <summary>Продлевал контракт заметно ниже рынка, чтобы остаться в клубе.</summary>
+    [JsonPropertyName("discount")] public int Discount { get; set; }
+    /// <summary>Публично просил обмен.</summary>
+    [JsonPropertyName("trade_req")] public int TradeRequests { get; set; }
+    /// <summary>Доля сыгранных матчей регулярки в завершённых сезонах (от трёх сезонов): «железный человек».</summary>
+    [JsonPropertyName("gp82")] public double Gp82 { get; set; }
     /// <summary>Вся карьера в НХЛ — в одном клубе.</summary>
     [JsonPropertyName("one_club")] public bool OneClub { get; set; }
 }

@@ -54,6 +54,7 @@ def facts(f):
         "gp": f.get("nhl_gp") or 0, "po": f.get("po_gp") or 0, "sea": f.get("nhl_seasons") or 0,
         "clubs": f.get("clubs") or 0, "club_sea": f.get("club_seasons") or 0,
         "miss": f.get("miss_long") or 0, "span": f.get("span") or 0, "fights": f.get("fights") or 0, "temper": f.get("temper") or 0,
+        "gp82": f.get("gp82") or 0,
         "aw": tags,
     }
     if dr.get("overallPick"):
@@ -155,16 +156,26 @@ def main(db_path="game/data/hm27-data.json", model_path="data/derived.json.gz", 
         for p in db["players"]:
             by_name.setdefault(norm(p["name"]), []).append(p)
         tagged = 0
+        def add(name, key, v):
+            cands = by_name.get(norm(name), [])
+            if not cands:
+                return 0
+            p = max(cands, key=lambda x: (x.get("fx") or {}).get("gp", 0))
+            fx = p.setdefault("fx", {})
+            fx[key] = fx.get(key, 0) + v
+            return 1
         for tag in ("masterton", "clancy"):
             for _, names in ch.get(tag, {}).items():
                 for n in names:
-                    cands = by_name.get(norm(n), [])
-                    if not cands:
-                        continue
-                    p = max(cands, key=lambda x: (x.get("fx") or {}).get("gp", 0))
-                    fx = p.setdefault("fx", {})
-                    fx[tag] = fx.get(tag, 0) + 1
-                    tagged += 1
+                    tagged += add(n, tag, 1)
+        # капитанство за карьеру, награды за лидерство и честную игру, продления со скидкой, просьбы об обмене
+        for n, v in ch.get("captain_seasons", {}).items():
+            tagged += add(n, "cap_sea", v)
+        for key, fk in (("messier", "messier"), ("byng", "byng"), ("discount", "discount")):
+            for n in ch.get(key, []):
+                tagged += add(n, fk, 1)
+        for n, v in ch.get("trade_request", {}).items():
+            tagged += add(n, "trade_req", v)
         print(f"Номинации за характер: {tagged} совпадений")
     # капитаны и ассистенты: при тёзках в одном клубе (два Элиаса Петтерссона в «Ванкувере») — у кого больше матчей в НХЛ
     by_key = {}

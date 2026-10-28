@@ -221,23 +221,31 @@ public static class PlayerModel
         s.Pa = age >= 28 ? s.Ca + 1 : (float)Math.Clamp(Math.Max(pa, s.Peak), 1, 200);
         s.Luck = (float)Math.Clamp(1 + 0.3 * N(rng), 0.4, 1.7);
         s.Pot = C(s.Lvl + (s.Pa - s.Ca) / CA_PER_LVL);
-        // характер: из фактов карьеры, недостающее — мягкая генерация (у реальных игроков не ниже 7)
+        // Характер реальных игроков: случайная часть и опыт ограничены «потолком без фактов» (лидерство и профессионализм — 15,
+        // остальное — 16), поэтому сильные метки («Прирождённый лидер», «Профессионал», «Преданный клубу») дают только факты:
+        // капитанство, награды и номинации за характер, серии без пропусков, продления со скидкой, просьбы об обмене (data/character.json).
+        // Дальше характер меняется по ходу карьеры (Development.NewSeason): у новых поколений лидеры появляются из игры.
         bool Aw(string t) => f.Awards?.Contains(t) == true;
-        // номинации клуба на Мастертон (упорство, самоотдача) и Кинг Клэнси (лидерство) — реальные факты о характере
-        s.Prof = I(12 + 2.2 * N(rng) + (f.Seasons >= 10 ? 1 : 0) + (age >= 33 && p.Level >= 12 ? 1.5 : 0) + (Aw("pro") ? 3 : 0)
-                   + Math.Min(f.Masterton, 2) * 1.5 + Math.Min(f.Clancy, 2) * 0.5, 7, 20);
-        s.Amb = I(12 + 2.5 * N(rng) + (p.Level >= 16 ? 1 : 0), 7, 20);
-        s.Loy = I(10.5 + 2.2 * N(rng) + Math.Min(f.ClubSeasons, 10) * 0.4 - Math.Max(f.Clubs - 1, 0) * 0.4 + (f.OneClub && f.Seasons >= 5 ? 2.5 : 0), 7, 20);
-        // лидерство: капитанская «С» и ассистентская «А» в сезоне 2026-27, награды за лидерство, опыт
-        s.Lead = I(10 + 2.2 * N(rng) + Math.Min(f.Gp / 300.0, 3) + (Aw("leader") ? 4 : 0) + (age >= 28 && p.Level >= 15 ? 1.5 : 0)
-                   + (f.Cap == "C" ? 5 : f.Cap == "A" ? 2.5 : 0) + Math.Min(f.Clancy, 2) * 1.5, 7, 20);
-        // самообладание: случайная часть не опускается ниже 9 — «вспыльчивость» только по данным (драки за сезон за 5 сезонов)
+        double Cap(double v, double hi) => Math.Min(v, hi);
+        double iron = f.Gp82 >= 0.99 ? 2.5 : f.Gp82 >= 0.97 ? 1.5 : 0;
+        // долгая карьера на высоком уровне — сама по себе факт о профессионализме и амбициях: случайная часть уже, середина выше
+        double longev = Math.Clamp(f.Seasons / 14.0, 0, 1) * Math.Clamp((p.Level - 11) / 5.0, 0, 1);
+        bool winner = Aw("star") || Aw("big_games");
+        s.Prof = I(Cap(12 + 2.2 * (1 - 0.6 * longev) * N(rng) + 2.5 * longev + (f.Seasons >= 10 ? 0.5 : 0) + (age >= 36 ? 1.5 : 0), 15)
+                   + (Aw("pro") ? 3 : 0) + Math.Min(f.Masterton, 2) * 1.5 + Math.Min(f.Clancy, 2) * 0.5 + iron, 7, 20);
+        s.Amb = I(Cap(12 + 2.5 * (winner ? 0.5 : 1) * N(rng) + (p.Level >= 16 ? 1 : 0) + (winner ? 1.5 : 0), 16), 7, 20);
+        s.Loy = I(Cap(10.5 + 2.2 * N(rng) + Math.Min(f.ClubSeasons, 10) * 0.4 - Math.Max(f.Clubs - 1, 0) * 0.4, 16)
+                  + (f.OneClub && f.Seasons >= 5 ? 2.5 : 0) + Math.Min(f.Discount, 2) * 3 - f.TradeRequests * 3, 4, 20);
+        s.Lead = I(Cap(10 + 2.2 * N(rng) + Math.Min(f.Gp / 300.0, 3) + (age >= 28 && p.Level >= 15 ? 1.5 : 0), 15)
+                   + (f.Cap == "C" ? 4 : f.Cap == "A" ? 1.5 : 0) + Math.Min(0.5 * f.CapSeasons, 4) + Math.Min(2.0 * f.Messier, 4)
+                   + (Aw("leader") ? 1.5 : 0) + Math.Min(f.Clancy, 2) * 1.0, 7, 20);
         // самообладание: случайная часть не ниже 9 — «вспыльчивость» только по данным: частота и доля «эмоциональных» удалений
-        // (грубость, неспортивное поведение, драки) за 5 сезонов; спокойные по данным — выше
-        s.Temp = I(Math.Max(9, 12.5 + 1.6 * N(rng)) - 2.2 * Math.Max(0, f.Temper) + 1.2 * Math.Max(0, -f.Temper) + (Aw("fair") ? 3 : 0), 4, 20);
-        s.Adapt = I(11.5 + 2.3 * N(rng) + Math.Min(Math.Max(f.Clubs - 1, 0), 3) * 0.6, 7, 20);
+        // (грубость, неспортивное поведение, драки) за 5 сезонов; спокойные по данным и обладатели Леди Бинг — выше
+        s.Temp = I(Math.Max(9, Cap(12.5 + 1.6 * N(rng), 16)) - 2.2 * Math.Max(0, f.Temper) + 1.2 * Math.Max(0, -f.Temper)
+                   + Math.Max(Aw("fair") ? 3 : 0, Math.Min(2.0 * f.Byng, 4)), 4, 20);
+        s.Adapt = I(Cap(11.5 + 2.3 * N(rng), 16) + Math.Min(Math.Max(f.Clubs - 1, 0), 3) * 0.6, 7, 20);
         double missRate = (f.MissLong + 3.0) / (f.Span + 60.0);
-        s.Inj = I(13 + 1.5 * N(rng) - 60 * (missRate - 0.05), 5, 19);
+        s.Inj = I(13 + 1.5 * N(rng) - 60 * (missRate - 0.05) + iron * 0.8, 5, 19);
         // знание: свой клуб — с первого дня неплохо, чужие — по известности
         s.Know = p.Team == c.UserTeam ? 0.55f : (float)Math.Clamp(0.25 + 0.04 * f.Seasons + (p.Level >= 16 ? 0.15 : 0), 0.25, 0.75);
         s.Season = noise ? SeasonForm(c, p) : 0;
@@ -431,9 +439,34 @@ public static class Development
         {
             var rng = new Random(unchecked(c.Seed * 31337 ^ id ^ c.Today.Year));
             s.Luck = (float)Math.Clamp(1 + 0.3 * N(rng), 0.4, 1.7);
-            if (c.Data.PlayerById.TryGetValue(id, out var p)) s.Season = PlayerModel.SeasonForm(c, p);
+            if (c.Data.PlayerById.TryGetValue(id, out var p)) { s.Season = PlayerModel.SeasonForm(c, p); Character(c, p, s, rng); }
             s.Ca0 = s.Ca; s.Lvl0 = s.Lvl; s.A0 = new Dictionary<string, float>(s.A);
         }
+    }
+
+    /// <summary>
+    /// Характер меняется с карьерой: лидерство растёт с опытом, ролью и капитанством; молодые перенимают профессионализм
+    /// у ветеранов-лидеров своего клуба; с возрастом спокойнее. Так через несколько сезонов появляются новые лидеры —
+    /// уже не из фактов, а из того, что произошло в игре.
+    /// </summary>
+    static void Character(Career c, PlayerData p, PlayerState s, Random rng)
+    {
+        int age = p.Age(c.Today) ?? 26;
+        bool Bump(double prob) => rng.NextDouble() < prob;
+        int unit = c.Lineups.TryGetValue(p.Team ?? "", out var l) ? l.UnitOf(p.Id) : -1;
+        bool core = unit is 0 or 1 or 10 or 11 || (p.IsGoalie && l != null && l.G1 == p.Id);
+        bool captain = p.Fx?.Cap == "C" && p.Team != null;
+        if (age >= 23 && s.Lead < 20)
+            if (Bump((age >= 27 ? 0.18 : 0.08) + (core ? 0.12 : 0) + (captain ? 0.25 : 0) + (s.Prof >= 15 ? 0.05 : 0))) s.Lead++;
+        if (age <= 24 && l != null)
+        {
+            // наставник: самый профессиональный ветеран-лидер клуба (28+ лет, лидерство 14+)
+            var mentor = c.Data.Roster(p.Team).Where(x => x.Id != p.Id && (x.Age(c.Today) ?? 0) >= 28 && c.Players.TryGetValue(x.Id, out var ms) && ms.Lead >= 14)
+                .Select(x => c.Players[x.Id].Prof).DefaultIfEmpty(0).Max();
+            if (mentor > s.Prof && Bump(Math.Min(0.5, 0.08 * (mentor - s.Prof)))) s.Prof++;
+        }
+        if (age >= 27 && s.Temp < 16 && Bump(0.12)) s.Temp++;
+        if (age >= 33 && s.Amb > 8 && Bump(0.12)) s.Amb--;
     }
 
     /// <summary>Тяжёлая травма (2+ месяца): с шансом 35% навсегда срезает скорость, ускорение и немного КА.</summary>
@@ -514,13 +547,29 @@ public static class Roles
         return null;
     }
 
+    /// <summary>
+    /// Особенности стиля, подтверждающие роль: роль — это то, как игрок играет, а особенности из данных это и показывают.
+    /// Без них характеристики, «раздутые» сильными партнёрами (видение рядом с Макдэвидом), уводили бы игрока пятака в плеймейкеры.
+    /// </summary>
+    static readonly Dictionary<string, string[]> TraitFit = new()
+    {
+        ["Снайпер"] = new[] { "shoot", "far", "slap" }, ["Игрок у ворот"] = new[] { "net", "tip", "reb" },
+        ["Плеймейкер"] = new[] { "pass", "risk" }, ["Двусторонний форвард"] = new[] { "tk", "blk" },
+        ["Силовой форвард"] = new[] { "hit", "fight" }, ["Скоростной форвард"] = new[] { "rush" },
+        ["Центр-распасовщик"] = new[] { "pass" }, ["Оборонительный центр"] = new[] { "blk", "tk" },
+        ["Атакующий защитник"] = new[] { "jump", "slap", "shoot" }, ["Защитник-домосед"] = new[] { "blk" },
+        ["Силовой защитник"] = new[] { "hit", "fight" },
+    };
+    public const double TRAIT_ROLE = 1.2;
+
     public static List<RoleFit> For(PlayerData p, Func<string, double> get = null)
     {
         get ??= p.AttrEst;
         double med = Median(p, get);
-        // сначала роли без слабого места среди ключевых, внутри — по оценке
+        double Tb(Def d) => TraitFit.TryGetValue(d.Name, out var ts) && p.Tr != null ? TRAIT_ROLE * ts.Count(p.Tr.Contains) : 0;
+        // сначала роли без слабого места среди ключевых, внутри — по оценке (с поправкой на особенности стиля)
         return All.Where(d => Fits(d, p))
-                  .Select(d => (fit: new RoleFit { Name = d.Name, V = (int)Math.Clamp(Math.Round(Score(d, get, med) * 5), 1, 99) },
+                  .Select(d => (fit: new RoleFit { Name = d.Name, V = (int)Math.Clamp(Math.Round((Score(d, get, med) + Tb(d)) * 5), 1, 99) },
                                 ok: d.Keys.Where(k => k.w >= 0.2).All(k => get(k.key) >= med - 3)))
                   .OrderByDescending(x => x.ok).ThenByDescending(x => x.fit.V).Select(x => x.fit).ToList();
     }

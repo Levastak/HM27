@@ -212,6 +212,24 @@ Check("Плей-офф", playoffsOk, $"15 серий и чемпион в каж
             $"топ-5 по данным в топ-8 по истинному КА: {100.0 * stay / tot:F0}%; форма сезона: разброс {sSd:F2} ед. шкалы");
     }
 
+    // характер: сильные метки на старте — только с фактами; через 10 сезонов появляются новые лидеры из игры
+    {
+        var ck = Career.New(data, "MIN", 3131);
+        bool LeadFact(PlayerData p) => p.Fx != null && (p.Fx.Cap != null || p.Fx.CapSeasons > 0 || p.Fx.Messier > 0 || p.Fx.Clancy > 0 || p.Fx.Awards?.Contains("leader") == true);
+        bool ProfFact(PlayerData p) => p.Fx != null && (p.Fx.Masterton > 0 || p.Fx.Clancy > 0 || p.Fx.Gp82 >= 0.97 || p.Fx.Awards?.Contains("pro") == true);
+        var noFactLeaders = data.Players.Where(p => ck.Players[p.Id].Lead >= 17 && !LeadFact(p)).Select(p => p.Name).ToList();
+        var noFactPros = data.Players.Where(p => ck.Players[p.Id].Prof >= 16 && !ProfFact(p)).Select(p => p.Name).ToList();
+        int lead0 = data.Players.Count(p => ck.Players[p.Id].Lead >= 17);
+        var notLead = data.Players.Where(p => ck.Players[p.Id].Lead < 17).Select(p => p.Id).ToHashSet();
+        for (int y = 0; y < 8; y++) { ck.Today = ck.Today.AddDays(365); Development.NewSeason(ck); }
+        var alive = data.Players.Where(p => (p.Age(ck.Today) ?? 40) <= 37).ToList();
+        int lead8 = alive.Count(p => ck.Players[p.Id].Lead >= 17);
+        int fresh = alive.Count(p => ck.Players[p.Id].Lead >= 17 && notLead.Contains(p.Id));
+        Check("Модель игрока: характер", noFactLeaders.Count == 0 && noFactPros.Count == 0 && fresh >= 10 && lead8 <= lead0 * 2.5,
+            $"на старте лидеров (лидерство 17+) {lead0}, без фактов: {(noFactLeaders.Count == 0 ? "нет" : string.Join(", ", noFactLeaders.Take(4)))}; " +
+            $"профессионалов без фактов: {(noFactPros.Count == 0 ? "нет" : string.Join(", ", noFactPros.Take(4)))}; через 8 сезонов лидеров {lead8} (среди тех, кому ≤ 37), из них новых {fresh}");
+    }
+
     // защита от абсурда: техника не выше уровня + 3 (по данным)
     string[] tech = { "fin", "pas", "hnd", "dfn", "dec", "vis", "tm" };
     int viol = data.Players.Sum(p => tech.Count(k => p.A.TryGetValue(k, out var v) && v[0] > p.Level + 3.05));

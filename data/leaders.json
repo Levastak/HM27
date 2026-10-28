@@ -1,39 +1,414 @@
 {
-  "about": "Капитаны (C) и ассистенты (A) клубов НХЛ в сезоне 2026-27; † на странице — весь путь в НХЛ в одном клубе (one_club). Идут в лидерство и лояльность (data/merge_model.py). Пустые места («Vacant») пропущены.",
-  "source": "https://en.wikipedia.org/wiki/List_of_current_NHL_captains_and_alternate_captains",
-  "as_of": "2026-10-28",
-  "teams": {
-    "ANA": {"C": [], "A": ["Leo Carlsson", "Jackson LaCombe", "Alex Killorn"], "one_club": ["Leo Carlsson", "Jackson LaCombe"]},
-    "BOS": {"C": [], "A": ["Hampus Lindholm", "Charlie McAvoy", "David Pastrnak"], "one_club": ["Charlie McAvoy", "David Pastrnak"]},
-    "BUF": {"C": ["Rasmus Dahlin"], "A": ["Mattias Samuelsson", "Tage Thompson"], "one_club": ["Rasmus Dahlin", "Mattias Samuelsson"]},
-    "CGY": {"C": ["Mikael Backlund"], "A": ["Jonathan Huberdeau"], "one_club": ["Mikael Backlund"]},
-    "CAR": {"C": ["Jordan Staal"], "A": ["Sebastian Aho", "Jordan Martinook", "Jaccob Slavin"], "one_club": ["Sebastian Aho", "Jaccob Slavin"]},
-    "CHI": {"C": [], "A": ["Connor Bedard", "Tyler Bertuzzi"], "one_club": ["Connor Bedard"]},
-    "COL": {"C": ["Gabriel Landeskog"], "A": ["Nathan MacKinnon", "Cale Makar"], "one_club": ["Gabriel Landeskog", "Nathan MacKinnon", "Cale Makar"]},
-    "CBJ": {"C": [], "A": ["Erik Gudbranson", "Zach Werenski"], "one_club": ["Zach Werenski"]},
-    "DAL": {"C": ["Jamie Benn"], "A": ["Miro Heiskanen", "Roope Hintz", "Esa Lindell", "Tyler Seguin"], "one_club": ["Jamie Benn", "Miro Heiskanen", "Roope Hintz", "Esa Lindell"]},
-    "DET": {"C": ["Dylan Larkin"], "A": ["Lucas Raymond", "Moritz Seider"], "one_club": ["Dylan Larkin", "Lucas Raymond", "Moritz Seider"]},
-    "EDM": {"C": ["Connor McDavid"], "A": ["Leon Draisaitl", "Ryan Nugent-Hopkins"], "one_club": ["Connor McDavid", "Leon Draisaitl", "Ryan Nugent-Hopkins"]},
-    "FLA": {"C": ["Aleksander Barkov"], "A": ["Aaron Ekblad", "Matthew Tkachuk"], "one_club": ["Aleksander Barkov", "Aaron Ekblad"]},
-    "LAK": {"C": [], "A": ["Mikey Anderson", "Drew Doughty", "Adrian Kempe"], "one_club": ["Mikey Anderson", "Drew Doughty", "Adrian Kempe"]},
-    "MIN": {"C": ["Jared Spurgeon"], "A": ["Marcus Foligno", "Kirill Kaprizov"], "one_club": ["Jared Spurgeon", "Kirill Kaprizov"]},
-    "MTL": {"C": ["Nick Suzuki"], "A": ["Mike Matheson"], "one_club": ["Nick Suzuki"]},
-    "NSH": {"C": ["Roman Josi"], "A": ["Filip Forsberg", "Ryan O'Reilly", "Steven Stamkos"], "one_club": ["Roman Josi", "Filip Forsberg"]},
-    "NJD": {"C": ["Nico Hischier"], "A": ["Jesper Bratt", "Jack Hughes"], "one_club": ["Nico Hischier", "Jesper Bratt", "Jack Hughes"]},
-    "NYI": {"C": [], "A": ["Bo Horvat", "Kyle Palmieri", "Ryan Pulock"], "one_club": ["Ryan Pulock"]},
-    "NYR": {"C": ["J.T. Miller"], "A": ["Adam Fox", "Mika Zibanejad"], "one_club": ["Adam Fox"]},
-    "OTT": {"C": [], "A": ["Thomas Chabot", "Claude Giroux"], "one_club": ["Thomas Chabot"]},
-    "PHI": {"C": ["Sean Couturier"], "A": ["Travis Konecny", "Travis Sanheim"], "one_club": ["Sean Couturier", "Travis Konecny", "Travis Sanheim"]},
-    "PIT": {"C": ["Sidney Crosby"], "A": ["Kris Letang", "Evgeni Malkin"], "one_club": ["Sidney Crosby", "Kris Letang", "Evgeni Malkin"]},
-    "SJS": {"C": [], "A": ["Macklin Celebrini", "Barclay Goodrow", "Tyler Toffoli", "Alexander Wennberg"], "one_club": ["Macklin Celebrini"]},
-    "SEA": {"C": ["Jordan Eberle"], "A": ["Matty Beniers", "Adam Larsson"], "one_club": ["Matty Beniers"]},
-    "STL": {"C": ["Robert Thomas"], "A": ["Philip Broberg", "Dylan Holloway", "Jake Neighbours", "Colton Parayko"], "one_club": ["Robert Thomas", "Jake Neighbours", "Colton Parayko"]},
-    "TBL": {"C": ["Victor Hedman"], "A": ["Nikita Kucherov", "Ryan McDonagh"], "one_club": ["Victor Hedman", "Nikita Kucherov"]},
-    "TOR": {"C": ["Auston Matthews"], "A": ["Morgan Rielly", "John Tavares"], "one_club": ["Auston Matthews", "Morgan Rielly"]},
-    "UTA": {"C": ["Clayton Keller"], "A": ["Lawson Crouse", "Mikhail Sergachev"], "one_club": []},
-    "VAN": {"C": [], "A": ["Brock Boeser", "Filip Hronek", "Elias Pettersson"], "one_club": ["Brock Boeser", "Elias Pettersson"]},
-    "VGK": {"C": ["Mark Stone"], "A": ["Jack Eichel", "William Karlsson", "Alex Pietrangelo"], "one_club": []},
-    "WSH": {"C": ["Alexander Ovechkin"], "A": ["Dylan Strome", "Tom Wilson"], "one_club": ["Alexander Ovechkin", "Tom Wilson"]},
-    "WPG": {"C": ["Adam Lowry"], "A": ["Josh Morrissey", "Mark Scheifele"], "one_club": ["Adam Lowry", "Josh Morrissey", "Mark Scheifele"]}
+ "about": "Капитаны (C) и ассистенты (A) клубов НХЛ в сезоне 2026-27; † на странице — весь путь в НХЛ в одном клубе (one_club). Идут в лидерство и лояльность (data/merge_model.py). Пустые места («Vacant») пропущены. Поправка 2026-10-28: Селебрини назначен капитаном «Сан-Хосе» 25.09.2026 (https://www.nhl.com/news/macklin-celebrini-named-youngest-captain-in-san-jose-sharks-history).",
+ "source": "https://en.wikipedia.org/wiki/List_of_current_NHL_captains_and_alternate_captains",
+ "as_of": "2026-10-28",
+ "teams": {
+  "ANA": {
+   "C": [],
+   "A": [
+    "Leo Carlsson",
+    "Jackson LaCombe",
+    "Alex Killorn"
+   ],
+   "one_club": [
+    "Leo Carlsson",
+    "Jackson LaCombe"
+   ]
+  },
+  "BOS": {
+   "C": [],
+   "A": [
+    "Hampus Lindholm",
+    "Charlie McAvoy",
+    "David Pastrnak"
+   ],
+   "one_club": [
+    "Charlie McAvoy",
+    "David Pastrnak"
+   ]
+  },
+  "BUF": {
+   "C": [
+    "Rasmus Dahlin"
+   ],
+   "A": [
+    "Mattias Samuelsson",
+    "Tage Thompson"
+   ],
+   "one_club": [
+    "Rasmus Dahlin",
+    "Mattias Samuelsson"
+   ]
+  },
+  "CGY": {
+   "C": [
+    "Mikael Backlund"
+   ],
+   "A": [
+    "Jonathan Huberdeau"
+   ],
+   "one_club": [
+    "Mikael Backlund"
+   ]
+  },
+  "CAR": {
+   "C": [
+    "Jordan Staal"
+   ],
+   "A": [
+    "Sebastian Aho",
+    "Jordan Martinook",
+    "Jaccob Slavin"
+   ],
+   "one_club": [
+    "Sebastian Aho",
+    "Jaccob Slavin"
+   ]
+  },
+  "CHI": {
+   "C": [],
+   "A": [
+    "Connor Bedard",
+    "Tyler Bertuzzi"
+   ],
+   "one_club": [
+    "Connor Bedard"
+   ]
+  },
+  "COL": {
+   "C": [
+    "Gabriel Landeskog"
+   ],
+   "A": [
+    "Nathan MacKinnon",
+    "Cale Makar"
+   ],
+   "one_club": [
+    "Gabriel Landeskog",
+    "Nathan MacKinnon",
+    "Cale Makar"
+   ]
+  },
+  "CBJ": {
+   "C": [],
+   "A": [
+    "Erik Gudbranson",
+    "Zach Werenski"
+   ],
+   "one_club": [
+    "Zach Werenski"
+   ]
+  },
+  "DAL": {
+   "C": [
+    "Jamie Benn"
+   ],
+   "A": [
+    "Miro Heiskanen",
+    "Roope Hintz",
+    "Esa Lindell",
+    "Tyler Seguin"
+   ],
+   "one_club": [
+    "Jamie Benn",
+    "Miro Heiskanen",
+    "Roope Hintz",
+    "Esa Lindell"
+   ]
+  },
+  "DET": {
+   "C": [
+    "Dylan Larkin"
+   ],
+   "A": [
+    "Lucas Raymond",
+    "Moritz Seider"
+   ],
+   "one_club": [
+    "Dylan Larkin",
+    "Lucas Raymond",
+    "Moritz Seider"
+   ]
+  },
+  "EDM": {
+   "C": [
+    "Connor McDavid"
+   ],
+   "A": [
+    "Leon Draisaitl",
+    "Ryan Nugent-Hopkins"
+   ],
+   "one_club": [
+    "Connor McDavid",
+    "Leon Draisaitl",
+    "Ryan Nugent-Hopkins"
+   ]
+  },
+  "FLA": {
+   "C": [
+    "Aleksander Barkov"
+   ],
+   "A": [
+    "Aaron Ekblad",
+    "Matthew Tkachuk"
+   ],
+   "one_club": [
+    "Aleksander Barkov",
+    "Aaron Ekblad"
+   ]
+  },
+  "LAK": {
+   "C": [],
+   "A": [
+    "Mikey Anderson",
+    "Drew Doughty",
+    "Adrian Kempe"
+   ],
+   "one_club": [
+    "Mikey Anderson",
+    "Drew Doughty",
+    "Adrian Kempe"
+   ]
+  },
+  "MIN": {
+   "C": [
+    "Jared Spurgeon"
+   ],
+   "A": [
+    "Marcus Foligno",
+    "Kirill Kaprizov"
+   ],
+   "one_club": [
+    "Jared Spurgeon",
+    "Kirill Kaprizov"
+   ]
+  },
+  "MTL": {
+   "C": [
+    "Nick Suzuki"
+   ],
+   "A": [
+    "Mike Matheson"
+   ],
+   "one_club": [
+    "Nick Suzuki"
+   ]
+  },
+  "NSH": {
+   "C": [
+    "Roman Josi"
+   ],
+   "A": [
+    "Filip Forsberg",
+    "Ryan O'Reilly",
+    "Steven Stamkos"
+   ],
+   "one_club": [
+    "Roman Josi",
+    "Filip Forsberg"
+   ]
+  },
+  "NJD": {
+   "C": [
+    "Nico Hischier"
+   ],
+   "A": [
+    "Jesper Bratt",
+    "Jack Hughes"
+   ],
+   "one_club": [
+    "Nico Hischier",
+    "Jesper Bratt",
+    "Jack Hughes"
+   ]
+  },
+  "NYI": {
+   "C": [],
+   "A": [
+    "Bo Horvat",
+    "Kyle Palmieri",
+    "Ryan Pulock"
+   ],
+   "one_club": [
+    "Ryan Pulock"
+   ]
+  },
+  "NYR": {
+   "C": [
+    "J.T. Miller"
+   ],
+   "A": [
+    "Adam Fox",
+    "Mika Zibanejad"
+   ],
+   "one_club": [
+    "Adam Fox"
+   ]
+  },
+  "OTT": {
+   "C": [],
+   "A": [
+    "Thomas Chabot",
+    "Claude Giroux"
+   ],
+   "one_club": [
+    "Thomas Chabot"
+   ]
+  },
+  "PHI": {
+   "C": [
+    "Sean Couturier"
+   ],
+   "A": [
+    "Travis Konecny",
+    "Travis Sanheim"
+   ],
+   "one_club": [
+    "Sean Couturier",
+    "Travis Konecny",
+    "Travis Sanheim"
+   ]
+  },
+  "PIT": {
+   "C": [
+    "Sidney Crosby"
+   ],
+   "A": [
+    "Kris Letang",
+    "Evgeni Malkin"
+   ],
+   "one_club": [
+    "Sidney Crosby",
+    "Kris Letang",
+    "Evgeni Malkin"
+   ]
+  },
+  "SJS": {
+   "C": [
+    "Macklin Celebrini"
+   ],
+   "A": [
+    "Barclay Goodrow",
+    "Tyler Toffoli",
+    "Alexander Wennberg"
+   ],
+   "one_club": [
+    "Macklin Celebrini"
+   ]
+  },
+  "SEA": {
+   "C": [
+    "Jordan Eberle"
+   ],
+   "A": [
+    "Matty Beniers",
+    "Adam Larsson"
+   ],
+   "one_club": [
+    "Matty Beniers"
+   ]
+  },
+  "STL": {
+   "C": [
+    "Robert Thomas"
+   ],
+   "A": [
+    "Philip Broberg",
+    "Dylan Holloway",
+    "Jake Neighbours",
+    "Colton Parayko"
+   ],
+   "one_club": [
+    "Robert Thomas",
+    "Jake Neighbours",
+    "Colton Parayko"
+   ]
+  },
+  "TBL": {
+   "C": [
+    "Victor Hedman"
+   ],
+   "A": [
+    "Nikita Kucherov",
+    "Ryan McDonagh"
+   ],
+   "one_club": [
+    "Victor Hedman",
+    "Nikita Kucherov"
+   ]
+  },
+  "TOR": {
+   "C": [
+    "Auston Matthews"
+   ],
+   "A": [
+    "Morgan Rielly",
+    "John Tavares"
+   ],
+   "one_club": [
+    "Auston Matthews",
+    "Morgan Rielly"
+   ]
+  },
+  "UTA": {
+   "C": [
+    "Clayton Keller"
+   ],
+   "A": [
+    "Lawson Crouse",
+    "Mikhail Sergachev"
+   ],
+   "one_club": []
+  },
+  "VAN": {
+   "C": [],
+   "A": [
+    "Brock Boeser",
+    "Filip Hronek",
+    "Elias Pettersson"
+   ],
+   "one_club": [
+    "Brock Boeser",
+    "Elias Pettersson"
+   ]
+  },
+  "VGK": {
+   "C": [
+    "Mark Stone"
+   ],
+   "A": [
+    "Jack Eichel",
+    "William Karlsson",
+    "Alex Pietrangelo"
+   ],
+   "one_club": []
+  },
+  "WSH": {
+   "C": [
+    "Alex Ovechkin"
+   ],
+   "A": [
+    "Dylan Strome",
+    "Tom Wilson"
+   ],
+   "one_club": [
+    "Alex Ovechkin",
+    "Tom Wilson"
+   ]
+  },
+  "WPG": {
+   "C": [
+    "Adam Lowry"
+   ],
+   "A": [
+    "Josh Morrissey",
+    "Mark Scheifele"
+   ],
+   "one_club": [
+    "Adam Lowry",
+    "Josh Morrissey",
+    "Mark Scheifele"
+   ]
   }
+ }
 }
