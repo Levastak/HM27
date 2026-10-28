@@ -100,6 +100,8 @@ public sealed class CareerFacts
     [JsonPropertyName("miss")] public int MissLong { get; set; }
     [JsonPropertyName("span")] public int Span { get; set; }
     [JsonPropertyName("fights")] public double Fights { get; set; }
+    /// <summary>Вспыльчивость по данным (z): частота и доля «эмоциональных» удалений — грубость, неспортивное поведение, драки. Больше — горячее.</summary>
+    [JsonPropertyName("temper")] public double Temper { get; set; }
     [JsonPropertyName("aw")] public List<string> Awards { get; set; } = new();
     [JsonPropertyName("pick")] public int? Pick { get; set; }
     [JsonPropertyName("draft")] public int? DraftYear { get; set; }

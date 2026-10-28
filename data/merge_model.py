@@ -53,7 +53,7 @@ def facts(f):
     out = {
         "gp": f.get("nhl_gp") or 0, "po": f.get("po_gp") or 0, "sea": f.get("nhl_seasons") or 0,
         "clubs": f.get("clubs") or 0, "club_sea": f.get("club_seasons") or 0,
-        "miss": f.get("miss_long") or 0, "span": f.get("span") or 0, "fights": f.get("fights") or 0,
+        "miss": f.get("miss_long") or 0, "span": f.get("span") or 0, "fights": f.get("fights") or 0, "temper": f.get("temper") or 0,
         "aw": tags,
     }
     if dr.get("overallPick"):

@@ -17,7 +17,7 @@
      прямое измерение — без ограничения, специализация — ±6, техника — от −6 до +3, «слабые» данные — ±2.
   7. Шкала: средний игрок НХЛ ≈ 11, 1 ед. z = SCALE ед. шкалы; у каждой характеристики есть погрешность (se).
 """
-import argparse, gzip, json, math, os, sys, time
+import argparse, bisect, gzip, json, math, os, sys, time
 from collections import defaultdict
 
 import numpy as np
@@ -35,6 +35,9 @@ REG_MIN = 400                   # «регулярный» игрок: от 400 
 NET_X = 89.0
 SHOT_TYPES = ["wrist", "snap", "slap", "backhand", "tip-in", "deflected", "wrap-around"]
 UNBLOCKED = ("shot-on-goal", "missed-shot", "goal")
+# «эмоциональные» удаления — для самообладания (отдельно от дисциплины: зацепы и подножки — это позиция и скорость, а не нрав)
+EMOT = ("roughing", "unsportsmanlike-conduct", "misconduct", "game-misconduct", "instigator", "instigator-misconduct", "fighting",
+        "cross-checking", "slashing", "roughing-removing-opponents-helmet", "abuse-of-officials", "aggressor", "spearing", "butt-ending")
 ATTEMPTS = UNBLOCKED + ("blocked-shot",)
 
 # тип характеристики → (нижняя, верхняя) граница отклонения от общего уровня, ед. шкалы; None — без ограничения.
@@ -98,6 +101,27 @@ def attack_net(play, is_home, x):
     return NET_X if (x or 0) >= 0 else -NET_X
 
 
+def goal_times(shots):
+    """Голы матча (кроме буллитов): отсортированные моменты (сек от начала) и команды."""
+    gl = sorted(((s["per"] - 1) * 1200 + s["t"], s["team"]) for s in shots if s["type"] == "goal")
+    return [t for t, _ in gl], [tm for _, tm in gl]
+
+
+def score_diff(goals, team, T, strict=True):
+    """Разница в счёте для команды team к моменту T (strict — без голов в эту же секунду)."""
+    gt, gteam = goals
+    k = bisect.bisect_left(gt, T) if strict else bisect.bisect_right(gt, T)
+    f = sum(1 for tm in gteam[:k] if tm == team)
+    return f - (k - f)
+
+
+def shift_toi_trailing(goals, team, per, a, b, by=-3):
+    """Секунды смены, когда команда проигрывала на |by| и больше."""
+    A, B = (per - 1) * 1200 + a, (per - 1) * 1200 + b
+    cuts = [A] + [t for t in goals[0] if A < t < B] + [B]
+    return sum(s1 - s0 for s0, s1 in zip(cuts, cuts[1:]) if score_diff(goals, team, s0 + 0.5) <= by)
+
+
 def parse_game(gid, g, shifts, season, pidx):
     """Броски, события и стинты одного матча."""
     home, away = g["home_id"], g["away_id"]
@@ -157,6 +181,7 @@ def parse_game(gid, g, shifts, season, pidx):
             else:
                 row["pid"], row["pid2"] = d.get("committedByPlayerId"), d.get("drawnByPlayerId")
                 row["pen"] = d.get("typeCode")
+                row["desc"] = d.get("descKey")
                 row["dur"] = d.get("duration")
             events.append(row)
         prev = p
@@ -165,11 +190,17 @@ def parse_game(gid, g, shifts, season, pidx):
     for s in shots:
         diff = hs - as_ if s["home"] else as_ - hs
         s["close"] = int(abs(diff) <= 1 and (s["per"] >= 3))
+        s["diff"] = diff
         if s["type"] == "goal":
             if s["home"]:
                 hs += 1
             else:
                 as_ += 1
+    # счёт в момент событий (с точки зрения команды игрока): для «безнадёжного счёта»
+    goals = goal_times(shots)
+    for e in events:
+        tm = team_of.get(e.get("pid"))
+        e["diff"] = score_diff(goals, tm, (e["per"] - 1) * 1200 + e["t"], strict=e["type"] != "penalty") if tm is not None else 0
     st = build_stints(shifts, pos) if shifts else []
     return shots, events, st, pos, team_of
 
@@ -492,10 +523,11 @@ def main():
             games.append({"gid": gid, "season": season, "type": g.get("type"), "date": g.get("date"),
                           "home": g["home"], "away": g["away"], "home_id": g["home_id"], "away_id": g["away_id"], "has_shifts": bool(st)})
             hid = g["home_id"]
-            # время игроков по сменам (все ситуации)
+            # время игроков по сменам (все ситуации) и при проигрыше в 3+ шайбы
+            gl_ = goal_times(shots)
             for pid, team, per, a_, b_ in (sh.get(gid) or []):
                 if per and per <= 4:
-                    pg_rows.append((gid, season, pid, team, b_ - a_))
+                    pg_rows.append((gid, season, pid, team, b_ - a_, shift_toi_trailing(gl_, team, per, a_, b_) if gl_[0] else 0))
             for per, t0, t1, on in st:
                 hs = [p for p, tm in on.items() if tm == hid and pos.get(p) != "G"]
                 as_ = [p for p, tm in on.items() if tm != hid and pos.get(p) != "G"]
@@ -506,12 +538,12 @@ def main():
         # по сезону — сразу в таблицы: словари и кортежи в Python занимают в разы больше памяти
         shot_dfs.append(pd.DataFrame(all_shots)); event_dfs.append(pd.DataFrame(all_events))
         stint_dfs.append(pd.DataFrame(stint_rows, columns=["gid", "season", "sw", "per", "t0", "t1", "hs", "aw", "hg", "ag"]))
-        pg_dfs.append(pd.DataFrame(pg_rows, columns=["gid", "season", "pid", "team", "sec"]))
+        pg_dfs.append(pd.DataFrame(pg_rows, columns=["gid", "season", "pid", "team", "sec", "sec_t3"]))
         del all_shots, all_events, stint_rows, pg_rows
     shots = pd.concat(shot_dfs, ignore_index=True); events = pd.concat(event_dfs, ignore_index=True)
     del shot_dfs, event_dfs
     # строки → категории: в разы меньше памяти (в рабочем окружении 8 ГБ)
-    for df_, cols_ in ((shots, ("gid", "season", "type", "stype", "zone", "reason")), (events, ("gid", "season", "type", "venue", "pen"))):
+    for df_, cols_ in ((shots, ("gid", "season", "type", "stype", "zone", "reason")), (events, ("gid", "season", "type", "venue", "pen", "desc"))):
         for c_ in cols_:
             if c_ in df_.columns:
                 df_[c_] = df_[c_].astype("category")
@@ -738,7 +770,7 @@ def main():
     S["rapm_c"] = S["rapm_co"] + S["rapm_cd"]
 
     # ── игровое время по матчам (все ситуации) и сыгранные матчи ──
-    pg = pg.groupby(["gid", "season", "pid", "team"], as_index=False)["sec"].sum()
+    pg = pg.groupby(["gid", "season", "pid", "team"], as_index=False)[["sec", "sec_t3"]].sum()
     pg["w"] = pg["season"].map(SEASON_W).fillna(0.5)
     pg["type"] = pg["gid"].map(games["type"])
     S["toi"] = (pg.assign(x=pg["sec"] * pg["w"]).groupby("pid")["x"].sum()).reindex(S.index).fillna(0)
@@ -786,7 +818,7 @@ def main():
     def arena_w(typ):
         return lambda df: 1.0 / np.array([venue_f[typ].get((s, venue_of[g]), 1.0) for s, g in zip(df["season"], df["gid"])])
 
-    pgw = pg.assign(expo=pg["sec"] / 60 * pg["w"])[["pid", "gid", "expo"]]
+    pgw = pg.assign(expo=pg["sec"] / 60 * pg["w"], expo_t3=pg["sec_t3"] / 60 * pg["w"])[["pid", "gid", "team", "expo", "expo_t3"]]
     counts = {
         "hits": per_player_game(events[events["type"] == "hit"], "pid", arena_w("hit")),
         "tk": per_player_game(events[events["type"] == "takeaway"], "pid", arena_w("takeaway")),
@@ -812,9 +844,17 @@ def main():
     counts["lng_gax"] = per_player_game(lng, "shooter", lambda d: d["g"] - d["xg"])
     net = fen_ok[(fen_ok["dist"] < 20) | fen_ok["stype"].isin(["tip-in", "deflected"]) | (fen_ok["reb"] == 1)]
     counts["net_xg"] = per_player_game(net, "shooter", lambda d: d["xg"])
-    clutch = fen_ok[(fen_ok["close"] == 1)]
-    counts["cl_gax"] = per_player_game(clutch, "shooter", lambda d: d["g"] - d["xg"])
-    counts["cl_n"] = per_player_game(clutch, "shooter")
+    # самообладание: «эмоциональные» удаления (грубость, неспортивное поведение, драки, удары клюшкой) — отдельно от дисциплины
+    pens = events[events["type"] == "penalty"]
+    counts["pen_all"] = per_player_game(pens.dropna(subset=["pid"]), "pid")
+    counts["pen_em"] = per_player_game(pens[pens["desc"].isin(EMOT)].dropna(subset=["pid"]), "pid")
+    # работоспособность при безнадёжном счёте: броски, силовые, отборы и блоки, когда команда проигрывает 3+
+    att = shots[shots["shooter"].notna()]
+    blk_ = shots[(shots["type"] == "blocked-shot") & shots["blocker"].notna()].assign(diff=lambda d: -d["diff"]).astype({"blocker": "int64"})
+    eff_ev = events[events["type"].isin(["hit", "takeaway"])].dropna(subset=["pid"])
+    for nm, cond in (("eff", lambda d: np.ones(len(d))), ("eff_t3", lambda d: (d["diff"] <= -3).astype(float).values)):
+        parts_ = [per_player_game(att, "shooter", cond), per_player_game(blk_, "blocker", cond), per_player_game(eff_ev, "pid", cond)]
+        counts[nm] = pd.concat(parts_).groupby(["pid", "gid"], as_index=False)["n"].sum()
 
     PG = pgw.copy()
     for name, c in counts.items():
@@ -824,6 +864,7 @@ def main():
     for c in counts:
         S[c] = tot[c].reindex(S.index).fillna(0)
     S["expo"] = tot["expo"].reindex(S.index).fillna(0)
+    S["expo_t3"] = tot["expo_t3"].reindex(S.index).fillna(0)
 
     # ── позиции и группы ──
     S["pos"] = [pos_of.get(p) or "F" for p in S.index]
@@ -939,23 +980,42 @@ def main():
     attr("vis", "tech", 0.65 * z_q + 0.35 * z_a1, one, 1e-6)
     attr("dis", "spec", per60("pen"), S["toi_min"], k_for("dis", "pen"), sign=-1.0, prior=False)
     dist = pd.Series({p: _edge_rate(edge, p, "dist") for p in S.index}).astype(float)
-    zwork = 0.6 * zq(per60("blk") + per60("tk"), S["toi_min"], 300) + 0.4 * ((dist - dist.mean()) / dist.std()).fillna(0)
+    # не опускает руки: активность при проигрыше в 3+ относительно своего обычного темпа и партнёров по команде
+    # (надёжность по половинкам матчей ≈ 0,2 — слабый сигнал, поэтому небольшой вес и сильное сжатие)
+    PG["eff_n_"] = PG["eff"] - PG["eff_t3"]; PG["expo_n_"] = PG["expo"] - PG["expo_t3"]
+    rate_n = (S["eff"] - S["eff_t3"]) / (S["expo"] - S["expo_t3"]).clip(lower=1)
+    PG["eff_exp_"] = PG["expo_t3"] * PG["pid"].map(rate_n).fillna(0)
+    tf = PG.groupby("team")["eff_t3"].sum() / PG.groupby("team")["eff_exp_"].sum().clip(lower=1e-6)
+    PG["eff_exp_"] *= PG["team"].map(tf).fillna(1)
+    hope_exp = PG.groupby("pid")["eff_exp_"].sum().reindex(S.index).fillna(0)
+    z_hope = zq(S["eff_t3"] / hope_exp.clip(lower=1e-3), hope_exp, 40.0)
+    zwork = 0.5 * zq(per60("blk") + per60("tk"), S["toi_min"], 300) + 0.3 * ((dist - dist.mean()) / dist.std()).fillna(0) + 0.2 * z_hope
     attr("wrk", "spec", zwork, one, 1e-6)
     # командная игра: насколько партнёрам лучше с ним, чем без него (WOWY по доле xG), + доля передач в очках
     ast_share = (S["a1"] + S["a2"]) / S["pts"].clip(lower=1)
     attr("tm", "tech", 0.7 * zq(S["wowy"], S["wowy_n"], 600.0) + 0.3 * zq(ast_share, S["pts"], 20), one, 1e-6)
     attr("pp", "spec", pp_rate, S["toipp"] / 60, 60.0)
-    # хладнокровие: опыт важных матчей (плей-офф) и реализация в концовках при разнице в одну шайбу; данных мало
+    # хладнокровие: опыт больших матчей (плей-офф и НХЛ). «Клатч» в данных не подтверждается — проверка по половинкам матчей
+    # 2022–2026: буллиты, очки в концовках ±1 и в плей-офф сверх своего темпа не совпадают между половинками (r ≈ 0)
     po_gp = pd.Series({p: (((pages.get(str(p)) or {}).get("careerTotals") or {}).get("playoffs") or {}).get("gamesPlayed") or 0 for p in S.index}).astype(float)
-    z_po = ((np.log1p(po_gp) - np.log1p(po_gp).mean()) / np.log1p(po_gp).std()).fillna(0)
-    z_cl = zq(S["cl_gax"] / S["cl_n"].clip(lower=1), S["cl_n"], k_for("cmp", "cl_gax", "cl_n", 10))
-    attr("cmp", "weak", 0.6 * z_po + 0.4 * z_cl, one, 1e-6)
-    # стабильность: разброс игровой оценки от матча к матчу
-    gs = PG.assign(gs=0.75 * PG["g_all"] + 0.7 * PG["a1"] + 0.55 * PG["a2"] + 0.05 * PG["blk"] + 0.15 * PG["pend"] - 0.15 * PG["pen"]
-                   + 0.01 * PG["fow"] - 0.01 * PG["fol"] + 0.075 * PG["fsh"])
+    rs_gp = pd.Series({p: (((pages.get(str(p)) or {}).get("careerTotals") or {}).get("regularSeason") or {}).get("gamesPlayed") or 0 for p in S.index}).astype(float)
+    zlog = lambda x: ((np.log1p(x) - np.log1p(x).mean()) / np.log1p(x).std()).fillna(0)
+    attr("cmp", "weak", 0.6 * zlog(po_gp) + 0.4 * zlog(rs_gp), one, 1e-6)
+    # стабильность: разброс игровой оценки от матча к матчу сверх того, что даёт её средний уровень.
+    # Прежний коэффициент вариации почти повторял уровень (у звёзд он меньше просто из-за большего среднего);
+    # остаток надёжен (половинки ≈ 0,73) — это «стиль вклада»: ровный (броски, блоки, силовые) или рывками (голы)
+    gs = PG.assign(gs=0.75 * PG["g_all"] + 0.6 * (PG["a1"] + PG["a2"]) + 0.075 * PG["fsh"] + 0.05 * PG["blk"] + 0.05 * PG["hits"] - 0.15 * PG["pen"])
     gstat = gs.groupby("pid")["gs"].agg(["mean", "std", "count"])
-    cv = gstat["std"] / gstat["mean"].clip(lower=0.25)          # коэффициент вариации игровой оценки
-    attr("con", "cons", cv.reindex(S.index), gstat["count"].reindex(S.index).fillna(0), 120.0, sign=-1.0, prior=True)
+    ok_ = (gstat["count"] >= 60) & (gstat["mean"] > 0.05) & (gstat["std"] > 0)
+    lm_ = np.log(gstat["mean"].clip(lower=0.05)); ls_ = np.log(gstat["std"].clip(lower=1e-3))
+    coef_ = np.polyfit(lm_[ok_], ls_[ok_], 2)
+    resid = ls_ - np.polyval(coef_, lm_)
+    attr("con", "cons", resid.reindex(S.index), gstat["count"].reindex(S.index).fillna(0), 60.0, sign=-1.0, prior=False)
+    # самообладание (скрытое качество в ядре): частота «эмоциональных» удалений и их доля среди всех (надёжность 0,88 и 0,80)
+    k_em = k_for("temper", "pen_em")
+    z_em = zq(per60("pen_em"), S["toi_min"], k_em, allg)
+    z_es = zq(S["pen_em"] / S["pen_all"].clip(lower=1), S["pen_all"], 10.0, allg)
+    S["temper"] = (0.6 * z_em + 0.4 * z_es).clip(-2, 4)
     # корреляции между характеристиками (регулярные игроки): контроль дублей
     vals = pd.DataFrame({k: v["v"] for k, v in A.items()}).loc[regs]
     cm = vals.corr()
@@ -1034,7 +1094,8 @@ def main():
             "a": {k: [round(float(v["v"][p]), 2), round(float(v["se"][p]), 2)] for k, v in A.items() if pd.notna(v["v"][p])},
             "raw": {"rapm_x": round(float(S.at[p, "rapm_x"]), 3), "rapm_xo": round(float(S.at[p, "rapm_xo"]), 3), "rapm_xd": round(float(S.at[p, "rapm_xd"]), 3),
                     "rapm_c": round(float(S.at[p, "rapm_c"]), 2), "pts60": round(float(per60("pts")[p]), 2), "gax": round(float(S.at[p, "gax"]), 1)},
-            "facts": {**facts.get(p, {}), **avail.get(p, {}), "fights": round(float(S.at[p, "fight"]), 1), "pen60": round(float(per60("pen")[p]), 2)},
+            "facts": {**facts.get(p, {}), **avail.get(p, {}), "fights": round(float(S.at[p, "fight"]), 1), "pen60": round(float(per60("pen")[p]), 2),
+                      "temper": round(float(S.at[p, "temper"]), 2)},
             "rt": {k_: round(float(rt.at[p, k_]), 4) for k_ in ("ixg60", "a60", "gx")},
             **({"real": real25[p]} if p in real25 else {}),
         }
@@ -1332,11 +1393,17 @@ def goalies(shots, pg, pages, games, extra_path=None, curves=None, born=None, ra
         ("reb", "spec", agg["reb"] / agg["saves"].clip(lower=1), agg["saves"], 1500.0, -1.0),
         ("scr", "spec", agg["gsax_tip"] / agg["n_tip"].clip(lower=1), agg["n_tip"], k * 0.3, 1.0),
         ("gsta", "spec", agg["starts"] / agg["gp"].clip(lower=1), agg["gp"] * 10, 1e-6, 1.0),
-        ("gcmp", "weak", agg["gsax_cl"] / agg["n_cl"].clip(lower=1), agg["n_cl"], k, 1.0),
     ):
         sc = Scale(x, n, kk, grp, reg, zG, sign, True)
         v, se = combine(level, sc.z, sc.se, kind)
         res[key] = (v, se)
+    # хладнокровие: опыт больших матчей (плей-офф и НХЛ). Сейвы в концовках ±1 сверх своего уровня между половинками матчей
+    # не совпадают (r ≈ 0,03 на 2022–2026) — «клатча» у вратарей данные не подтверждают
+    po_ = pd.Series({p: (((pages.get(str(p)) or {}).get("careerTotals") or {}).get("playoffs") or {}).get("gamesPlayed") or 0 for p in agg.index}).astype(float)
+    rs_ = pd.Series({p: (((pages.get(str(p)) or {}).get("careerTotals") or {}).get("regularSeason") or {}).get("gamesPlayed") or 0 for p in agg.index}).astype(float)
+    zl_ = lambda x: ((np.log1p(x) - np.log1p(x).mean()) / np.log1p(x).std()).fillna(0)
+    sc = Scale(0.6 * zl_(po_) + 0.4 * zl_(rs_), pd.Series(1e6, index=agg.index), 1e-6, grp, reg, zG, 1.0, True)
+    res["gcmp"] = combine(level, sc.z, sc.se, "weak")
     # стабильность: разброс GSAx по матчам
     # стабильность: разброс сейвов сверх ожидаемого на бросок от матча к матчу (полные матчи, без весов сезонов)
     pg2 = sh.groupby(["goalie", "gid"]).agg(gs=("gsax", "sum"), n=("gsax", "size")).reset_index()
