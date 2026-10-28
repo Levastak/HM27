@@ -154,7 +154,7 @@ public partial class HubScreen : Control
         if (C.Phase == Phase.Finished && C.Champion != null)
         {
             var ch = C.Team(C.Champion);
-            v.AddChild(Ui.Card(Ui.H(16, new TeamBadge(ch, 64), Ui.V(2, Ui.L("Обладатель Кубка Стэнли 2027", 14, Ui.Muted, Ui.Semi), Ui.L(ch.Name, 28, Ui.Text, Ui.Black),
+            v.AddChild(Ui.Card(Ui.H(16, new TeamBadge(ch, 64), Ui.V(2, Ui.L("Обладатель Кубка Стэнли 2027", 14, Ui.Muted, Ui.Semi), Links.Club(ch, ch.Name, 28, Ui.Text, Ui.Black),
                 Ui.L(C.Champion == C.UserTeam ? "Это ваш клуб! Многосезонная карьера появится в следующих версиях." : "Многосезонная карьера появится в следующих версиях — можно начать новую.", 14, Ui.Muted))), Ui.Panel2, 20, new Color(Ui.Accent, 0.6f)));
         }
         var cols = Ui.Expand(Ui.H(18), true, true);
@@ -175,7 +175,7 @@ public partial class HubScreen : Control
             h.AddChild(new TeamBadge(MyTeam, 64));
             h.AddChild(Ui.L(home ? "дома" : "в гостях", 13, Ui.Muted));
             h.AddChild(new TeamBadge(opp, 64));
-            h.AddChild(Ui.Expand(Ui.V(4, Ui.L($"{(home ? "" : "@ ")}{opp.Name}", 20, Ui.Text, Ui.Bold),
+            h.AddChild(Ui.Expand(Ui.V(4, Ui.H(0, Ui.L(home ? "" : "@ ", 20, Ui.Text, Ui.Bold), Links.Club(opp, opp.Name, 20, Ui.Text, Ui.Bold)),
                 Ui.L($"{Ui.Date(next.Date)}{(next.Playoff ? " · плей-офф" : "")}", 14, Ui.Muted),
                 Ui.H(10, Ui.L("Шанс на победу", 13, Ui.Muted), Ui.Bar(p, Ui.AccentBright, 160, 8), Ui.L(Ui.Pct(p), 15, Ui.Text, Ui.Bold)))));
             left.AddChild(Section("Следующий матч", h));
@@ -210,7 +210,7 @@ public partial class HubScreen : Control
             .OrderByDescending(kv => kv.Value.Pts).ThenByDescending(kv => kv.Value.G).Take(5).ToList();
         var pt = new Table(new[] { "Игрок", "Г", "П", "О" }, new[] { 0, 36, 36, 40 });
         foreach (var (id, s) in lead.Select(kv => (kv.Key, kv.Value)))
-            pt.Add(new Control[] { Ui.L(C.Data.PlayerById[id].NameRu, 14), Ui.L($"{s.G}", 14), Ui.L($"{s.A}", 14), Ui.L($"{s.Pts}", 14, Ui.Text, Ui.Bold) }, false,
+            pt.Add(new Control[] { Links.Player(C.Data.PlayerById[id], null, 14), Ui.L($"{s.G}", 14), Ui.L($"{s.A}", 14), Ui.L($"{s.Pts}", 14, Ui.Text, Ui.Bold) }, false,
                 () => PlayerCard.Show(this, C.Data.PlayerById[id], C));
         if (lead.Count == 0) pt.Add(new Control[] { Ui.L("Пока нет сыгранных матчей", 14, Ui.Muted) });
         right.AddChild(Section("Лидеры клуба", pt));
@@ -235,7 +235,7 @@ public partial class HubScreen : Control
     Control TeamCell(string abbr, int size = 22)
     {
         var t = C.Team(abbr);
-        var h = Ui.H(8, new TeamBadge(t, size), Ui.L(t.City, 14, abbr == C.UserTeam ? Colors.White : Ui.Text, abbr == C.UserTeam ? Ui.Semi : null));
+        var h = Ui.H(8, new TeamBadge(t, size), Links.Club(t, t.City, 14, abbr == C.UserTeam ? Colors.White : Ui.Text, abbr == C.UserTeam ? Ui.Semi : null));
         h.MouseFilter = MouseFilterEnum.Ignore;
         return h;
     }
@@ -357,7 +357,7 @@ public partial class HubScreen : Control
             foreach (var (id, s) in rows.Select(kv => (kv.Key, kv.Value)))
             {
                 var p = C.Data.PlayerById[id];
-                t.Add(new Control[] { Ui.L($"{++i}", 13, Ui.Muted), Ui.L(p.NameRu, 14), TeamCell(p.Team, 18), Ui.L($"{s.Gp}", 13), Ui.L($"{s.W}", 13), Ui.L($"{s.L}", 13), Ui.L($"{s.Otl}", 13),
+                t.Add(new Control[] { Ui.L($"{++i}", 13, Ui.Muted), Links.Player(p, null, 14), TeamCell(p.Team, 18), Ui.L($"{s.Gp}", 13), Ui.L($"{s.W}", 13), Ui.L($"{s.L}", 13), Ui.L($"{s.Otl}", 13),
                     Ui.L($"{s.SvPct:.000}", 14, Ui.Text, Ui.Bold), Ui.L($"{s.Gaa:0.00}", 13), Ui.L($"{s.So}", 13) }, p.Team == C.UserTeam, () => PlayerCard.Show(this, p, C));
             }
             if (rows.Count == 0) t.Add(new Control[] { Ui.L($"Пока мало матчей (нужно от {minGp})", 14, Ui.Muted) });
@@ -374,7 +374,7 @@ public partial class HubScreen : Control
             foreach (var (id, s) in rows.Select(kv => (kv.Key, kv.Value)))
             {
                 var p = C.Data.PlayerById[id];
-                t.Add(new Control[] { Ui.L($"{++i}", 13, Ui.Muted), Ui.L(p.NameRu, 14), Ui.L(Ui.PosRu(p.Pos), 12, Ui.Muted), TeamCell(p.Team, 18), Ui.L($"{s.Gp}", 13),
+                t.Add(new Control[] { Ui.L($"{++i}", 13, Ui.Muted), Links.Player(p, null, 14), Ui.L(Ui.PosRu(p.Pos), 12, Ui.Muted), TeamCell(p.Team, 18), Ui.L($"{s.Gp}", 13),
                     Ui.L($"{s.G}", 13, mode == 1 ? Ui.Text : Ui.Muted, mode == 1 ? Ui.Bold : null), Ui.L($"{s.A}", 13, mode == 2 ? Ui.Text : Ui.Muted, mode == 2 ? Ui.Bold : null),
                     Ui.L($"{s.Pts}", 14, mode == 0 || po ? Ui.Text : Ui.Muted, mode == 0 || po ? Ui.Bold : null), Ui.L($"{s.Ppg}", 13, Ui.Muted), Ui.L($"{s.Gwg}", 13, Ui.Muted) },
                     p.Team == C.UserTeam, () => PlayerCard.Show(this, p, C));
@@ -421,7 +421,7 @@ public partial class HubScreen : Control
             grid.AddChild(col);
         }
         v.AddChild(grid);
-        if (C.Champion != null) v.AddChild(Ui.L($"Кубок Стэнли выиграл «{C.Team(C.Champion).Name}».", 18, Ui.Text, Ui.Bold));
+        if (C.Champion != null) v.AddChild(Ui.H(0, Ui.L("Кубок Стэнли выиграл ", 18, Ui.Text, Ui.Bold), Links.Club(C.Team(C.Champion), $"«{C.Team(C.Champion).Name}»", 18, Ui.Text, Ui.Bold)));
         return Ui.Scroll(v);
     }
 

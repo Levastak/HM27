@@ -62,6 +62,62 @@ def facts(f):
     return {k: v for k, v in out.items() if v not in (None, [], 0) or k in ("gp",)}
 
 
+INTL = {"WC": "wc", "WC-A": "wc", "WJC-20": "wjc", "WJC-A": "wjc", "WJC": "wjc", "WJ18-A": "u18", "WJC-18": "u18", "WHC-17": "u17",
+        "OG": "og", "Olympics": "og", "WCup": "wcup", "4 Nations": "4n"}
+NOT_CLUB = ("WC", "WJ", "WHC", "OG", "Oly", "4 Nations", "WCup", "EHT", "Champions HL", "U18", "U17", "U16", "GTHL", "Other", "QC Int", "Int-", "Spengler")
+
+
+def bio(page, team_of_name):
+    """Биография для карточки: место рождения, драфт, награды, путь до НХЛ, сезоны в НХЛ, сборная."""
+    if not page:
+        return None
+    st = [x for x in page.get("seasonTotals") or [] if x.get("gameTypeId") == 2]
+    nhl = [x for x in st if x.get("leagueAbbrev") == "NHL"]
+    first_nhl = min((x["season"] for x in nhl), default=99999999)
+    rows = []
+    for x in sorted(nhl, key=lambda x: (x["season"], x.get("sequence", 0))):
+        name = (x.get("teamName") or {}).get("default", "")
+        t = team_of_name.get(name, name)
+        if "wins" in x or "savePctg" in x:      # вратарь
+            rows.append([x["season"], t, x.get("gamesPlayed", 0), x.get("wins", 0), round(x.get("goalsAgainstAvg") or 0, 2), round(x.get("savePctg") or 0, 3), x.get("shutouts", 0)])
+        else:
+            rows.append([x["season"], t, x.get("gamesPlayed", 0), x.get("goals", 0), x.get("assists", 0), x.get("points", 0), x.get("pim", 0), x.get("plusMinus", 0)])
+    # путь: клубные лиги (без сборных и детских турниров), главный клуб сезона — по числу матчей
+    path = {}
+    for x in st:
+        lg = x.get("leagueAbbrev") or ""
+        if lg == "NHL" or any(lg.startswith(k) for k in NOT_CLUB) or (x.get("gamesPlayed") or 0) < 5:
+            continue
+        cur = path.get(x["season"])
+        if cur is None or (x.get("gamesPlayed") or 0) > cur[3]:
+            path[x["season"]] = [x["season"], lg, (x.get("teamName") or {}).get("default", ""), x.get("gamesPlayed") or 0, x.get("points") or 0]
+    path = [path[k] for k in sorted(path)]
+    intl = {}
+    for x in page.get("seasonTotals") or []:
+        k = INTL.get(x.get("leagueAbbrev"))
+        if k:
+            intl.setdefault(k, set()).add(x["season"])
+    ct = page.get("careerTotals") or {}
+    po = ct.get("playoffs") or {}
+    dd = page.get("draftDetails") or {}
+    out = {
+        "city": (page.get("birthCity") or {}).get("default"), "prov": (page.get("birthStateProvince") or {}).get("default"),
+        "aw": [[(a.get("trophy") or {}).get("default", ""), sorted({x.get("seasonId") for x in a.get("seasons") or [] if x.get("seasonId")})] for a in page.get("awards") or []],
+        "nhl": rows, "pre": [r for r in path if r[0] < first_nhl][-8:], "minor": [r for r in path if r[0] >= first_nhl],
+        "intl": {k: sorted(v) for k, v in intl.items()},
+    }
+    if dd.get("overallPick"):
+        out["draft"] = [dd.get("year"), dd.get("teamAbbrev"), dd.get("round"), dd.get("overallPick")]
+    if po.get("gamesPlayed"):
+        out["po"] = [po.get("gamesPlayed", 0), po.get("goals", 0), po.get("assists", 0), po.get("points", 0)] if "wins" not in po else \
+                    [po.get("gamesPlayed", 0), po.get("wins", 0), round(po.get("goalsAgainstAvg") or 0, 2), round(po.get("savePctg") or 0, 3)]
+    if page.get("inHHOF"):
+        out["hof"] = 1
+    if page.get("inTop100AllTime"):
+        out["top100"] = 1
+    return {k: v for k, v in out.items() if v not in (None, [], {})}
+
+
 def fix_namesakes(db, path=os.path.join(os.path.dirname(os.path.abspath(__file__)), "overrides.json")):
     """Тёзки в одном клубе: «Сводка» склеивает их по имени в одну запись. Разводим на двоих: у нападающего —
     статистика и номер исходной записи, в звеньях нападения и большинства — он, в парах защиты — защитник."""
@@ -188,6 +244,25 @@ def main(db_path="game/data/hm27-data.json", model_path="data/derived.json.gz", 
         p = max(cands, key=lambda x: (x.get("fx") or {}).get("gp", 0))
         p.setdefault("fx", {}).update(ld)
         lead_n += 1
+    # биографии из страниц игроков (сырые данные raw-data/players.json.gz) и история клубов (data/clubs.json)
+    here = os.path.dirname(os.path.abspath(__file__))
+    pages_path = os.environ.get("HM27_PLAYERS", os.path.join(here, "..", "..", "raw", "players.json.gz"))
+    if os.path.exists(pages_path):
+        with gzip.open(pages_path, "rt", encoding="utf-8") as f:
+            pages = json.load(f)
+        team_of_name = {t["name_en"]: t["abbr"] for t in db["teams"] if t.get("name_en")}
+        nb = 0
+        for p in db["players"]:
+            b = bio(pages.get(str(p["id"])), team_of_name)
+            if b:
+                p["bio"] = b; nb += 1
+        print(f"Биографии: {nb} игроков")
+    clubs_path = os.path.join(here, "clubs.json")
+    if os.path.exists(clubs_path):
+        cl = json.load(open(clubs_path, encoding="utf-8"))["teams"]
+        for t in db["teams"]:
+            if t["abbr"] in cl:
+                t["hist"] = cl[t["abbr"]]
     db["format"] = 3
     db["model"] = {"built": m["meta"]["built"], "seasons": m["meta"]["seasons"], "scale": m["meta"]["scale"],
                    "kinds": m["meta"].get("attr_kinds", {}), "xg": m["meta"].get("xg_source", "")}

@@ -21,7 +21,7 @@ public static class P
     public static Control Team(string abbr, int size = 18, bool full = false)
     {
         var t = C.Team(abbr);
-        return Ui.H(6, new TeamBadge(t, size), Ui.L(full ? t.Name : t.City, 13, abbr == C.UserTeam ? Colors.White : Ui.Text, abbr == C.UserTeam ? Ui.Semi : null));
+        return Ui.H(6, new TeamBadge(t, size), Links.Club(t, full ? t.Name : t.City, 13, abbr == C.UserTeam ? Colors.White : Ui.Text, abbr == C.UserTeam ? Ui.Semi : null));
     }
 
     /// <summary>Форма: квадратики В/П/О последних матчей (новые справа).</summary>
@@ -91,7 +91,7 @@ public partial class HomePage : Control
         AddChild(page);
 
         if (C.Phase == Phase.Finished && C.Champion != null)
-            a.AddChild(Widget.Make("Кубок Стэнли 2027", Ui.H(14, new TeamBadge(C.Team(C.Champion), 56), Ui.V(2, Ui.L(C.Team(C.Champion).Name, 20, Ui.Text, Ui.Black),
+            a.AddChild(Widget.Make("Кубок Стэнли 2027", Ui.H(14, new TeamBadge(C.Team(C.Champion), 56), Ui.V(2, Links.Club(C.Team(C.Champion), C.Team(C.Champion).Name, 20, Ui.Text, Ui.Black),
                 Ui.L(C.Champion == C.UserTeam ? "Это ваш клуб!" : "Многосезонная карьера — в следующих версиях.", 13, Ui.Muted)))));
         a.AddChild(NextMatch());
         a.AddChild(Upcoming());
@@ -116,7 +116,7 @@ public partial class HomePage : Control
         h.AddChild(Ui.V(2, Ui.L(home ? "ДОМА" : "В ГОСТЯХ", 11, Ui.Muted, Ui.Bold, HorizontalAlignment.Center), Ui.L("vs", 18, Ui.Dim, Ui.Bold, HorizontalAlignment.Center)));
         h.AddChild(new TeamBadge(opp, 64));
         var info = Ui.Expand(Ui.V(3));
-        info.AddChild(Ui.L(opp.Name, 18, Ui.Text, Ui.Bold));
+        info.AddChild(Links.Club(opp, opp.Name, 18, Ui.Text, Ui.Bold));
         info.AddChild(Ui.L($"{Ui.Date(g.Date)}{(g.Playoff ? " · плей-офф" : "")} · {oppRow.W}-{oppRow.L}-{oppRow.Otl}, {C.Sorted(t => t.Conference == opp.Conference).FindIndex(r => r.Team == opp.Abbr) + 1}-е в конференции", 12, Ui.Muted));
         info.AddChild(Ui.H(8, Ui.L("Форма соперника", 12, Ui.Muted), P.Form(opp.Abbr, 5, 18)));
         h.AddChild(info);
@@ -261,7 +261,7 @@ public partial class SquadPage : Control
             new() { Title = "Игрок", Width = 0, Align = HorizontalAlignment.Left, Sort = p => p.LastRu, Desc = false, Cell = p =>
             {
                 bool inj = C.Injured.Contains(p.Id);
-                var h = Ui.H(6, Ui.L(p.NameRu, 13, inj ? Ui.Loss : Ui.Text, Ui.Medium));
+                var h = Ui.H(6, Links.Player(p, null, 13, inj ? Ui.Loss : Ui.Text, Ui.Medium));
                 if (inj) h.AddChild(Ui.Icon("cross", 13, Ui.Loss));
                 return h;
             } },

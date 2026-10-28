@@ -132,7 +132,7 @@ public partial class LinesView : HBoxContainer
         var b2b = new CheckBox { Text = "Запасной во 2-м матче за 2 дня", ButtonPressed = L.BackupOnB2B, FocusMode = FocusModeEnum.None };
         b2b.Toggled += on => { L.BackupOnB2B = on; Main.I.Save(); };
         var g2 = C.Data.PlayerById.GetValueOrDefault(L.G2);
-        v.AddChild(Section("Вратари", Ui.L($"Основной: {C.Short(L.G1)} · запасной: {C.Short(L.G2)}", 12, Ui.Text), b2b, Note("Усталость во втором матче подряд стоит команде около 5% голов. Поменять вратарей — во вкладке любого звена, место «В».")));
+        v.AddChild(Section("Вратари", Ui.H(0, Ui.L("Основной: ", 12, Ui.Text), Links.Player(C, L.G1, C.Short(L.G1), 12), Ui.L(" · запасной: ", 12, Ui.Text), Links.Player(C, L.G2, C.Short(L.G2), 12)), b2b, Note("Усталость во втором матче подряд стоит команде около 5% голов. Поменять вратарей — во вкладке любого звена, место «В».")));
 
         var (gF, gA) = C.LineupEffect(C.UserTeam);
         v.AddChild(Section("Анализ состава",

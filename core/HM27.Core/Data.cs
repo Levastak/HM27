@@ -69,6 +69,8 @@ public sealed class TeamData
     [JsonPropertyName("dfn")] public double Dfn { get; set; }
     [JsonPropertyName("lines")] public LinesData Lines { get; set; } = new();
     [JsonPropertyName("injured")] public List<int> Injured { get; set; } = new();
+    /// <summary>История клуба: основание, арена, Кубки Стэнли и Президентские кубки (data/clubs.json).</summary>
+    [JsonPropertyName("hist")] public TeamHistory Hist { get; set; }
     [JsonPropertyName("record")] public RecordData Record { get; set; }
 }
 
@@ -183,6 +185,8 @@ public sealed class PlayerData
     [JsonPropertyName("xf")] public string Xf { get; set; }
     /// <summary>Реальный сезон 2025-26 (MoneyPuck): gp, g, a — для сверки сезонов игры с реальностью (HM27.Check).</summary>
     [JsonPropertyName("real")] public Dictionary<string, int> Real { get; set; }
+    /// <summary>Биография: место рождения, драфт, награды, путь до НХЛ, сезоны в НХЛ, сборная (страница игрока НХЛ).</summary>
+    [JsonPropertyName("bio")] public PlayerBio Bio { get; set; }
 
     /// <summary>Уровень по данным (если модели нет — из старой оценки ovr).</summary>
     [JsonIgnore] public double Level => Lvl is { Length: > 0 } ? Lvl[0] : Math.Clamp(R.GetValueOrDefault("ovr", 50) / 5.0, 1, 20);
@@ -219,4 +223,42 @@ public sealed class PlayerData
             return i > 0 ? n[(i + 1)..] : n;
         }
     }
+}
+
+/// <summary>История клуба (для карточки клуба).</summary>
+public sealed class TeamHistory
+{
+    [JsonPropertyName("arena")] public string Arena { get; set; }
+    [JsonPropertyName("capacity")] public int Capacity { get; set; }
+    [JsonPropertyName("founded")] public int Founded { get; set; }
+    [JsonPropertyName("joined")] public int? Joined { get; set; }
+    /// <summary>Годы побед в Кубке Стэнли (год финала).</summary>
+    [JsonPropertyName("cups")] public List<int> Cups { get; set; } = new();
+    /// <summary>Президентский кубок (год окончания сезона).</summary>
+    [JsonPropertyName("presidents")] public List<int> Presidents { get; set; } = new();
+    /// <summary>Прежние названия и переезды.</summary>
+    [JsonPropertyName("former")] public string Former { get; set; }
+}
+
+/// <summary>Биография игрока со страницы НХЛ. Сезоны — восьмизначные (20252026).</summary>
+public sealed class PlayerBio
+{
+    [JsonPropertyName("city")] public string City { get; set; }
+    [JsonPropertyName("prov")] public string Prov { get; set; }
+    /// <summary>Награды: [название (англ.), [сезоны]].</summary>
+    [JsonPropertyName("aw")] public List<List<JsonElement>> Awards { get; set; } = new();
+    /// <summary>Регулярка НХЛ по сезонам: полевые [сезон, клуб, И, Г, П, О, Штр, +/−]; вратари [сезон, клуб, И, В, КН, %ОБ, «на ноль»].</summary>
+    [JsonPropertyName("nhl")] public List<List<JsonElement>> Nhl { get; set; } = new();
+    /// <summary>Путь до НХЛ: [сезон, лига, клуб, И, О].</summary>
+    [JsonPropertyName("pre")] public List<List<JsonElement>> Pre { get; set; } = new();
+    /// <summary>Сезоны в других лигах после дебюта в НХЛ (АХЛ, Европа): [сезон, лига, клуб, И, О].</summary>
+    [JsonPropertyName("minor")] public List<List<JsonElement>> Minor { get; set; } = new();
+    /// <summary>Сборная: турнир (wc, wjc, u18, u17, og, wcup, 4n) → сезоны.</summary>
+    [JsonPropertyName("intl")] public Dictionary<string, List<int>> Intl { get; set; } = new();
+    /// <summary>Драфт: [год, клуб, раунд, общий номер].</summary>
+    [JsonPropertyName("draft")] public List<JsonElement> Draft { get; set; }
+    /// <summary>Плей-офф за карьеру: полевые [И, Г, П, О]; вратари [И, В, КН, %ОБ].</summary>
+    [JsonPropertyName("po")] public List<double> Po { get; set; }
+    [JsonPropertyName("hof")] public int Hof { get; set; }
+    [JsonPropertyName("top100")] public int Top100 { get; set; }
 }

@@ -246,7 +246,7 @@ public static class Ui
     /// <summary>Число со знаком без «−0,00».</summary>
     public static string Signed(double v, string fmt = "0.00") => Math.Abs(v) < 0.005 ? (0.0).ToString(fmt) : (v > 0 ? "+" : "−") + Math.Abs(v).ToString(fmt);
 
-    static readonly string[] MonthsGen = { "января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря" };
+    public static readonly string[] MonthsGen = { "января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря" };
     static readonly string[] MonthsShort = { "янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек" };
     static readonly string[] Dow = { "вс", "пн", "вт", "ср", "чт", "пт", "сб" };
     public static string Date(DateOnly d, bool dow = true) => $"{d.Day} {MonthsGen[d.Month - 1]}{(dow ? ", " + Dow[(int)d.DayOfWeek] : "")}";

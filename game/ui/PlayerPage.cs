@@ -127,7 +127,16 @@ public partial class PlayerPage : Control
         row.AddChild(right);
         v.AddChild(row);
 
+        // биография и достижения (страница игрока НХЛ), как вкладка «История» в FM
+        var bioRow = Ui.H(12);
+        bioRow.AddChild(Ui.Expand(Widget.Make("Биография", BioWidgets.Biography(C, p))));
+        var hon = Ui.V(12); hon.CustomMinimumSize = new Vector2(380, 0);
+        hon.AddChild(Widget.Make("Достижения", BioWidgets.Honours(p), null, null, 0));
+        bioRow.AddChild(hon);
+        v.AddChild(bioRow);
+
         v.AddChild(Stats(p));
+        v.AddChild(Widget.Make("Карьера в НХЛ (регулярные чемпионаты)", BioWidgets.NhlCareer(C, p), null, null, 0));
         var games = Games(p);
         if (games != null) v.AddChild(games);
     }
@@ -155,7 +164,10 @@ public partial class PlayerPage : Control
 
         // плитки: клуб и страна
         var tiles = Ui.V(10);
-        tiles.AddChild(Frame(Ui.V(2, new TeamBadge(t, 54) { SizeFlagsHorizontal = SizeFlags.ShrinkCenter }, Ui.L(t.City, 11, Ui.Muted, null, HorizontalAlignment.Center)).Also(x => x.CustomMinimumSize = new Vector2(96, 0)), 8));
+        var clubTile = Frame(Ui.V(2, new TeamBadge(t, 54) { SizeFlagsHorizontal = SizeFlags.ShrinkCenter, MouseFilter = MouseFilterEnum.Ignore }, Ui.L(t.City, 11, Ui.Muted, null, HorizontalAlignment.Center).Also(l => l.MouseFilter = MouseFilterEnum.Ignore)).Also(x => { x.CustomMinimumSize = new Vector2(96, 0); x.MouseFilter = MouseFilterEnum.Ignore; }), 8);
+        clubTile.MouseDefaultCursorShape = CursorShape.PointingHand; clubTile.TooltipText = $"Карточка клуба «{t.City}»";
+        clubTile.GuiInput += e => { if (e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left }) Links.OpenClub(t.Abbr); };
+        tiles.AddChild(clubTile);
         tiles.AddChild(Frame(Ui.V(0, Ui.L(p.Country ?? "", 22, Ui.Text, Ui.Black, HorizontalAlignment.Center), Ui.L(PlayerCard.Country(p.Country), 11, Ui.Muted, null, HorizontalAlignment.Center)).Also(x => x.CustomMinimumSize = new Vector2(96, 0)), 8));
         row.AddChild(tiles);
 
@@ -163,7 +175,7 @@ public partial class PlayerPage : Control
         var age = p.Age(C.Today);
         var facts = Ui.V(4);
         facts.AddChild(Ui.L(p.NameRu, 24, Ui.Text, Ui.Bold));
-        facts.AddChild(Ui.L($"#{p.Num} · {Capital(PlayerCard.PosLong(p.Pos))} · {t.Name}", 13, Ui.Muted));
+        facts.AddChild(Ui.H(0, Ui.L($"#{p.Num} · {Capital(PlayerCard.PosLong(p.Pos))} · ", 13, Ui.Muted), Links.Club(t, t.Name, 13, Ui.Muted)));
         facts.AddChild(Ui.Spacer(false, 6));
         var grid = new GridContainer { Columns = 3 };
         grid.AddThemeConstantOverride("h_separation", 30); grid.AddThemeConstantOverride("v_separation", 8);

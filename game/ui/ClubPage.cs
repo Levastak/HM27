@@ -35,6 +35,9 @@ public partial class ClubPage : Control
         // ---------- плитки матчей
         v.AddChild(Fixtures(t));
 
+        // ---------- история клуба
+        v.AddChild(Widget.Make("История клуба", BioWidgets.ClubHistory(C, t)));
+
         // ---------- график места и лидеры
         var row = Ui.H(12);
         row.AddChild(Ui.Expand(Widget.Make($"Место в конференции по ходу сезона", PositionChart(t))));
@@ -73,9 +76,10 @@ public partial class ClubPage : Control
         F("Шайбы", $"{row.Gf}–{row.Ga} ({Ui.Signed(row.Gf - row.Ga, "0")})");
         F("Серия", string.IsNullOrEmpty(row.Streak) ? "—" : row.Streak);
         var l = C.Lineups[t.Abbr];
-        F("Основной вратарь", C.Short(l.G1));
+        void FL(string k, Control val) => g.AddChild(Ui.V(0, Ui.L(k.ToUpperInvariant(), 10, Ui.Dim, Ui.Bold), val));
+        FL("Основной вратарь", Links.Player(C, l.G1, C.Short(l.G1), 14, null, Ui.Semi));
         var best = C.Skaters.Where(kv => C.Data.PlayerById[kv.Key].Team == t.Abbr).OrderByDescending(kv => kv.Value.Pts).FirstOrDefault();
-        F("Лучший бомбардир", best.Key != 0 ? $"{C.Short(best.Key)} ({best.Value.Pts})" : "—");
+        FL("Лучший бомбардир", best.Key != 0 ? Links.Player(C, best.Key, $"{C.Short(best.Key)} ({best.Value.Pts})", 14, null, Ui.Semi) : Ui.L("—", 14, Ui.Text, Ui.Semi));
         F("В лазарете", $"{C.Injured.Count(id => C.Data.PlayerById[id].Team == t.Abbr)}");
         F("Темп игры", l.Tempo switch { -1 => "Закрытый", 1 => "Открытый", _ => "Обычный" });
         var v2 = Ui.V(10, Ui.L(t.Name, 26, Ui.Text, Ui.Bold), g);
@@ -106,7 +110,7 @@ public partial class ClubPage : Control
         ArenaBuilder.Build(world, new Color(t.Colors[0]), new Color(t.Colors.Count > 1 ? t.Colors[1] : t.Colors[0]), new Color("888888"));
         var cam = new OrbitCam { Fov = 46, Current = true };
         world.AddChild(cam);
-        var cap = Ui.V(0, Ui.L("ДОМАШНЯЯ АРЕНА", 10, new Color(1, 1, 1, 0.75f), Ui.Bold), Ui.L($"{t.City} · 3Д-движок HM27", 13, Colors.White, Ui.Semi));
+        var cap = Ui.V(0, Ui.L("ДОМАШНЯЯ АРЕНА", 10, new Color(1, 1, 1, 0.75f), Ui.Bold), Ui.L(t.Hist != null ? $"{t.Hist.Arena} · {t.City}" : $"{t.City} · 3Д-движок HM27", 13, Colors.White, Ui.Semi));
         var shade = new ColorRect { Color = new Color(0, 0, 0, 0.45f), MouseFilter = MouseFilterEnum.Ignore };
         shade.SetAnchorsPreset(LayoutPreset.BottomWide); shade.OffsetTop = -44;
         holder.AddChild(shade);

@@ -1,0 +1,459 @@
+{
+ "about": "История клубов для карточки клуба. Основание, арена и вместимость — таблица клубов в статье National Hockey League (англ. Википедия); Кубки Стэнли — List of Stanley Cup champions (годы — по финалу; титулы прежних клубов-однофамильцев не считаются); Президентский кубок — статья Presidents' Trophy (год — окончание сезона).",
+ "sources": [
+  "https://en.wikipedia.org/wiki/National_Hockey_League",
+  "https://en.wikipedia.org/wiki/List_of_Stanley_Cup_champions",
+  "https://en.wikipedia.org/wiki/Presidents%27_Trophy"
+ ],
+ "as_of": "2026-10-28",
+ "teams": {
+  "BOS": {
+   "arena": "TD Garden",
+   "capacity": 17850,
+   "founded": 1924,
+   "joined": null,
+   "cups": [
+    1929,
+    1939,
+    1941,
+    1970,
+    1972,
+    2011
+   ],
+   "presidents": [
+    1990,
+    2014,
+    2020,
+    2023
+   ]
+  },
+  "BUF": {
+   "arena": "KeyBank Center",
+   "capacity": 19070,
+   "founded": 1970,
+   "joined": null,
+   "cups": [],
+   "presidents": [
+    2007
+   ]
+  },
+  "DET": {
+   "arena": "Little Caesars Arena",
+   "capacity": 19515,
+   "founded": 1926,
+   "joined": null,
+   "cups": [
+    1936,
+    1937,
+    1943,
+    1950,
+    1952,
+    1954,
+    1955,
+    1997,
+    1998,
+    2002,
+    2008
+   ],
+   "presidents": [
+    1995,
+    1996,
+    2002,
+    2004,
+    2006,
+    2008
+   ]
+  },
+  "FLA": {
+   "arena": "Amerant Bank Arena",
+   "capacity": 19250,
+   "founded": 1993,
+   "joined": null,
+   "cups": [
+    2024,
+    2025
+   ],
+   "presidents": [
+    2022
+   ]
+  },
+  "MTL": {
+   "arena": "Bell Centre",
+   "capacity": 20962,
+   "founded": 1909,
+   "joined": 1917,
+   "cups": [
+    1916,
+    1924,
+    1930,
+    1931,
+    1944,
+    1946,
+    1953,
+    1956,
+    1957,
+    1958,
+    1959,
+    1960,
+    1965,
+    1966,
+    1968,
+    1969,
+    1971,
+    1973,
+    1976,
+    1977,
+    1978,
+    1979,
+    1986,
+    1993
+   ],
+   "presidents": [],
+   "former": "старейший клуб НХЛ: основан в 1909 году в НХА"
+  },
+  "OTT": {
+   "arena": "Canadian Tire Centre",
+   "capacity": 18655,
+   "founded": 1992,
+   "joined": null,
+   "cups": [],
+   "presidents": [
+    2003
+   ]
+  },
+  "TBL": {
+   "arena": "Benchmark International Arena",
+   "capacity": 19092,
+   "founded": 1992,
+   "joined": null,
+   "cups": [
+    2004,
+    2020,
+    2021
+   ],
+   "presidents": [
+    2019
+   ]
+  },
+  "TOR": {
+   "arena": "Scotiabank Arena",
+   "capacity": 18800,
+   "founded": 1917,
+   "joined": null,
+   "cups": [
+    1918,
+    1922,
+    1932,
+    1942,
+    1945,
+    1947,
+    1948,
+    1949,
+    1951,
+    1962,
+    1963,
+    1964,
+    1967
+   ],
+   "presidents": []
+  },
+  "CAR": {
+   "arena": "Lenovo Center",
+   "capacity": 18700,
+   "founded": 1972,
+   "joined": 1979,
+   "cups": [
+    2006,
+    2026
+   ],
+   "presidents": [],
+   "former": "прежние названия — «Нью-Ингленд Уэйлерс» (ВХА, 1972–1979) и «Хартфорд Уэйлерс» (1979–1997)"
+  },
+  "CBJ": {
+   "arena": "Nationwide Arena",
+   "capacity": 18500,
+   "founded": 2000,
+   "joined": null,
+   "cups": [],
+   "presidents": []
+  },
+  "NJD": {
+   "arena": "Prudential Center",
+   "capacity": 16514,
+   "founded": 1974,
+   "joined": null,
+   "cups": [
+    1995,
+    2000,
+    2003
+   ],
+   "presidents": [],
+   "former": "прежде — «Канзас-Сити Скаутс» (1974–1976) и «Колорадо Рокиз» (1976–1982)"
+  },
+  "NYI": {
+   "arena": "UBS Arena",
+   "capacity": 17255,
+   "founded": 1972,
+   "joined": null,
+   "cups": [
+    1980,
+    1981,
+    1982,
+    1983
+   ],
+   "presidents": []
+  },
+  "NYR": {
+   "arena": "Madison Square Garden",
+   "capacity": 18006,
+   "founded": 1926,
+   "joined": null,
+   "cups": [
+    1928,
+    1933,
+    1940,
+    1994
+   ],
+   "presidents": [
+    1992,
+    1994,
+    2015,
+    2024
+   ]
+  },
+  "PHI": {
+   "arena": "Xfinity Mobile Arena",
+   "capacity": 19173,
+   "founded": 1967,
+   "joined": null,
+   "cups": [
+    1974,
+    1975
+   ],
+   "presidents": []
+  },
+  "PIT": {
+   "arena": "PPG Paints Arena",
+   "capacity": 18187,
+   "founded": 1967,
+   "joined": null,
+   "cups": [
+    1991,
+    1992,
+    2009,
+    2016,
+    2017
+   ],
+   "presidents": [
+    1993
+   ]
+  },
+  "WSH": {
+   "arena": "Capital One Arena",
+   "capacity": 18573,
+   "founded": 1974,
+   "joined": null,
+   "cups": [
+    2018
+   ],
+   "presidents": [
+    2010,
+    2016,
+    2017
+   ]
+  },
+  "CHI": {
+   "arena": "United Center",
+   "capacity": 19717,
+   "founded": 1926,
+   "joined": null,
+   "cups": [
+    1934,
+    1938,
+    1961,
+    2010,
+    2013,
+    2015
+   ],
+   "presidents": [
+    1991,
+    2013
+   ]
+  },
+  "COL": {
+   "arena": "Ball Arena",
+   "capacity": 18007,
+   "founded": 1972,
+   "joined": 1979,
+   "cups": [
+    1996,
+    2001,
+    2022
+   ],
+   "presidents": [
+    1997,
+    2001,
+    2021,
+    2026
+   ],
+   "former": "до 1995 года — «Квебек Нордикс» (ВХА с 1972, НХЛ с 1979)"
+  },
+  "DAL": {
+   "arena": "American Airlines Center",
+   "capacity": 18532,
+   "founded": 1967,
+   "joined": null,
+   "cups": [
+    1999
+   ],
+   "presidents": [
+    1998,
+    1999
+   ],
+   "former": "до 1993 года — «Миннесота Норт Старз»"
+  },
+  "MIN": {
+   "arena": "Grand Casino Arena",
+   "capacity": 17954,
+   "founded": 2000,
+   "joined": null,
+   "cups": [],
+   "presidents": []
+  },
+  "NSH": {
+   "arena": "Bridgestone Arena",
+   "capacity": 17159,
+   "founded": 1998,
+   "joined": null,
+   "cups": [],
+   "presidents": [
+    2018
+   ]
+  },
+  "STL": {
+   "arena": "Enterprise Center",
+   "capacity": 18096,
+   "founded": 1967,
+   "joined": null,
+   "cups": [
+    2019
+   ],
+   "presidents": [
+    2000
+   ]
+  },
+  "UTA": {
+   "arena": "Delta Center",
+   "capacity": 16020,
+   "founded": 2024,
+   "joined": null,
+   "cups": [],
+   "presidents": [],
+   "former": "новый клуб 2024 года, игроков получил от «Аризоны Койотис»"
+  },
+  "WPG": {
+   "arena": "Canada Life Centre",
+   "capacity": 15225,
+   "founded": 1999,
+   "joined": null,
+   "cups": [],
+   "presidents": [
+    2025
+   ],
+   "former": "до 2011 года — «Атланта Трэшерз»"
+  },
+  "ANA": {
+   "arena": "Honda Center",
+   "capacity": 17174,
+   "founded": 1993,
+   "joined": null,
+   "cups": [
+    2007
+   ],
+   "presidents": []
+  },
+  "CGY": {
+   "arena": "Scotiabank Saddledome",
+   "capacity": 19289,
+   "founded": 1972,
+   "joined": null,
+   "cups": [
+    1989
+   ],
+   "presidents": [
+    1988,
+    1989
+   ],
+   "former": "до 1980 года — «Атланта Флэймз»"
+  },
+  "EDM": {
+   "arena": "Rogers Place",
+   "capacity": 18347,
+   "founded": 1972,
+   "joined": 1979,
+   "cups": [
+    1984,
+    1985,
+    1987,
+    1988,
+    1990
+   ],
+   "presidents": [
+    1986,
+    1987
+   ],
+   "former": "до 1979 года играл в ВХА"
+  },
+  "LAK": {
+   "arena": "Crypto.com Arena",
+   "capacity": 18145,
+   "founded": 1967,
+   "joined": null,
+   "cups": [
+    2012,
+    2014
+   ],
+   "presidents": []
+  },
+  "SJS": {
+   "arena": "SAP Center",
+   "capacity": 17435,
+   "founded": 1991,
+   "joined": null,
+   "cups": [],
+   "presidents": [
+    2009
+   ]
+  },
+  "SEA": {
+   "arena": "Climate Pledge Arena",
+   "capacity": 17151,
+   "founded": 2021,
+   "joined": null,
+   "cups": [],
+   "presidents": []
+  },
+  "VAN": {
+   "arena": "Rogers Arena",
+   "capacity": 18910,
+   "founded": 1945,
+   "joined": 1970,
+   "cups": [],
+   "presidents": [
+    2011,
+    2012
+   ],
+   "former": "до 1970 года играл в младших профессиональных лигах"
+  },
+  "VGK": {
+   "arena": "T-Mobile Arena",
+   "capacity": 17500,
+   "founded": 2017,
+   "joined": null,
+   "cups": [
+    2023
+   ],
+   "presidents": []
+  }
+ }
+}

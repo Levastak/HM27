@@ -97,7 +97,7 @@ public sealed class Grid<T>
         foreach (var col in _cols)
         {
             var c = col.Cell(r) ?? new Control();
-            c.MouseFilter = Control.MouseFilterEnum.Ignore;
+            if (!c.HasMeta("link")) c.MouseFilter = Control.MouseFilterEnum.Ignore;   // ссылки внутри строки остаются кликабельными
             if (c is Label l) { l.HorizontalAlignment = col.Align; l.ClipText = true; l.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis; }
             Control cell = c;
             if (c is not Label)

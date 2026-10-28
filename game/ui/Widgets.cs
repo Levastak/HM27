@@ -111,7 +111,7 @@ public static class PlayerCard
         head.AddChild(new TeamBadge(t, 58));
         var age = p.Age(c.Today);
         head.AddChild(Ui.Expand(Ui.V(2, Ui.L(p.NameRu, 22, Ui.Text, Ui.Bold),
-            Ui.L($"#{p.Num} · {PosLong(p.Pos)} · {t.Name}", 13, Ui.Muted),
+            Ui.H(0, Ui.L($"#{p.Num} · {PosLong(p.Pos)} · ", 13, Ui.Muted), Links.Club(t, t.Name, 13, Ui.Muted)),
             Ui.L($"{(age.HasValue ? $"{age} {Ui.Plural(age.Value, "год", "года", "лет")} · " : "")}{p.Height} см · {p.Weight} кг · {Country(p.Country)}", 13, Ui.Muted))));
         head.AddChild(Ui.Rating(p.Ovr, 22, 58));
         v.AddChild(head);

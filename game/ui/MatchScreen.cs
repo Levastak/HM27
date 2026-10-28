@@ -157,17 +157,17 @@ public partial class MatchScreen : Control
         info.AddChild(Ui.L($"{(home ? "Хозяева" : "Гости")} · {r.W}-{r.L}-{r.Otl}, {r.Pts} {Ui.Plural(r.Pts, "очко", "очка", "очков")} · {C.Sorted(x => x.Conference == t.Conference).FindIndex(x => x.Team == t.Abbr) + 1}-е в конференции", 12, Ui.Muted));
         info.AddChild(Ui.H(8, Ui.L("Форма", 12, Ui.Muted), P.Form(t.Abbr, 5, 18)));
         var g = C.Data.PlayerById.GetValueOrDefault(side.Goalie);
-        if (g != null) info.AddChild(Ui.H(8, Ui.L("Вратарь:", 12, Ui.Muted), Ui.L(g.NameRu, 13, Ui.Text, Ui.Semi), Ui.Stars(g.Ovr, 11)));
+        if (g != null) info.AddChild(Ui.H(8, Ui.L("Вратарь:", 12, Ui.Muted), Links.Player(g, null, 13, Ui.Text, Ui.Semi), Ui.Stars(g.Ovr, 11)));
         v.AddChild(Widget.Make(t.Name, info));
         var l = side.Lineup;
         var lines = Ui.V(2);
         for (int i = 0; i < Math.Min(2, l.F.Count); i++)
-            lines.AddChild(Ui.L($"{i + 1}: " + string.Join(" — ", l.F[i].Select(id => C.Short(id))), 12, Ui.Text));
+            lines.AddChild(Ui.H(0, Ui.L($"{i + 1}: ", 12, Ui.Text), Links.Row(l.F[i].Select(id => (Control)Links.Player(C, id, C.Short(id), 12)))));
         for (int i = 0; i < Math.Min(2, l.D.Count); i++)
-            lines.AddChild(Ui.L($"З{i + 1}: " + string.Join(" — ", l.D[i].Select(id => C.Short(id))), 12, Ui.Muted));
+            lines.AddChild(Ui.H(0, Ui.L($"З{i + 1}: ", 12, Ui.Muted), Links.Row(l.D[i].Select(id => (Control)Links.Player(C, id, C.Short(id), 12, Ui.Muted)))));
         v.AddChild(Widget.Make("Звенья", lines));
         var inj = C.Injured.Where(id => C.Data.PlayerById[id].Team == t.Abbr).Select(id => C.Data.PlayerById[id]).OrderByDescending(p => p.Ovr).Take(5).ToList();
-        v.AddChild(Widget.Make("Не сыграют", inj.Count == 0 ? Ui.L("Все здоровы", 12, Ui.Muted) : Ui.V(2, inj.Select(p => (Control)Ui.H(6, Ui.Icon("cross", 12, Ui.Loss), Ui.L(p.NameRu, 12), Ui.Stars(p.Ovr, 10))).ToArray())));
+        v.AddChild(Widget.Make("Не сыграют", inj.Count == 0 ? Ui.L("Все здоровы", 12, Ui.Muted) : Ui.V(2, inj.Select(p => (Control)Ui.H(6, Ui.Icon("cross", 12, Ui.Loss), Links.Player(p, null, 12), Ui.Stars(p.Ovr, 10))).ToArray())));
         return v;
     }
 
@@ -368,7 +368,7 @@ public partial class MatchScreen : Control
         var goals = _ev.Take(_shown).Where(e => e.Kind == "goal").ToList();
         if (goals.Count == 0) { _lineupBox.AddChild(Ui.L("Пока без голов", 12, Ui.Muted)); return; }
         foreach (var e in goals)
-            _lineupBox.AddChild(Ui.H(6, new TeamBadge(C.Team(e.Team), 16), Ui.L($"{(e.T % 1200) / 60:00}:{e.T % 60:00}", 11, Ui.Dim), Ui.L(C.Short(e.P1), 13, Ui.Text, Ui.Semi)));
+            _lineupBox.AddChild(Ui.H(6, new TeamBadge(C.Team(e.Team), 16), Ui.L($"{(e.T % 1200) / 60:00}:{e.T % 60:00}", 11, Ui.Dim), Links.Player(C, e.P1, C.Short(e.P1), 13, Ui.Text, Ui.Semi)));
     }
 
     // ------------------------------------------------------------------ итог
@@ -449,9 +449,10 @@ public partial class MatchScreen : Control
         if (e.Kind == "so") h.AddChild(Ui.L($"Победный буллит — «{t.City}»", 14, Ui.Text, Ui.Semi));
         else
         {
-            var assists = new[] { e.A1, e.A2 }.Where(x => x != 0).Select(x => C.Short(x)).ToList();
-            h.AddChild(Ui.L(C.Data.PlayerById.GetValueOrDefault(e.Scorer)?.NameRu ?? "—", 14, Ui.Text, Ui.Bold));
-            h.AddChild(Ui.L(assists.Count > 0 ? $"({string.Join(", ", assists)})" : "(без передач)", 13, Ui.Muted));
+            var assists = new[] { e.A1, e.A2 }.Where(x => x != 0).ToList();
+            h.AddChild(Links.Player(C, e.Scorer, null, 14, Ui.Text, Ui.Bold));
+            if (assists.Count > 0) h.AddChild(Ui.H(0, Ui.L("(", 13, Ui.Muted), Links.Row(assists.Select(x => (Control)Links.Player(C, x, C.Short(x), 13, Ui.Muted)), ", ", 13), Ui.L(")", 13, Ui.Muted)));
+            else h.AddChild(Ui.L("(без передач)", 13, Ui.Muted));
             string tag = e.Kind switch { "pp" => "в большинстве", "sh" => "в меньшинстве", "en" => "в пустые", "ev6" => "6 на 5", _ => null };
             if (tag != null) h.AddChild(Ui.Card(Ui.L(tag, 10, Colors.Black, Ui.Bold), e.Kind == "sh" ? Ui.Win : Ui.Otl, 6));
             if (e.Period >= 4) h.AddChild(Ui.Card(Ui.L("овертайм", 10, Colors.White, Ui.Bold), Ui.Accent, 6));
@@ -480,7 +481,7 @@ public partial class MatchScreen : Control
             for (int k = 0; k < 3 - i; k++) st.AddChild(Ui.Icon("star", 13, Ui.Gold).Also(x => x.Texture = Icons.Get("star", true)));
             st.CustomMinimumSize = new Vector2(44, 0);
             i++;
-            yield return Ui.H(8, st, new TeamBadge(C.Team(p.Team), 20), Ui.Expand(Ui.L(p.NameRu, 13, Ui.Text, Ui.Semi)), Ui.L(line, 12, Ui.Muted),
+            yield return Ui.H(8, st, new TeamBadge(C.Team(p.Team), 20), Ui.Expand(Links.Player(p, null, 13, Ui.Text, Ui.Semi)), Ui.L(line, 12, Ui.Muted),
                 r.Ratings.TryGetValue(id, out var rt) ? Ui.L($"{rt:0.0}", 13, new Color("43D17A"), Ui.Bold) : new Control());
         }
     }
