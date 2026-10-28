@@ -15,8 +15,25 @@ public static class Pundits
         _ => coreAge <= 25.5 ? ("Перестройка", "Ставка на молодёжь, результат — потом") : ("Аутсайдер", "Состав слабее большинства соперников"),
     };
 
-    /// <summary>Атака или оборона словами по месту в лиге.</summary>
-    public static string Word(int rank) => rank <= 6 ? "сильная" : rank <= 13 ? "выше среднего" : rank <= 20 ? "средняя" : rank <= 26 ? "ниже среднего" : "слабая";
+    /// <summary>Прогноз прессы до сезона: место в дивизионе по составу (данные базы).</summary>
+    public static Dictionary<string, int> DivisionPick(GameData d)
+    {
+        var est = d.Teams.ToDictionary(t => t.Abbr, t => TeamStrength.Estimate(d, t));
+        var res = new Dictionary<string, int>();
+        foreach (var div in d.Teams.GroupBy(t => t.Division))
+        {
+            int i = 0;
+            foreach (var t in div.OrderByDescending(t => est[t.Abbr].att - est[t.Abbr].dfn)) res[t.Abbr] = ++i;
+        }
+        return res;
+    }
+
+    /// <summary>Прогноз прессы в карьере: фиксируется в начале сезона и не меняется до следующего.</summary>
+    public static int DivisionPick(Career c, string abbr)
+    {
+        if (c.PressPickSeason != c.Season || c.PressPick.Count == 0) { c.PressPick = DivisionPick(c.Data); c.PressPickSeason = c.Season; }
+        return c.PressPick.TryGetValue(abbr, out var r) ? r : 0;
+    }
 
     /// <summary>Возраст ядра: средний возраст 8 лучших полевых по КА из данных.</summary>
     public static double CoreAge(GameData d, string abbr, DateOnly on)

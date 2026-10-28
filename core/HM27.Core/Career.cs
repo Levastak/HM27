@@ -75,6 +75,9 @@ public sealed class Career
     public int Version { get; set; } = 3;
     public int Seed { get; set; }
     public int Season { get; set; }
+    /// <summary>Прогноз прессы на сезон: место в дивизионе (считается один раз в начале сезона).</summary>
+    public Dictionary<string, int> PressPick { get; set; } = new();
+    public int PressPickSeason { get; set; }
     public string UserTeam { get; set; }
     public DateOnly Today { get; set; }
     public Phase Phase { get; set; }

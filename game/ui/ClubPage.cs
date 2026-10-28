@@ -74,7 +74,7 @@ public partial class ClubPage : Control
         F("Место в лиге", row.Gp > 0 ? $"{lplace}-е" : "—");
         F("Очки", $"{row.Pts} в {row.Gp} {Ui.Plural(row.Gp, "матче", "матчах", "матчах")}");
         F("Статус", status.Label, power <= 10 ? Ui.Win : power <= 20 ? Ui.Otl : Ui.Loss);
-        F("Атака / оборона", $"{Pundits.Word(atk)} / {Pundits.Word(dfn)}");
+        F("Прогноз прессы", $"{Pundits.DivisionPick(C, t.Abbr)}-е в дивизионе");
         F("Шайбы", $"{row.Gf}–{row.Ga} ({Ui.Signed(row.Gf - row.Ga, "0")})");
         F("Серия", string.IsNullOrEmpty(row.Streak) ? "—" : row.Streak);
         var l = C.Lineups[t.Abbr];

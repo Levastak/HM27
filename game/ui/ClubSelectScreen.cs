@@ -87,16 +87,11 @@ public partial class ClubSelectScreen : Control
             Ui.L(t.Record != null ? $"Сейчас в НХЛ: {t.Record.W}-{t.Record.L}-{t.Record.Otl}, {t.Record.Pts} {Ui.Plural(t.Record.Pts, "очко", "очка", "очков")}" : "", 13, Ui.Muted)));
         v.AddChild(top);
 
-        var teams = d.Teams;
-        var est = teams.ToDictionary(x => x.Abbr, x => TeamStrength.Estimate(d, x));
-        int Rank(System.Func<TeamData, double> f) => teams.OrderByDescending(f).ToList().IndexOf(t) + 1;
-        int ar = Rank(x => est[x.Abbr].att), dr = Rank(x => -est[x.Abbr].dfn);
         var st = Pundits.StatusAll(d, new System.DateOnly(2026, 10, 6))[abbr];
         v.AddChild(Ui.Rule());
         v.AddChild(Ui.H(10, Ui.Expand(Ui.L("Статус", 14, Ui.Text)), Ui.L(st.label, 15, StatusColor(st.label), Ui.Bold)));
         v.AddChild(Ui.L(st.note, 12, Ui.Muted));
-        v.AddChild(Ui.H(10, Ui.Expand(Ui.L("Атака", 14, Ui.Text)), Ui.L(Pundits.Word(ar), 13, Ui.Muted)));
-        v.AddChild(Ui.H(10, Ui.Expand(Ui.L("Оборона", 14, Ui.Text)), Ui.L(Pundits.Word(dr), 13, Ui.Muted)));
+        v.AddChild(Ui.H(10, Ui.Expand(Ui.L("Прогноз прессы", 14, Ui.Text)), Ui.L($"{Pundits.DivisionPick(d)[abbr]}-е место в дивизионе", 13, Ui.Muted)));
         v.AddChild(Ui.Rule());
         v.AddChild(Ui.L("ЛИДЕРЫ", 12, Ui.Muted, Ui.Semi));
         var inj = d.Teams.SelectMany(x => x.Injured).ToHashSet();
