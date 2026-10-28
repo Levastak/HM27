@@ -1,0 +1,197 @@
+{
+ "far_F": {
+  "trait": "far",
+  "group": "F",
+  "metric": "доля бросков издали",
+  "num": "far",
+  "den": "unb",
+  "have": 0.3552,
+  "other": 0.2121,
+  "ratio": 1.675,
+  "n": 25
+ },
+ "net_F": {
+  "trait": "net",
+  "group": "F",
+  "metric": "доля бросков у ворот",
+  "num": "close",
+  "den": "unb",
+  "have": 0.5843,
+  "other": 0.3816,
+  "ratio": 1.531,
+  "n": 18
+ },
+ "jump_D": {
+  "trait": "jump",
+  "group": "D",
+  "metric": "доля бросков ближе 40 футов",
+  "num": "near40",
+  "den": "unb",
+  "have": 0.4089,
+  "other": 0.2598,
+  "ratio": 1.574,
+  "n": 17
+ },
+ "tip_F": {
+  "trait": "tip",
+  "group": "F",
+  "metric": "доля подправлений",
+  "num": "tip",
+  "den": "sog",
+  "have": 0.2324,
+  "other": 0.1128,
+  "ratio": 2.059,
+  "n": 15
+ },
+ "reb_F": {
+  "trait": "reb",
+  "group": "F",
+  "metric": "доля добиваний",
+  "num": "reb",
+  "den": "unb",
+  "have": 0.1584,
+  "other": 0.0935,
+  "ratio": 1.694,
+  "n": 19
+ },
+ "slap_F": {
+  "trait": "slap",
+  "group": "F",
+  "metric": "доля щелчков",
+  "num": "slap",
+  "den": "sog",
+  "have": 0.167,
+  "other": 0.0519,
+  "ratio": 3.215,
+  "n": 26
+ },
+ "slap_D": {
+  "trait": "slap",
+  "group": "D",
+  "metric": "доля щелчков",
+  "num": "slap",
+  "den": "sog",
+  "have": 0.3893,
+  "other": 0.2038,
+  "ratio": 1.91,
+  "n": 20
+ },
+ "back_F": {
+  "trait": "back",
+  "group": "F",
+  "metric": "доля бросков с неудобной руки",
+  "num": "back",
+  "den": "sog",
+  "have": 0.1591,
+  "other": 0.0882,
+  "ratio": 1.804,
+  "n": 19
+ },
+ "wrap_F": {
+  "trait": "wrap",
+  "group": "F",
+  "metric": "доля заездов из-за ворот",
+  "num": "wrap",
+  "den": "sog",
+  "have": 0.0349,
+  "other": 0.0077,
+  "ratio": 4.512,
+  "n": 11
+ },
+ "thru_F": {
+  "trait": "thru",
+  "group": "F",
+  "metric": "доля заблокированных своих бросков",
+  "num": "blkd",
+  "den": "att",
+  "have": 0.1592,
+  "other": 0.2334,
+  "ratio": 0.682,
+  "n": 20
+ },
+ "thru_D": {
+  "trait": "thru",
+  "group": "D",
+  "metric": "доля заблокированных своих бросков",
+  "num": "blkd",
+  "den": "att",
+  "have": 0.3097,
+  "other": 0.3734,
+  "ratio": 0.83,
+  "n": 8
+ },
+ "pass_F": {
+  "trait": "pass",
+  "group": "F",
+  "metric": "первые передачи на попытку броска",
+  "num": "a1",
+  "den": "att",
+  "have": 0.0927,
+  "other": 0.0497,
+  "ratio": 1.867,
+  "n": 30
+ },
+ "pass_D": {
+  "trait": "pass",
+  "group": "D",
+  "metric": "первые передачи на попытку броска",
+  "num": "a1",
+  "den": "att",
+  "have": 0.0671,
+  "other": 0.0374,
+  "ratio": 1.793,
+  "n": 17
+ },
+ "shoot_F": {
+  "trait": "shoot",
+  "group": "F",
+  "metric": "sa_60 (база)",
+  "num": "sa_60",
+  "den": "60",
+  "have": 18.994,
+  "other": 12.604,
+  "ratio": 1.507,
+  "n": 36
+ },
+ "shoot_D": {
+  "trait": "shoot",
+  "group": "D",
+  "metric": "sa_60 (база)",
+  "num": "sa_60",
+  "den": "60",
+  "have": 14.919,
+  "other": 9.401,
+  "ratio": 1.587,
+  "n": 19
+ },
+ "blk_F": {
+  "trait": "blk",
+  "group": "F",
+  "metric": "blk_60 (база)",
+  "num": "blk_60",
+  "den": "60",
+  "have": 3.602,
+  "other": 1.954,
+  "ratio": 1.843,
+  "n": 19
+ },
+ "blk_D": {
+  "trait": "blk",
+  "group": "D",
+  "metric": "blk_60 (база)",
+  "num": "blk_60",
+  "den": "60",
+  "have": 6.205,
+  "other": 4.242,
+  "ratio": 1.463,
+  "n": 11
+ },
+ "finishing": {
+  "fin": 0.0661,
+  "fin_se": 0.0029,
+  "lng_far": 0.0518,
+  "lng_se": 0.0072,
+  "top3_ratio": 0.957,
+  "top3_thr": 17.07
+ }
+}

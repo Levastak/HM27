@@ -75,6 +75,19 @@ public static class ShiftEngine
     /// пятёрки к лучшему завершителю, не меняя её итог (у снайперов НХЛ 15–17% реализации при 9,5% в среднем).
     /// </summary>
     public static double FIN_X = 0.035;
+    /// <summary>
+    /// Завершение у самого верха шкалы слабее линейного (НХЛ 2023-26: топ-3% по завершению забивают ×0,94 от линейного прогноза,
+    /// игроки с Х-фактором «бросок» — ×0,98): выше FIN_TOP каждая единица считается с долей FIN_TOP_K.
+    /// У защитников завершение на броске весит больше (регрессия НХЛ: +0,085…0,10 на ед. против +0,06…0,08 у нападающих).
+    /// </summary>
+    public static double FIN_TOP = 16, FIN_TOP_K = 0.6, FIN_X_D = 0.025;
+    /// <summary>
+    /// Дальний бросок (lng) — отдельный навык реализации бросков издали: регрессия НХЛ 2023-26 при 5×5 по оценкам из базы —
+    /// +0,052 на ед. при равном завершении (±0,007). Погрешность оценки lng мала, поэтому та же регрессия на матчах игры
+    /// возвращает почти тот же коэффициент (зеркальная проверка «Реализация по зонам»). В силу клуба и КА почти не входит —
+    /// это ценность специалиста, которую не видно в общей оценке.
+    /// </summary>
+    public static double LNG_FAR = 0.052;
     /// <summary>Добивание после сейва: вероятность и реализация попытки (8% небл. попыток — добивания, 10,7% голов).</summary>
     public const double REB_P = 0.12, REB_ON = 0.75, REB_G = 0.107;
     /// <summary>Доля завершения (fin) в атаке клуба — часть, которая играет на броске, а не на создании.</summary>
@@ -111,15 +124,18 @@ public static class ShiftEngine
         public readonly Dictionary<int, double> OnGf = new();
         public readonly Dictionary<int, double> Es5Sec = new(), Es5Gf = new(), Es5Ga = new();
         public readonly Dictionary<string, double> RoleShare = new();   // «g_D», «a1_F»…
+        /// <summary>Подпись игрока (как data/trait_targets.py): att, blkd, unb, close, far, near40, sog, tip, slap, back, wrap, reb, a1.</summary>
+        public readonly Dictionary<int, Dictionary<string, double>> Sig = new();
+        public void S(int id, string k, double v = 1) { if (!Sig.TryGetValue(id, out var d)) Sig[id] = d = new(); d[k] = d.GetValueOrDefault(k) + v; }
         public void Add(Dictionary<string, double> d, string k, double v = 1) => d[k] = d.GetValueOrDefault(k) + v;
     }
 
     sealed class Sk
     {
         public int Id; public PlayerData P; public bool D;
-        public double Off, Def, FinPart, Phi, Fin, W, Pass, A2W, PenW, Drain, Pp, Pk, BlkW, OtVal, So;
+        public double Off, Def, FinPart, Phi, Fin, FinE, Lng, W, Pass, A2W, PenW, Drain, Pp, Pk, BlkW, OtVal, So;
         public readonly double[] Zone = new double[3];
-        public bool Thru, Draw, Tip, Back, Wrap, Slap, NetT;
+        public bool Thru, Draw, Tip, Back, Wrap, Slap, NetT, BlkT;
         public double E = 1; public int T0; public bool On;
         public PlayerBox Box;
         public double Energy(int t) => On ? Math.Max(0.05, E - Drain * (t - T0)) : Math.Min(1, E + REC * (t - T0));
@@ -137,7 +153,7 @@ public static class ShiftEngine
     /// база состава (цели НХЛ) относится к среднему звену своего вида: на большинство выходят лучшие в атаке, и без этой
     /// поправки их класс учитывался бы дважды. Считается один раз по базе (составы по умолчанию, оценки из данных).
     /// </summary>
-    sealed record Refs(Dictionary<string, double> Off, Dictionary<string, double> Def, double PpAttr, double PkAttr);
+    sealed record Refs(Dictionary<string, double> Off, Dictionary<string, double> Def, double PpAttr, double PkAttr, double LngF, double LngD);
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<GameData, Refs> RefCache = new();
     /// <summary>
     /// Поправка интенсивности по составам (подбор по целям НХЛ: HM27.Check engine). Подобрано так, что при уровне лиги
@@ -148,7 +164,7 @@ public static class ShiftEngine
     static Refs ComputeRefs(GameData d)
     {
         var off = new Dictionary<string, List<double>>(); var def = new Dictionary<string, List<double>>();
-        var ppA = new List<double>(); var pkA = new List<double>();
+        var ppA = new List<double>(); var pkA = new List<double>(); var lngF = new List<double>(); var lngD = new List<double>();
         void Add(Dictionary<string, List<double>> m, string k, double v) { if (!m.TryGetValue(k, out var l)) m[k] = l = new(); l.Add(v); }
         foreach (var team in d.Teams)
         {
@@ -172,9 +188,10 @@ public static class ShiftEngine
                 Add(def, "ot", t.Ot.Average(u => Dd(u) * 5.0 / u.Length));
             }
             ppA.Add(W(t.Pp1, t.Pp2, 0.62, u => u.Sum(x => x.Pp - 11) * 5.0 / Math.Max(1, u.Length)));
+            foreach (var x in t.All.Values) (x.D ? lngD : lngF).Add(x.Lng);
             pkA.Add(W(t.Pk1, t.Pk2, 0.5, u => u.Sum(x => x.Pk - 11) * 5.0 / Math.Max(1, u.Length)));
         }
-        return new Refs(off.ToDictionary(kv => kv.Key, kv => kv.Value.Average()), def.ToDictionary(kv => kv.Key, kv => kv.Value.Average()), ppA.Average(), pkA.Average());
+        return new Refs(off.ToDictionary(kv => kv.Key, kv => kv.Value.Average()), def.ToDictionary(kv => kv.Key, kv => kv.Value.Average()), ppA.Average(), pkA.Average(), lngF.Average(), lngD.Average());
     }
 
     sealed class Pen { public int End; public int Pid; public bool Minor, Double, Coinc; }
@@ -261,14 +278,14 @@ public static class ShiftEngine
                     FinPart = FIN_SHARE * (a("fin") - 11) * dr, Phi = 5 * spread * sc.A1 * FIN_SHARE * dr,
                     Pp = a("pp"), Pk = a("pk"), BlkW = Math.Exp(0.06 * (a("blk") - 11)),
                     Drain = DRAIN * (1 + 0.05 * (11 - a("sta"))),
-                    Thru = tr.Contains("thru"), Draw = tr.Contains("draw"), Tip = tr.Contains("tip"), Back = tr.Contains("back"),
+                    Thru = tr.Contains("thru"), BlkT = tr.Contains("blk"), Draw = tr.Contains("draw"), Tip = tr.Contains("tip"), Back = tr.Contains("back"),
                     Wrap = tr.Contains("wrap"), Slap = tr.Contains("slap"), NetT = tr.Contains("net") || tr.Contains("reb") || tr.Contains("tip"),
                     Box = new PlayerBox(),
                 };
                 double shootSkill = (a("fin") + a("pwr") + a("lng")) / 3 - 11;
-                sk.W = (isD ? D_SHOT_W : 1) * Math.Exp(SHOOT_K * shootSkill) * (tr.Contains("shoot") ? SHOOT_TRAIT : 1) * (tr.Contains("pass") ? 0.8 : 1) * (tr.Contains("jump") ? 1.2 : 1);
+                sk.W = (isD ? D_SHOT_W : 1) * Math.Exp(SHOOT_K * shootSkill) * (tr.Contains("shoot") ? (isD ? SHOOT_TRAIT + 0.15 : SHOOT_TRAIT) : 1) * (tr.Contains("pass") ? 0.8 : 1) * (tr.Contains("jump") ? 1.2 : 1);
                 double pv = (a("pas") + a("vis")) / 2 - 11;
-                sk.Pass = (isD ? 0.45 : 1) * Math.Exp(0.22 * pv) * (tr.Contains("pass") ? 1.4 : 1);
+                sk.Pass = isD ? 0.45 * Math.Exp(0.11 * pv) : Math.Exp(0.22 * pv) * (tr.Contains("pass") ? 1.4 : 1);
                 sk.A2W = (isD ? 0.6 : 1) * Math.Exp(0.15 * pv);
                 sk.PenW = Math.Exp(-0.2 * (a("dis") - 11)) * (isD ? 1.1 : 1) * (tr.Contains("hit") ? 1.2 : 1) * (tr.Contains("fight") ? 1.3 : 1);
                 // откуда бросает: «у ворот» — пятак, подправления, добивания; «издали» — дальний бросок
@@ -280,6 +297,8 @@ public static class ShiftEngine
                 sk.Zone[0] = e0 / es; sk.Zone[1] = e1 / es; sk.Zone[2] = e2 / es;
                 sk.OtVal = dOff + 0.4 * sk.Def + 0.1 * (a("spd") - 11);
                 sk.So = (a("fin") + a("hnd")) / 2;
+                sk.FinE = sk.Fin <= FIN_TOP ? sk.Fin : FIN_TOP + FIN_TOP_K * (sk.Fin - FIN_TOP);
+                sk.Lng = a("lng");
                 t.All[id] = sk;
                 return sk;
             }
@@ -591,7 +610,7 @@ public static class ShiftEngine
             t.Pi = new double[n];
             double wsum = 0;
             for (int i = 0; i < n; i++) { t.Pi[i] = t.On[i].W; wsum += t.Pi[i]; }
-            t.FinBar = 0; for (int i = 0; i < n; i++) t.FinBar += t.Pi[i] / wsum * t.On[i].Fin;
+            t.FinBar = 0; for (int i = 0; i < n; i++) t.FinBar += t.Pi[i] / wsum * t.On[i].FinE;
             double blkY = o.On.Average(x => x.BlkW);
             var (bm, mm, sm) = StateMods(nt, nop, t.Pulled, o.Pulled);
             double E = 0;
@@ -627,23 +646,25 @@ public static class ShiftEngine
 
         // ─────────────────────────────── события
 
+        // типы бросков по зонам и позициям (НХЛ: щелчки — 5% бросков нападающих и 20% защитников; заезды — 0,8%)
         static readonly string[] Close = { "подставка", "кистевой", "с неудобной руки", "рикошет", "заезд из-за ворот" };
-        static readonly double[] CloseW = { 0.30, 0.35, 0.20, 0.07, 0.04 };
+        static readonly double[][] CloseW = { new[] { 0.30, 0.36, 0.20, 0.07, 0.02 }, new[] { 0.15, 0.55, 0.20, 0.07, 0.01 } };
         static readonly string[] Mid = { "кистевой", "с короткого замаха", "с неудобной руки", "щелчок", "в одно касание" };
-        static readonly double[] MidW = { 0.52, 0.25, 0.08, 0.08, 0.07 };
+        static readonly double[][] MidW = { new[] { 0.58, 0.30, 0.07, 0.025, 0.025 }, new[] { 0.50, 0.20, 0.05, 0.15, 0.10 } };
         static readonly string[] Far = { "щелчок", "кистевой", "с короткого замаха" };
-        static readonly double[] FarW = { 0.45, 0.40, 0.15 };
+        static readonly double[][] FarW = { new[] { 0.15, 0.55, 0.30 }, new[] { 0.45, 0.40, 0.15 } };
 
         string ShotType(Sk s, int z)
         {
-            var (names, w) = z == 0 ? (Close, CloseW) : z == 1 ? (Mid, MidW) : (Far, FarW);
+            int d = s.D ? 1 : 0;
+            var (names, w) = z == 0 ? (Close, CloseW[d]) : z == 1 ? (Mid, MidW[d]) : (Far, FarW[d]);
             var ww = (double[])w.Clone();
             for (int i = 0; i < names.Length; i++)
             {
-                if (names[i] == "подставка" && s.Tip) ww[i] *= 2;
-                if (names[i] == "с неудобной руки" && s.Back) ww[i] *= 2;
-                if (names[i] == "заезд из-за ворот" && s.Wrap) ww[i] *= 3;
-                if ((names[i] == "щелчок" || names[i] == "в одно касание") && s.Slap) ww[i] *= 1.6;
+                if (names[i] == "подставка" && s.Tip) ww[i] *= 2.7;
+                if (names[i] == "с неудобной руки" && s.Back) ww[i] *= 2.1;
+                if (names[i] == "заезд из-за ворот" && s.Wrap) ww[i] *= 4.5;
+                if ((names[i] == "щелчок" || names[i] == "в одно касание") && s.Slap) ww[i] *= s.D ? 2.7 : 3.3;
             }
             return names[PickIdx(ww)];
         }
@@ -678,6 +699,7 @@ public static class ShiftEngine
             var (bm, mm, smod) = StateMods(nt, nop, t.Pulled, o.Pulled);
             int d = s.D ? 1 : 0;
             s.Box.Att++;
+            Diag?.S(s.Id, "att");
             string lb = Label(t);
             if (Diag != null)
             {
@@ -691,12 +713,14 @@ public static class ShiftEngine
                 double b = Math.Min(0.85, BLOCK[d][z] * bm * blkY * (s.Thru ? 0.75 : 1));
                 if (rng.NextDouble() < b)
                 {
-                    var blocker = PickSk(o.On, x => x.BlkW * (x.D ? 1.5 : 1));
+                    var blocker = PickSk(o.On, x => x.BlkW * (x.D ? 1.5 : 1) * (x.BlkT ? 1.12 : 1));
                     if (blocker != null) blocker.Box.Blk++;
+                    Diag?.S(s.Id, "blkd");
                     if (Diag != null) Diag.Add(Diag.Blk, lb);
                     r.Events.Add(new MatchEvent { T = T, Team = t.Abbr, Kind = "block", P1 = s.Id, P2 = blocker?.Id ?? 0 });
                     return;
                 }
+                if (Diag != null) { Diag.S(s.Id, "unb"); Diag.S(s.Id, z == 0 ? "close" : z == 2 ? "far" : "mid"); if (z < 2) Diag.S(s.Id, "near40"); if (lb == "5v5") Diag.S(s.Id, (z == 0 ? "close" : z == 2 ? "far" : "mid") + "_n5"); }
                 if (rng.NextDouble() < MISS[d][z] * mm)
                 {
                     r.Events.Add(new MatchEvent { T = T, Team = t.Abbr, Kind = "miss", P1 = s.Id, Note = rng.NextDouble() < 0.1 ? "в штангу" : "мимо" });
@@ -704,23 +728,37 @@ public static class ShiftEngine
                     return;
                 }
             }
-            else if (rng.NextDouble() > REB_ON)
+            else if (Diag != null) { Diag.S(s.Id, "unb"); Diag.S(s.Id, "close"); Diag.S(s.Id, "near40"); Diag.S(s.Id, "reb"); if (lb == "5v5") Diag.S(s.Id, "close_n5"); }
+            if (rebound && rng.NextDouble() > REB_ON)
             {
                 r.Events.Add(new MatchEvent { T = T, Team = t.Abbr, Kind = "miss", P1 = s.Id, Note = "добивание мимо" });
                 return;
             }
             // в створ
             string type = rebound ? "добивание" : ShotType(s, z);
+            if (Diag != null)
+            {
+                Diag.S(s.Id, "sog");
+                string k = type switch { "подставка" or "рикошет" => "tip", "щелчок" or "в одно касание" => "slap", "с неудобной руки" => "back", "заезд из-за ворот" => "wrap", _ => null };
+                if (k != null) Diag.S(s.Id, k);
+            }
             double xg = rebound ? REB_G / REB_ON : Math.Min(0.9, SH[d][z] * smod);
-            xg *= Math.Exp(s.Phi * (s.Fin - 11) + FIN_X * (s.Fin - t.FinBar)) * t.Q;
+            double lngRef = s.D ? refs?.LngD ?? 11 : refs?.LngF ?? 11;
+            xg *= Math.Exp(s.Phi * (s.FinE - 11) + (FIN_X + (s.D ? FIN_X_D : 0)) * (s.FinE - t.FinBar) + (z == 2 && !rebound ? LNG_FAR * (s.Lng - lngRef) : 0)) * t.Q;
             t.Sog++; s.Box.S++;
             if (Diag != null) Diag.Add(Diag.Sog, lb);
             bool empty = o.Pulled || o.Goalie == 0;
             double p = empty ? 1 : Math.Min(0.95, xg * o.GMult);
+            if (Diag != null && z == 2 && !rebound && !empty)
+            {
+                // ожидаемые голы, которые дал именно дальний бросок (сверх игрока со средним lng)
+                double mL = Math.Exp(LNG_FAR * (s.Lng - (s.D ? refs?.LngD ?? 11 : refs?.LngF ?? 11)));
+                Diag.S(s.Id, "lngx", p - p / mL);
+            }
             if (!empty) { o.GBox.Sa++; o.GBox.Xga += Math.Min(0.95, xg); }
             if (rng.NextDouble() < p)
             {
-                if (Diag != null) { Diag.Add(Diag.Goals, lb); if (rebound) Diag.RebGoals++; }
+                if (Diag != null) { Diag.Add(Diag.Goals, lb); if (rebound) Diag.RebGoals++; if (lb == "5v5") Diag.S(s.Id, (z == 0 || rebound ? "close" : z == 2 ? "far" : "mid") + "_g5"); }
                 Goal(t, o, s, type, rebound ? prev : null); return;
             }
             r.Events.Add(new MatchEvent { T = T, Team = t.Abbr, Kind = "shot", P1 = s.Id, P2 = o.Goalie, Note = type });
@@ -759,6 +797,7 @@ public static class ShiftEngine
             {
                 var a1 = reboundFrom != null && mates.Contains(reboundFrom) ? reboundFrom : PickSk(mates, x => x.Pass);
                 ge.A1 = a1.Id; mates.Remove(a1);
+                Diag?.S(a1.Id, "a1");
                 if (nA >= 2 && mates.Count > 0) ge.A2 = PickSk(mates, x => x.A2W).Id;
             }
             r.Goals.Add(ge);

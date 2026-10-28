@@ -128,10 +128,111 @@ static class EngineReport
             string real = p.Real != null && p.Real.GetValueOrDefault("gp") > 0 ? $"{82.0 * p.Real["g"] / p.Real["gp"]:F0}+{82.0 * p.Real["a"] / p.Real["gp"]:F0}" : "—";
             Console.WriteLine($"  {p.NameRu,-24} {p.Team} {x.g:F0}+{x.a:F0}={x.g + x.a:F0} за {x.gp:F0} м., {x.toi:F1} мин, IPP {(x.g + x.a) / Math.Max(1, ongf):P0}; реально {real}");
         }
+        TraitReport(data, all, D, tp);
         // таблица
         var pts = all.Select(c => c.Table.Values.Select(r => (double)r.Pts).OrderByDescending(x => x).ToList()).ToList();
         Console.WriteLine($"Таблица: лидер {pts.Average(p => p[0]):F0}, последний {pts.Average(p => p[^1]):F0}, разброс {pts.Average(p => Sd(p)):F1} (НХЛ: 112–130, 46–60, 13–18,6)");
         ShiftEngine.Diag = null;
+    }
+
+    /// <summary>Особенности в игре: отношение «обладатели / остальные» по тому же показателю, что в реальных протоколах.</summary>
+    public static List<(string key, double real, double sim, int n)> TraitSignatures(GameData data, List<Career> all, ShiftEngine.Diagnostics D, string targetsPath)
+    {
+        var res = new List<(string, double, double, int)>();
+        var tt = Path.Combine(Path.GetDirectoryName(targetsPath)!, "trait_targets.json");
+        if (!File.Exists(tt)) return res;
+        var tg = JsonDocument.Parse(File.ReadAllText(tt)).RootElement;
+        var minDen = new Dictionary<string, double> { ["unb"] = 120, ["sog"] = 80, ["att"] = 160 };
+        foreach (var row in tg.EnumerateObject())
+        {
+            if (!row.Value.TryGetProperty("trait", out _)) continue;
+            var v = row.Value; string tr = v.GetProperty("trait").GetString(), grp = v.GetProperty("group").GetString(), num = v.GetProperty("num").GetString(), den = v.GetProperty("den").GetString();
+            double[] have = new double[2], other = new double[2]; int n = 0;
+            var players = data.Players.Where(p => !p.IsGoalie && p.IsDefense == (grp == "D")).ToList();
+            if (den == "60")
+            {
+                // за 60 минут на льду: попытки или блоки за сезоны игры
+                var hv = new List<double>(); var ov = new List<double>();
+                foreach (var p in players)
+                {
+                    double toi = all.Sum(c => (double)(c.Skaters.GetValueOrDefault(p.Id)?.Toi ?? 0)); if (toi < 600 * 60) continue;
+                    double cnt = all.Sum(c => (double)(num == "sa_60" ? c.Skaters.GetValueOrDefault(p.Id)?.Att ?? 0 : c.Skaters.GetValueOrDefault(p.Id)?.Blk ?? 0));
+                    (p.Tr != null && p.Tr.Contains(tr) ? hv : ov).Add(cnt / toi * 3600);
+                }
+                if (hv.Count >= 3) res.Add((row.Name, v.GetProperty("ratio").GetDouble(), hv.Average() / ov.Average(), hv.Count));
+                continue;
+            }
+            foreach (var p in players)
+            {
+                if (!D.Sig.TryGetValue(p.Id, out var sg) || sg.GetValueOrDefault(den) < minDen[den]) continue;
+                bool h = p.Tr != null && p.Tr.Contains(tr);
+                var b = h ? have : other; b[0] += sg.GetValueOrDefault(num); b[1] += sg.GetValueOrDefault(den); if (h) n++;
+            }
+            if (n >= 3 && have[1] > 0 && other[1] > 0 && other[0] > 0) res.Add((row.Name, v.GetProperty("ratio").GetDouble(), have[0] / have[1] / (other[0] / other[1]), n));
+        }
+        return res;
+    }
+
+    static void TraitReport(GameData data, List<Career> all, ShiftEngine.Diagnostics D, string tp)
+    {
+        var rows = TraitSignatures(data, all, D, tp);
+        Console.WriteLine("Особенности в игре (обладатели / остальные; игра — НХЛ): " + string.Join("  ", rows.Select(r => $"{r.key} ×{r.sim:F2}—×{r.real:F2}")));
+        var f = Finishing(data, D);
+        var real = Real(tp);
+        Console.WriteLine($"Реализация 5×5 (регрессия по оценкам из базы; игра — НХЛ): завершение {f.fin:+0.000}—{real?.fin:+0.000}, дальний бросок издали {f.lng:+0.000}—{real?.lng:+0.000}, топ-3% по завершению ×{f.top3:F2}—×{real?.top3:F2}");
+    }
+
+    public static (double fin, double lng, double top3)? Real(string tp)
+    {
+        var tt = Path.Combine(Path.GetDirectoryName(tp)!, "trait_targets.json");
+        if (!File.Exists(tt)) return null;
+        var f = JsonDocument.Parse(File.ReadAllText(tt)).RootElement.GetProperty("finishing");
+        return (f.GetProperty("fin").GetDouble(), f.GetProperty("lng_far").GetDouble(), f.GetProperty("top3_ratio").GetDouble());
+    }
+
+    /// <summary>Та же пуассоновская регрессия, что в data/trait_targets.py: голы ~ зона + защитник + завершение + дальний бросок (издали).</summary>
+    public static (double fin, double lng, double top3) Finishing(GameData data, ShiftEngine.Diagnostics D)
+    {
+        var rows = new List<(int id, double[] x, double y, double n)>();
+        foreach (var (id, sg) in D.Sig)
+        {
+            if (!data.PlayerById.TryGetValue(id, out var p) || p.IsGoalie || p.A == null || !p.A.ContainsKey("fin") || !p.A.ContainsKey("lng")) continue;
+            double fin = p.AttrEst("fin") - 11, lng = p.AttrEst("lng") - 11;
+            string[] zs = { "close", "mid", "far" };
+            for (int zi = 0; zi < 3; zi++)
+            {
+                double n = sg.GetValueOrDefault(zs[zi] + "_n5"); if (n <= 0) continue;
+                rows.Add((id, new[] { 1, zi == 1 ? 1 : 0, zi == 2 ? 1 : 0, p.IsDefense ? 1 : 0, fin, zi == 2 ? lng : 0 }, sg.GetValueOrDefault(zs[zi] + "_g5"), n));
+            }
+        }
+        int k = 6; var b = new double[k];
+        b[0] = Math.Log(rows.Sum(r => r.y) / rows.Sum(r => r.n));
+        for (int it = 0; it < 60; it++)
+        {
+            var M = new double[k, k + 1];
+            foreach (var r in rows)
+            {
+                double eta = 0; for (int j = 0; j < k; j++) eta += r.x[j] * b[j];
+                double mu = r.n * Math.Exp(eta), z = eta + (r.y - mu) / Math.Max(mu, 1e-9);
+                for (int i = 0; i < k; i++) { for (int j = 0; j < k; j++) M[i, j] += mu * r.x[i] * r.x[j]; M[i, k] += mu * r.x[i] * z; }
+            }
+            for (int i = 0; i < k; i++) M[i, i] += 1e-6;
+            // решение методом Гаусса
+            for (int c = 0; c < k; c++)
+            {
+                int piv = c; for (int i = c + 1; i < k; i++) if (Math.Abs(M[i, c]) > Math.Abs(M[piv, c])) piv = i;
+                for (int j = 0; j <= k; j++) (M[c, j], M[piv, j]) = (M[piv, j], M[c, j]);
+                for (int i = 0; i < k; i++) if (i != c) { double f = M[i, c] / M[c, c]; for (int j = c; j <= k; j++) M[i, j] -= f * M[c, j]; }
+            }
+            for (int i = 0; i < k; i++) b[i] = M[i, k] / M[i, i];
+        }
+        var fins = rows.Select(r => data.PlayerById[r.id].AttrEst("fin")).ToList();
+        var uniq = rows.Select(r => r.id).Distinct().Select(id => data.PlayerById[id].AttrEst("fin")).OrderBy(x => x).ToList();
+        double thr = uniq[(int)(0.97 * (uniq.Count - 1))];
+        double ys = 0, ms = 0;
+        for (int i = 0; i < rows.Count; i++)
+            if (fins[i] >= thr) { double eta = 0; for (int j = 0; j < k; j++) eta += rows[i].x[j] * b[j]; ys += rows[i].y; ms += rows[i].n * Math.Exp(eta); }
+        return (b[4], b[5], ys / Math.Max(1e-9, ms));
     }
 
     static double Sd(List<double> v) { double m = v.Average(); return Math.Sqrt(v.Average(x => (x - m) * (x - m))); }

@@ -196,6 +196,23 @@ Check("Таблица как в НХЛ", lgLead.Average() is >= 112 and <= 130 &
 }
 Check("Вратари: разброс сезона", svSd.Average() is >= 0.008 and <= 0.013,
     $"стандартное отклонение % отражённых у вратарей с 40+ матчами {svSd.Average():F4} (НХЛ 2022–2026: 0,009–0,013)");
+// ---------------------------------------------------------------- Движок по сменам: особенности и реализация как в протоколах НХЛ
+{
+    var D = ShiftEngine.Diag = new ShiftEngine.Diagnostics();
+    var cs = new List<Career>();
+    for (int s = 0; s < 3; s++) { var c = Career.New(data, "MIN", 5000 + s); while (c.Phase == Phase.Regular) c.SimDay(); cs.Add(c); }
+    ShiftEngine.Diag = null;
+    var tp = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(path))!, "..", "..", "data", "engine_targets.json");
+    var sig = EngineReport.TraitSignatures(data, cs, D, tp);
+    var bad = sig.Where(x => Math.Abs(Math.Log(x.sim / x.real)) > Math.Log(1.3)).ToList();
+    Check("Особенности в игре", sig.Count >= 12 && bad.Count == 0,
+        $"{sig.Count} подписей особенностей (обладатели / остальные по показателю из протоколов), расхождение больше ×1,3: " +
+        (bad.Count == 0 ? "нет" : string.Join(", ", bad.Select(x => $"{x.key} ×{x.sim:F2} при НХЛ ×{x.real:F2}"))));
+    var f = EngineReport.Finishing(data, D); var rf = EngineReport.Real(tp);
+    Check("Реализация по зонам", rf != null && Math.Abs(f.fin - rf.Value.fin) <= 0.015 && Math.Abs(f.lng - rf.Value.lng) <= 0.025 && f.top3 is >= 0.85 and <= 1.05,
+        $"регрессия по оценкам из базы, 5×5: завершение {f.fin:+0.000} (НХЛ {rf?.fin:+0.000}), дальний бросок издали {f.lng:+0.000} (НХЛ {rf?.lng:+0.000}), топ-3% по завершению ×{f.top3:F2} (НХЛ ×{rf?.top3:F2})");
+}
+
 Check("Плей-офф", playoffsOk, $"15 серий и чемпион в каждом сезоне; чемпионы: {string.Join(", ", champions.OrderByDescending(x => x.Value).Take(6).Select(x => $"{x.Key} {x.Value}"))}");
 
 // ---------------------------------------------------------------- 4. Вратарь и звенья
