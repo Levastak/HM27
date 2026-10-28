@@ -165,6 +165,10 @@ public sealed class PlayerData
     [JsonPropertyName("a")] public Dictionary<string, double[]> A { get; set; } = new();
     /// <summary>Факты карьеры для скрытых качеств: матчи, драфт, награды, клубы, пропуски, драки.</summary>
     [JsonPropertyName("fx")] public CareerFacts Fx { get; set; } = new();
+    /// <summary>Особенности стиля (коды Traits.All), до трёх: по данным 2022–2026, лучшие 5% своей группы.</summary>
+    [JsonPropertyName("tr")] public List<string> Tr { get; set; }
+    /// <summary>Х-фактор: характеристика, в которой игрок среди лучших 1% лиги (код характеристики) или null.</summary>
+    [JsonPropertyName("xf")] public string Xf { get; set; }
     /// <summary>Реальный сезон 2025-26 (MoneyPuck): gp, g, a — для сверки сезонов игры с реальностью (HM27.Check).</summary>
     [JsonPropertyName("real")] public Dictionary<string, int> Real { get; set; }
 

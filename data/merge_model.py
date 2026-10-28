@@ -130,6 +130,11 @@ def main(db_path="game/data/hm27-data.json", model_path="data/derived.json.gz", 
                 p["fin"] = rt["gx"]; p["apg"] = round(rt["a60"] * toi / 60, 4)
             if src.get("real"):
                 p["real"] = src["real"]
+            p.pop("tr", None); p.pop("xf", None)
+            if src.get("tr"):
+                p["tr"] = src["tr"]
+            if src.get("xf"):
+                p["xf"] = src["xf"]
             found += 1
         else:
             # дебютант без матчей в протоколах: уровень из старой перцентильной оценки, не выше 12, большая погрешность

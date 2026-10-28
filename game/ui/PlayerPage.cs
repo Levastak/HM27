@@ -118,6 +118,7 @@ public partial class PlayerPage : Control
         var left = Ui.V(12); left.CustomMinimumSize = new Vector2(290, 0);
         left.AddChild(Widget.Make("Позиции", Ui.V(8, new RinkMini(p.Pos), Ui.H(14, Legend("Основная", new Color("43D17A")), p.IsForward ? Legend("Может играть", new Color("E8C25A")) : new Control()))));
         left.AddChild(Widget.Make("Роли", Roles(p), null, null, 0));
+        if (!p.IsGoalie) left.AddChild(Widget.Make("Особенности", Features(p), null, null, 0));
         row.AddChild(left);
         row.AddChild(Ui.Expand(Widget.Make("Характеристики", AttrGrid(p))));
         var right = Ui.V(12); right.CustomMinimumSize = new Vector2(330, 0);
@@ -231,6 +232,30 @@ public partial class PlayerPage : Control
             v.AddChild(row);
         }
         if (p.Roles.Count == 0) v.AddChild(Ui.Margin(Ui.L("Нет данных", 13, Ui.Muted), 12, 8, 12, 8));
+        return v;
+    }
+
+    /// <summary>Х-фактор и особенности стиля (из данных; подсказка — что именно видно в данных).</summary>
+    Control Features(PlayerData p)
+    {
+        var v = Ui.V(0);
+        PanelContainer Row(Control c, Color bg, string tip)
+        {
+            var row = new PanelContainer { TooltipText = tip, MouseFilter = MouseFilterEnum.Stop };
+            var sb = Ui.Box(bg, 0, null, 12);
+            sb.ContentMarginTop = sb.ContentMarginBottom = 6; sb.BorderColor = Ui.Line; sb.BorderWidthBottom = 1;
+            row.AddThemeStyleboxOverride("panel", sb);
+            row.AddChild(c);
+            return row;
+        }
+        var xf = Traits.XFactor(p.Xf);
+        if (xf != null)
+            v.AddChild(Row(Ui.H(8, Ui.L("Х", 13, Ui.Gold, Ui.Black), Ui.Expand(Ui.L(xf, 13, Ui.Text, Ui.Semi))), new Color(Ui.Gold, 0.12f),
+                "Х-фактор: в этой характеристике игрок среди лучших 1% лиги"));
+        foreach (var t in Traits.Of(p))
+            v.AddChild(Row(Ui.L(t.Name, 13), new Color(0, 0, 0, 0), t.Info));
+        if (xf == null && p.Tr is not { Count: > 0 })
+            v.AddChild(Ui.Margin(Ui.L("Без ярко выраженных привычек", 13, Ui.Muted), 12, 8, 12, 8));
         return v;
     }
 

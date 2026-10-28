@@ -1016,6 +1016,11 @@ def main():
     z_em = zq(per60("pen_em"), S["toi_min"], k_em, allg)
     z_es = zq(S["pen_em"] / S["pen_all"].clip(lower=1), S["pen_all"], 10.0, allg)
     S["temper"] = (0.6 * z_em + 0.4 * z_es).clip(-2, 4)
+    # ── особенности (стиль) и Х-фактор: только устойчивые признаки (половинки матчей 2022–2026 совпадают на 0,7–0,99) ──
+    TR, XF = traits(S, shots, fen, groups, reg, A)
+    meta["traits"] = {k: int(sum(k in v for v in TR.values())) for k in TRAIT_KEYS}
+    meta["xfactor"] = {k: int(sum(1 for v in XF.values() if v == k)) for k in set(XF.values())}
+    log("особенности:", meta["traits"], "Х-фактор:", meta["xfactor"])
     # корреляции между характеристиками (регулярные игроки): контроль дублей
     vals = pd.DataFrame({k: v["v"] for k, v in A.items()}).loc[regs]
     cm = vals.corr()
@@ -1097,6 +1102,7 @@ def main():
             "facts": {**facts.get(p, {}), **avail.get(p, {}), "fights": round(float(S.at[p, "fight"]), 1), "pen60": round(float(per60("pen")[p]), 2),
                       "temper": round(float(S.at[p, "temper"]), 2)},
             "rt": {k_: round(float(rt.at[p, k_]), 4) for k_ in ("ixg60", "a60", "gx")},
+            **({"tr": TR[p]} if TR.get(p) else {}), **({"xf": XF[p]} if XF.get(p) else {}),
             **({"real": real25[p]} if p in real25 else {}),
         }
     for p in G.index:
@@ -1115,6 +1121,125 @@ def main():
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         import review
         review.write(out, a.report)
+
+
+# ───────────────────────────── особенности и Х-фактор ─────────────────────────────
+
+# код → (группы позиций, признак); признаки — доли бросков (сжатые к среднему группы) или темпы за 60 минут
+TRAIT_DEFS = {
+    "far": ("F", "share", "n_far", "n_unb"),          # бросает издали
+    "net": ("F", "share", "n_net", "n_unb"),          # игрок пятака
+    "jump": ("D", "share", "n_c30", "n_unb"),         # защитник подключается к атаке (бросает ближе 30 футов)
+    "tip": ("F", "share", "n_tip", "n_unb"),          # мастер подправлений
+    "reb": ("F", "share", "n_reb", "n_unb"),          # добивает отскоки
+    "slap": ("FD", "share", "n_slap", "n_unb"),       # любит щелчок
+    "back": ("F", "share", "n_back", "n_unb"),        # бросает с неудобной руки
+    "wrap": ("F", "share", "n_wrap", "n_unb"),        # заезжает из-за ворот
+    "rush": ("F", "share", "n_rush", "n_unb"),        # опасен в контратаке (у защитников признак путается с выносом из своей зоны)
+    "thru": ("FD", "share_low", "n_blkd", "n_att"),   # бросок доходит до ворот (редко блокируют)
+    "shoot": ("FD", "rate", "n_att", None),           # бросает при любой возможности
+    "pass": ("FD", "share", "a1", "n_att"),           # сначала пас
+    "hit": ("FD", "rate", "hits", None),              # силовик
+    "blk": ("FD", "rate", "blk", None),               # ложится под броски
+    "tk": ("FD", "rate", "tk", None),                 # охотник за шайбой
+    "risk": ("FD", "rate", "gv", None),               # рискует с шайбой
+    "draw": ("FD", "rate", "pend", None),             # зарабатывает удаления
+    "fight": ("FD", "rate", "fight", None),           # тафгай
+}
+TRAIT_KEYS = list(TRAIT_DEFS)
+TRAIT_Z = 1.65            # ≈ лучшие 5% своей группы (нападающие или защитники)
+# порядок — приоритет при равенстве: «зрелищные» качества впереди спецбригад
+XF_ATTRS = ("spd", "fin", "pas", "hnd", "vis", "pwr", "acc", "dfn", "hit", "fo", "tka", "blk", "pp", "pk")
+
+
+def traits(S, shots, fen, groups, reg, A):
+    """Особенности стиля (до 3 у игрока) и Х-фактор — характеристика, в которой игрок среди лучших 2% лиги."""
+    sh = shots[shots["shooter"].notna()].assign(shooter=lambda d: d["shooter"].astype(np.int64))
+    u = sh[fen.loc[sh.index]]
+    w = u["w"]
+    by = lambda mask, df=u, ww=None: ((ww if ww is not None else df["w"]) * mask).groupby(df["shooter"]).sum().reindex(S.index).fillna(0)
+    one = pd.Series(1.0, index=u.index)
+    C = pd.DataFrame(index=S.index)
+    C["n_unb"] = by(one)
+    C["n_far"] = by((u["dist"] >= 40).astype(float))
+    C["n_c30"] = by((u["dist"] < 30).astype(float))
+    C["n_net"] = by(((u["dist"] < 15) | u["stype"].isin(["tip-in", "deflected"]) | (u["reb"] == 1)).astype(float))
+    C["n_tip"] = by(u["stype"].isin(["tip-in", "deflected"]).astype(float))
+    C["n_reb"] = by((u["reb"] == 1).astype(float))
+    C["n_slap"] = by((u["stype"] == "slap").astype(float))
+    C["n_back"] = by((u["stype"] == "backhand").astype(float))
+    C["n_wrap"] = by((u["stype"] == "wrap-around").astype(float))
+    C["n_rush"] = by((u["rush"] == 1).astype(float))
+    C["n_att"] = by(pd.Series(1.0, index=sh.index), sh)
+    C["n_blkd"] = by((sh["type"] == "blocked-shot").astype(float), sh)
+    for c in ("a1", "hits", "blk", "tk", "gv", "pend", "fight"):
+        C[c] = S[c]
+    toi = S["toi_min"]
+    Z = pd.DataFrame(index=S.index, dtype=float)
+    for key, (gset, kind, num, den) in TRAIT_DEFS.items():
+        z = pd.Series(np.nan, index=S.index)
+        for g in ("F", "D"):
+            if g not in gset:
+                continue
+            idx = groups[g]
+            rg = [i for i in idx if reg[i]]
+            if kind == "rate":
+                k_, n_ = 300.0, toi[idx]
+                mu = C.loc[rg, num].sum() / toi[rg].sum()
+                v = (C.loc[idx, num] + k_ * mu) / (n_ + k_) * 60
+            else:
+                k_, n_ = 60.0, C.loc[idx, den]
+                mu = C.loc[rg, num].sum() / max(C.loc[rg, den].sum(), 1)
+                v = (C.loc[idx, num] + k_ * mu) / (n_ + k_)
+                if kind == "share_low":
+                    v = -v
+            m_, s_ = v[rg].mean(), v[rg].std()
+            z[idx] = (v - m_) / s_
+        Z[key] = z
+    # мало игры — особенности не видны: нужен регулярный игрок и достаточно бросков для «бросковых» признаков
+    ok = pd.Series([reg[i] for i in S.index], index=S.index)
+    TR = {}
+    for p in S.index:
+        if not ok[p]:
+            continue
+        cand = []
+        for key, (gset, kind, num, den) in TRAIT_DEFS.items():
+            z = Z.at[p, key]
+            if pd.isna(z):
+                continue
+            if kind in ("share", "share_low") and den in ("n_unb", "n_att") and C.at[p, den] < 80:
+                continue
+            thr = TRAIT_Z + (0.35 if key in ("wrap", "rush") else 0)     # редкие признаки — строже
+            if z >= thr:
+                cand.append((z, key))
+        cand.sort(reverse=True)
+        # «силовик» и «тафгай» почти всегда вместе — оставляем более редкий
+        keys = [k for _, k in cand]
+        if "fight" in keys and "hit" in keys:
+            keys.remove("hit")
+        if keys:
+            TR[p] = keys[:3]
+    # Х-фактор: характеристика, по которой игрок среди лучших 1% регулярных (и не ниже 17); из нескольких — самая редкая
+    XF = {}
+    regs = [i for i in S.index if reg[i]]
+    pct = {}
+    for k in XF_ATTRS:
+        if k in A:
+            v = A[k]["v"]
+            pct[k] = (v, v[regs].rank(pct=True), v[regs].quantile(0.99))
+    for p in regs:
+        best = None
+        for pr, k in enumerate(XF_ATTRS):
+            if k not in pct:
+                continue
+            v, rk, thr = pct[k]
+            if pd.notna(v[p]) and v[p] >= thr and v[p] >= 17:
+                sc = (rk[p], -pr)
+                if best is None or sc > best[0]:
+                    best = (sc, k)
+        if best:
+            XF[p] = best[1]
+    return TR, XF
 
 
 # ───────────────────────────── вспомогательное ─────────────────────────────
