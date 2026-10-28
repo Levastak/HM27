@@ -72,7 +72,7 @@ public enum Phase { Regular, Playoffs, Finished }
 /// </summary>
 public sealed class Career
 {
-    public int Version { get; set; } = 2;
+    public int Version { get; set; } = 3;
     public int Seed { get; set; }
     public int Season { get; set; }
     public string UserTeam { get; set; }
@@ -185,7 +185,7 @@ public sealed class Career
         var c = JsonSerializer.Deserialize<Career>(json, JsonOpts);
         c.Attach(data);
         // сохранения до модели игрока: истинные значения = данные (без розыгрыша), сила клубов не меняется
-        if (c.Players.Count == 0) { PlayerModel.Generate(c, noise: false); c.Version = 2; }
+        if (c.Players.Count == 0) { PlayerModel.Generate(c, noise: false); c.Version = 3; }
         // сохранения до КА/ПА (1–200): досчитать от данных со сдвигом, который был у уровня
         if (c.Players.Values.Any(s => s.Ca == 0))
             foreach (var p in data.Players)
@@ -195,6 +195,12 @@ public sealed class Career
                     float shift = (float)((st.Lvl - p.Level) * PlayerModel.CA_PER_LVL);
                     st.Ca = fresh.Ca + shift; st.Ca0 = st.Ca; st.Pa = Math.Max(fresh.Pa + shift, st.Ca);
                 }
+        // сохранения до «КА из характеристик»: согласовать характеристики с КА, чтобы развитие не дало скачка
+        if (c.Version < 3)
+        {
+            foreach (var p0 in data.Players) if (c.Players.TryGetValue(p0.Id, out var st)) PlayerModel.Align(data, p0, st);
+            c.Version = 3;
+        }
         foreach (var p in data.Players)   // новые игроки в базе
             if (!c.Players.ContainsKey(p.Id)) c.Players[p.Id] = PlayerModel.Make(c, p, noise: false);
         return c;

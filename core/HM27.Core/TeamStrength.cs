@@ -12,7 +12,7 @@ public static class TeamStrength
     static readonly (string k, double w)[] Def = { ("dfn", 0.4), ("tka", 0.2), ("blk", 0.15), ("pk", 0.15), ("dec", 0.1) };
 
     /// <summary>Множитель разброса сил относительно модели (подбор по таблицам НХЛ).</summary>
-    public static double SPREAD = 1.15;
+    public static double SPREAD = 1.08;
     /// <summary>«Одна шайба»: вклад сверх STAR_AT ед. выше среднего берётся с долей STAR_K (у звёзд отдача убывает).</summary>
     public static double STAR_AT = 3.0, STAR_K = 0.6;
 

@@ -249,6 +249,7 @@ public static class PlayerModel
         // знание: свой клуб — с первого дня неплохо, чужие — по известности
         s.Know = p.Team == c.UserTeam ? 0.55f : (float)Math.Clamp(0.25 + 0.04 * f.Seasons + (p.Level >= 16 ? 0.15 : 0), 0.25, 0.75);
         s.Season = noise ? SeasonForm(c, p) : 0;
+        Align(c.Data, p, s);          // КА = формула от характеристик (как в FM); на старте — равен КА из данных
         s.Lvl0 = s.Lvl;
         s.Ca0 = s.Ca;
         s.A0 = new Dictionary<string, float>(s.A);
@@ -286,6 +287,39 @@ public static class PlayerModel
         if (s == null) return 0;
         double v = s.A.GetValueOrDefault(p.IsGoalie ? "gcmp" : "cmp", 11f);
         return CMP_K * (v - 11);
+    }
+
+    /// <summary>Формула КА для позиции игрока (null — базы без формулы: старые данные).</summary>
+    public static CaFormula Formula(GameData d, PlayerData p) =>
+        d?.Model?.Ca == null ? null : d.Model.Ca.GetValueOrDefault(p.IsGoalie ? "G" : p.IsDefense ? "D" : "F");
+
+    /// <summary>КА из характеристик, как в FM; у игроков без характеристик — null.</summary>
+    public static double? CaOf(GameData d, PlayerData p, Dictionary<string, float> a)
+    {
+        var f = Formula(d, p);
+        if (f == null || a == null || a.Count == 0) return null;
+        return Math.Clamp(f.Of(f.S(k => a.GetValueOrDefault(k, 11f))), 1, 200);
+    }
+
+    /// <summary>
+    /// Согласовать характеристики с КА: разница раскладывается по характеристикам формулы пропорционально их весам
+    /// (так КА из данных — самый проверенный — остаётся, а характеристики «объясняют» его без расхождения).
+    /// </summary>
+    public static void Align(GameData d, PlayerData p, PlayerState s)
+    {
+        var f = Formula(d, p);
+        if (f == null || s.A.Count == 0) return;
+        for (int it = 0; it < 4; it++)
+        {
+            double sv = f.S(k => s.A.GetValueOrDefault(k, 11f));
+            double r = s.Ca - f.Of(sv);
+            if (Math.Abs(r) < 0.3) break;
+            double norm = f.W.Sum(kv => f.Slope(kv.Key, sv) * f.Slope(kv.Key, sv));
+            if (norm <= 0) break;
+            foreach (var (k, _) in f.W)
+                if (s.A.TryGetValue(k, out var v)) s.A[k] = C(v + r * f.Slope(k, sv) / norm);
+        }
+        s.Ca = (float)(CaOf(d, p, s.A) ?? s.Ca);
     }
 
     public static PlayerState State(Career c, int id) => c.Players.TryGetValue(id, out var s) ? s : null;
@@ -437,8 +471,10 @@ public static class Development
             if (n > 0)
             {
                 s.Lvl = (float)Math.Clamp(s.Lvl + sumD / n, 1, 20);
-                // КА растёт по кривым без «упора» в 20 у характеристик — у элиты рост виден так же, как у остальных
-                s.Ca = (float)Math.Clamp(s.Ca + sumCa / n * PlayerModel.CA_PER_LVL + 0.15 * N(rng), 1, Math.Max(s.Pa, s.Ca));
+                // КА — из характеристик (как в FM); у игроков без формулы — по кривым, как раньше
+                var caAttr = PlayerModel.CaOf(c.Data, p, s.A);
+                s.Ca = caAttr is double ca ? (float)Math.Clamp(ca, 1, Math.Max(s.Pa, s.Ca))
+                                           : (float)Math.Clamp(s.Ca + sumCa / n * PlayerModel.CA_PER_LVL + 0.15 * N(rng), 1, Math.Max(s.Pa, s.Ca));
                 s.Pot = (float)Math.Clamp(s.Lvl + (s.Pa - s.Ca) / PlayerModel.CA_PER_LVL, 1, 20);
             }
             // форма: плавное случайное блуждание, у стабильных — тише

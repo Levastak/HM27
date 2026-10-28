@@ -263,9 +263,14 @@ def main(db_path="game/data/hm27-data.json", model_path="data/derived.json.gz", 
         for t in db["teams"]:
             if t["abbr"] in cl:
                 t["hist"] = cl[t["abbr"]]
+    # КА из характеристик (как в FM): веса по позициям — data/ca_formula.py
+    sys.path.insert(0, here)
+    import ca_formula
+    ca_f = ca_formula.fit(m)
+    print("КА из характеристик:", {g: f"R² {v['r2']}, ошибка {v['err']}" for g, v in ca_f.items()})
     db["format"] = 3
     db["model"] = {"built": m["meta"]["built"], "seasons": m["meta"]["seasons"], "scale": m["meta"]["scale"],
-                   "kinds": m["meta"].get("attr_kinds", {}), "xg": m["meta"].get("xg_source", "")}
+                   "kinds": m["meta"].get("attr_kinds", {}), "xg": m["meta"].get("xg_source", ""), "ca": ca_f}
     if os.path.exists(curves_path):
         c = json.load(open(curves_path, encoding="utf-8"))
         db["model"]["curves"] = {g: {str(a): v for a, v in vals.items()} for g, vals in c["groups"].items()}

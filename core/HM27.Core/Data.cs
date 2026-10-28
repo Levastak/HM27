@@ -46,6 +46,25 @@ public sealed class ModelInfo
     [JsonPropertyName("xg")] public string Xg { get; set; }
     /// <summary>Группа → возраст → изменение за сезон (ед. шкалы 1–20).</summary>
     [JsonPropertyName("curves")] public Dictionary<string, Dictionary<string, double>> Curves { get; set; } = new();
+    /// <summary>КА из характеристик по позициям (F, D, G): data/ca_formula.py.</summary>
+    [JsonPropertyName("ca")] public Dictionary<string, CaFormula> Ca { get; set; }
+}
+
+/// <summary>КА = a + b·s + c·max(0, s − s0)², s = Σ w_k·(характеристика_k − 11).</summary>
+public sealed class CaFormula
+{
+    [JsonPropertyName("w")] public Dictionary<string, double> W { get; set; } = new();
+    [JsonPropertyName("a")] public double A { get; set; }
+    [JsonPropertyName("b")] public double B { get; set; }
+    [JsonPropertyName("c")] public double C { get; set; }
+    [JsonPropertyName("s0")] public double S0 { get; set; }
+    [JsonPropertyName("r2")] public double R2 { get; set; }
+    [JsonPropertyName("err")] public double Err { get; set; }
+
+    public double S(Func<string, double> attr) => W.Sum(kv => kv.Value * (attr(kv.Key) - 11));
+    public double Of(double s) => A + B * s + C * Math.Pow(Math.Max(0, s - S0), 2);
+    /// <summary>Сколько КА даёт +1 к характеристике key в точке s.</summary>
+    public double Slope(string key, double s) => W.GetValueOrDefault(key) * (B + 2 * C * Math.Max(0, s - S0));
 }
 
 public sealed class LeagueInfo
