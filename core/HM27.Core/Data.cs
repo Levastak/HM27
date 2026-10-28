@@ -56,9 +56,15 @@ public sealed class LeagueInfo
 public sealed class TeamData
 {
     [JsonPropertyName("abbr")] public string Abbr { get; set; }
-    [JsonPropertyName("city")] public string City { get; set; }
-    [JsonPropertyName("name")] public string Name { get; set; }
+    /// <summary>Город по-русски (из базы).</summary>
+    [JsonPropertyName("city")] public string CityRu { get; set; }
+    /// <summary>Название по-русски (из базы).</summary>
+    [JsonPropertyName("name")] public string NameRuData { get; set; }
     [JsonPropertyName("name_en")] public string NameEn { get; set; }
+    /// <summary>Город для подписей — по-английски или по-русски (настройка Names.English).</summary>
+    [JsonIgnore] public string City => Names.English ? Names.CityEn(Abbr, NameEn) : CityRu;
+    /// <summary>Название для подписей — по-английски или по-русски (настройка Names.English).</summary>
+    [JsonIgnore] public string Name => Names.English ? (NameEn ?? NameRuData) : NameRuData;
     [JsonPropertyName("conf")] public string Conference { get; set; }
     [JsonPropertyName("div")] public string Division { get; set; }
     [JsonPropertyName("colors")] public List<string> Colors { get; set; } = new();
@@ -139,7 +145,9 @@ public sealed class PlayerData
 {
     [JsonPropertyName("id")] public int Id { get; set; }
     [JsonPropertyName("name")] public string Name { get; set; }
-    [JsonPropertyName("name_ru")] public string NameRu { get; set; }
+    [JsonPropertyName("name_ru")] public string NameRuData { get; set; }
+    /// <summary>Имя для подписей: по-английски (как в НХЛ) или по-русски — настройка Names.English.</summary>
+    [JsonIgnore] public string NameRu => Names.English ? Name : (NameRuData ?? Name);
     [JsonPropertyName("team")] public string Team { get; set; }
     /// <summary>C, LW, RW, D, G.</summary>
     [JsonPropertyName("pos")] public string Pos { get; set; }
@@ -261,4 +269,23 @@ public sealed class PlayerBio
     [JsonPropertyName("po")] public List<double> Po { get; set; }
     [JsonPropertyName("hof")] public int Hof { get; set; }
     [JsonPropertyName("top100")] public int Top100 { get; set; }
+}
+
+/// <summary>Язык имён игроков и названий клубов (настройка игры; остальной текст — по-русски).</summary>
+public static class Names
+{
+    public static bool English = true;
+
+    static readonly Dictionary<string, string> Cities = new()
+    {
+        ["ANA"] = "Anaheim", ["BOS"] = "Boston", ["BUF"] = "Buffalo", ["CGY"] = "Calgary", ["CAR"] = "Carolina", ["CHI"] = "Chicago",
+        ["COL"] = "Colorado", ["CBJ"] = "Columbus", ["DAL"] = "Dallas", ["DET"] = "Detroit", ["EDM"] = "Edmonton", ["FLA"] = "Florida",
+        ["LAK"] = "Los Angeles", ["MIN"] = "Minnesota", ["MTL"] = "Montreal", ["NSH"] = "Nashville", ["NJD"] = "New Jersey",
+        ["NYI"] = "NY Islanders", ["NYR"] = "NY Rangers", ["OTT"] = "Ottawa", ["PHI"] = "Philadelphia", ["PIT"] = "Pittsburgh",
+        ["SJS"] = "San Jose", ["SEA"] = "Seattle", ["STL"] = "St. Louis", ["TBL"] = "Tampa Bay", ["TOR"] = "Toronto", ["UTA"] = "Utah",
+        ["VAN"] = "Vancouver", ["VGK"] = "Vegas", ["WSH"] = "Washington", ["WPG"] = "Winnipeg",
+    };
+
+    /// <summary>Короткое имя клуба по-английски («Edmonton», «NY Rangers»).</summary>
+    public static string CityEn(string abbr, string nameEn) => abbr != null && Cities.TryGetValue(abbr, out var c) ? c : nameEn ?? abbr;
 }

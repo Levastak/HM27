@@ -22,6 +22,7 @@ public partial class Main : Control
     {
         I = this;
         GetWindow().Title = "HM27 — Hockey Manager 27";
+        LoadSettings();
         Theme = Ui.MakeTheme();
         SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(new LogoCache());
@@ -203,11 +204,28 @@ public partial class Main : Control
         using var f = FileAccess.Open(SavePath, FileAccess.ModeFlags.Write);
         f?.StoreString(Career.ToJson());
     }
+    // ------------------------------------------------------------------ настройки
+    const string SettingsPath = "user://settings.cfg";
+
+    /// <summary>Настройки игры: язык имён игроков и клубов (по умолчанию — английский, как в НХЛ).</summary>
+    public static void LoadSettings()
+    {
+        var cfg = new ConfigFile();
+        if (cfg.Load(SettingsPath) == Error.Ok) Names.English = (bool)cfg.GetValue("names", "english", true);
+    }
+
+    public static void SaveSettings()
+    {
+        var cfg = new ConfigFile();
+        cfg.SetValue("names", "english", Names.English);
+        cfg.Save(SettingsPath);
+    }
 }
 
 public static class NodeExt
 {
     public static T Also<T>(this T node, Action<T> act) { act(node); return node; }
+
 }
 
 /// <summary>Снимок окна через N кадров и выход — для проверки интерфейса без экрана.</summary>
@@ -222,4 +240,5 @@ public partial class Shooter : Node
         GD.Print($"Кадр сохранён: {_path}");
         GetTree().Quit();
     }
+
 }

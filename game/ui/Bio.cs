@@ -134,6 +134,7 @@ public static class BioText
 
     public static string Club(string en)
     {
+        if (Names.English) return en;
         foreach (var (k, ru) in Clubs) if (en.StartsWith(k, StringComparison.OrdinalIgnoreCase)) return ru;
         return en;
     }

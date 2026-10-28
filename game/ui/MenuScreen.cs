@@ -1,5 +1,6 @@
 using System;
 using Godot;
+using HM27.Core;
 using HM27.Match3D;
 
 namespace HM27.UI;
@@ -43,6 +44,10 @@ public partial class MenuScreen : Control
             col.AddChild(MenuButton("Продолжить карьеру", main.LoadCareer, true));
         col.AddChild(MenuButton("Новая карьера", main.ShowClubSelect, !main.HasSave));
         col.AddChild(MenuButton("Об игре", ShowAbout, false));
+        Button names = null;
+        names = MenuButton(NamesText(), () => { Names.English = !Names.English; Main.SaveSettings(); names.Text = NamesText(); }, false);
+        names.TooltipText = "Имена игроков и названия клубов: как в НХЛ (по-английски) или по-русски. Остальной текст — по-русски.";
+        col.AddChild(names);
         col.AddChild(MenuButton("Выход", () => GetTree().Quit(), false));
         col.AddChild(Ui.Spacer(false, 30));
         col.AddChild(Ui.L($"Версия {Main.Version} · сезон 2026-27 · данные на {main.Data.DataDate}", 13, Ui.Dim));
@@ -54,6 +59,8 @@ public partial class MenuScreen : Control
         col.Alignment = BoxContainer.AlignmentMode.Center;
         AddChild(m);
     }
+
+    static string NamesText() => Names.English ? "Имена: English" : "Имена: по-русски";
 
     static Button MenuButton(string text, Action a, bool primary)
     {
