@@ -134,9 +134,7 @@ public partial class LinesView : HBoxContainer
         var g2 = C.Data.PlayerById.GetValueOrDefault(L.G2);
         v.AddChild(Section("Вратари", Ui.L($"Основной: {C.Short(L.G1)} · запасной: {C.Short(L.G2)}", 12, Ui.Text), b2b, Note("Усталость во втором матче подряд стоит команде около 5% голов. Поменять вратарей — во вкладке любого звена, место «В».")));
 
-        double dOff = MatchEngine.OffIndex(C.Data, L, C.DlBase) - C.BaseOff[C.UserTeam];
-        double dDef = MatchEngine.DefIndex(C.Data, L, C.DlBase) - C.BaseDef[C.UserTeam];
-        double gF = MatchEngine.K_FOR * dOff + dDef, gA = -(MatchEngine.K_AGAINST * dOff + dDef);
+        var (gF, gA) = C.LineupEffect(C.UserTeam);
         v.AddChild(Section("Анализ состава",
             Ui.H(8, Ui.Expand(Ui.L("Забиваем за матч", 12, Ui.Muted)), Ui.L(Ui.Signed(gF), 14, gF >= -0.005 ? Ui.Win : Ui.Loss, Ui.Bold)),
             Ui.H(8, Ui.Expand(Ui.L("Пропускаем за матч", 12, Ui.Muted)), Ui.L(Ui.Signed(gA), 14, gA <= 0.005 ? Ui.Win : Ui.Loss, Ui.Bold)),

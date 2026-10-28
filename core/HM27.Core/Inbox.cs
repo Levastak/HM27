@@ -28,7 +28,7 @@ public static class InboxWriter
     public static void Welcome(Career c)
     {
         var t = c.Team(c.UserTeam);
-        int rank = c.Data.Teams.OrderByDescending(x => x.Att - x.Dfn).ToList().IndexOf(t) + 1;
+        int rank = c.PowerRank(t.Abbr).all;
         string goal = rank <= 4 ? "бороться за Кубок Стэнли" : rank <= 10 ? "уверенно выйти в плей-офф и пройти хотя бы раунд" :
                       rank <= 18 ? "выйти в плей-офф" : rank <= 25 ? "бороться за плей-офф до последних недель" : "показать прогресс и развивать молодых";
         Add(c, "Владелец клуба", "Добро пожаловать в клуб!",

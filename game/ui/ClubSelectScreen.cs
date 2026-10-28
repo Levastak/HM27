@@ -21,7 +21,7 @@ public partial class ClubSelectScreen : Control
 
         var head = Ui.H(12);
         head.AddChild(Ui.B("←", Main.I.ShowMenu));
-        var ht = Ui.V(2, Ui.L("Выберите клуб", 30, Ui.Text, Ui.Bold), Ui.L("Карьера начинается с сезона 2026-27: реальные составы и звенья, сила клубов — по модели NHL-STATS.RU", 14, Ui.Muted));
+        var ht = Ui.V(2, Ui.L("Выберите клуб", 30, Ui.Text, Ui.Bold), Ui.L("Карьера начинается с сезона 2026-27: реальные составы и звенья, сила клубов — из игроков базы (данные НХЛ, MoneyPuck, NHL-STATS.RU)", 14, Ui.Muted));
         head.AddChild(ht);
         root.AddChild(head);
 
@@ -30,7 +30,8 @@ public partial class ClubSelectScreen : Control
         var grid = Ui.Expand(Ui.H(12), true, true);
         body.AddChild(grid);
 
-        var power = d.Teams.OrderByDescending(t => t.Att - t.Dfn).Select((t, i) => (t.Abbr, i + 1)).ToDictionary(x => x.Abbr, x => x.Item2);
+        var est = d.Teams.ToDictionary(t => t.Abbr, t => TeamStrength.Estimate(d, t));
+        var power = d.Teams.OrderByDescending(t => est[t.Abbr].att - est[t.Abbr].dfn).Select((t, i) => (t.Abbr, i + 1)).ToDictionary(x => x.Abbr, x => x.Item2);
         foreach (var conf in d.Teams.Select(t => t.Conference).Distinct().OrderBy(x => x))
             foreach (var div in d.Teams.Where(t => t.Conference == conf).Select(t => t.Division).Distinct().OrderBy(x => x))
             {
@@ -88,10 +89,11 @@ public partial class ClubSelectScreen : Control
         v.AddChild(top);
 
         var teams = d.Teams;
+        var est = teams.ToDictionary(x => x.Abbr, x => TeamStrength.Estimate(d, x));
         int Rank(System.Func<TeamData, double> f) => teams.OrderByDescending(f).ToList().IndexOf(t) + 1;
-        int pr = Rank(x => x.Att - x.Dfn), ar = Rank(x => x.Att), dr = Rank(x => -x.Dfn);
+        int pr = Rank(x => est[x.Abbr].att - est[x.Abbr].dfn), ar = Rank(x => est[x.Abbr].att), dr = Rank(x => -est[x.Abbr].dfn);
         v.AddChild(Ui.Rule());
-        v.AddChild(StatLine("Сила по модели", pr));
+        v.AddChild(StatLine("Сила по игрокам", pr));
         v.AddChild(StatLine("Атака", ar));
         v.AddChild(StatLine("Оборона", dr));
         v.AddChild(Ui.Rule());

@@ -60,9 +60,7 @@ public partial class ClubPage : Control
         var conf = C.Sorted(x => x.Conference == t.Conference);
         int cplace = conf.FindIndex(r => r.Team == t.Abbr) + 1;
         int lplace = C.Sorted().FindIndex(r => r.Team == t.Abbr) + 1;
-        int power = C.Data.Teams.OrderByDescending(x => x.Att - x.Dfn).ToList().IndexOf(t) + 1;
-        int atk = C.Data.Teams.OrderByDescending(x => x.Att).ToList().IndexOf(t) + 1;
-        int dfn = C.Data.Teams.OrderBy(x => x.Dfn).ToList().IndexOf(t) + 1;
+        var (power, atk, dfn) = C.PowerRank(t.Abbr);
         var g = new GridContainer { Columns = 4 };
         g.AddThemeConstantOverride("h_separation", 34); g.AddThemeConstantOverride("v_separation", 10);
         void F(string k, string v, Color? c = null) => g.AddChild(Ui.V(0, Ui.L(k.ToUpperInvariant(), 10, Ui.Dim, Ui.Bold), Ui.L(v, 14, c ?? Ui.Text, Ui.Semi)));
@@ -70,7 +68,7 @@ public partial class ClubPage : Control
         F("Дивизион", t.Division);
         F("Место в лиге", row.Gp > 0 ? $"{lplace}-е" : "—");
         F("Очки", $"{row.Pts} в {row.Gp} {Ui.Plural(row.Gp, "матче", "матчах", "матчах")}");
-        F("Сила по модели", $"{power}-е в лиге", power <= 8 ? Ui.Win : power <= 24 ? Ui.Otl : Ui.Loss);
+        F("Сила по игрокам", $"{power}-е в лиге", power <= 8 ? Ui.Win : power <= 24 ? Ui.Otl : Ui.Loss);
         F("Атака / оборона", $"{atk}-я / {dfn}-я");
         F("Шайбы", $"{row.Gf}–{row.Ga} ({Ui.Signed(row.Gf - row.Ga, "0")})");
         F("Серия", string.IsNullOrEmpty(row.Streak) ? "—" : row.Streak);
@@ -88,7 +86,7 @@ public partial class ClubPage : Control
             {
                 var o = C.Preview(next);
                 double p = next.Home == C.UserTeam ? o.PHome : 1 - o.PHome;
-                v2.AddChild(Ui.L($"Ваш следующий матч с ними: {Ui.Date(next.Date)} ({(next.Home == C.UserTeam ? "дома" : "в гостях")}), шанс по модели {Ui.Pct(p)}", 12, Ui.AccentBright));
+                v2.AddChild(Ui.L($"Ваш следующий матч с ними: {Ui.Date(next.Date)} ({(next.Home == C.UserTeam ? "дома" : "в гостях")}), шанс на победу {Ui.Pct(p)}", 12, Ui.AccentBright));
             }
         }
         return v2;

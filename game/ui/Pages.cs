@@ -246,7 +246,7 @@ public partial class SquadPage : Control
         if (_abbr != C.UserTeam)
         {
             var o = C.NextGame(C.UserTeam);
-            head.AddChild(Ui.L($"Сила по модели: {C.Data.Teams.OrderByDescending(x => x.Att - x.Dfn).ToList().IndexOf(t) + 1}-е место в лиге", 12, Ui.Muted));
+            head.AddChild(Ui.L($"Сила по игрокам: {C.PowerRank(t.Abbr).all}-е место в лиге", 12, Ui.Muted));
         }
         else head.AddChild(Ui.L("Щёлкните игрока — профиль. Заголовок колонки — сортировка.", 12, Ui.Dim));
         _box.AddChild(head);

@@ -126,7 +126,7 @@ public partial class MatchScreen : Control
         Line("Победа хозяев в основное время", Ui.Pct(o.PHomeReg));
         Line("Победа гостей в основное время", Ui.Pct(o.PAwayReg));
         if (hs.B2B || aws.B2B) chances.AddChild(Ui.L($"Второй матч за два дня: {string.Join(", ", new[] { aws.B2B ? Away.City : null, hs.B2B ? Home.City : null }.Where(x => x != null))}", 12, Ui.Otl));
-        mid.AddChild(Widget.Make("Шансы по модели", chances));
+        mid.AddChild(Widget.Make("Шансы на победу", chances));
         bool mine = _g.Home == C.UserTeam || _g.Away == C.UserTeam;
         if (mine)
         {

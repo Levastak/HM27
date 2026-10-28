@@ -98,12 +98,14 @@ public sealed class Career
     public List<Message> Messages { get; set; } = new();
     /// <summary>Модель игрока: истинные характеристики, потенциал, характер, знание клуба, форма.</summary>
     public Dictionary<int, PlayerState> Players { get; set; } = new();
+    /// <summary>Сила клубов «снизу вверх» из игроков базы (TeamStrength) — в новых карьерах; старые сохранения — сила модели «Сводки».</summary>
+    public bool BottomUp { get; set; }
 
     [JsonIgnore] public GameData Data { get; private set; }
 
     public static Career New(GameData data, string userTeam, int seed)
     {
-        var c = new Career { Seed = seed, Season = data.Season, UserTeam = userTeam };
+        var c = new Career { Seed = seed, Season = data.Season, UserTeam = userTeam, BottomUp = true };
         c.Attach(data);
         c.Games = ScheduleMaker.Make(data, data.Season, seed);
         c.Today = c.Games.Min(g => g.Date);
@@ -135,6 +137,42 @@ public sealed class Career
 
     /// <summary>Сдвиг силы в плей-офф: + хладнокровие (опыт больших матчей), в пределах, которые не ловит зеркальная проверка.</summary>
     public double DlPlayoff(int id) => Data.PlayerById.TryGetValue(id, out var p) ? PlayerModel.Delta(this, p) + PlayerModel.Composure(this, p) : 0;
+
+    /// <summary>
+    /// Эффект состава тренера: голов за матч забиваем / пропускаем больше (+) или меньше (−), чем со звеньями «как в НХЛ»
+    /// (те же травмы, основной вратарь). Считает тот же расчёт силы, что движок перед матчем.
+    /// </summary>
+    public (double gf, double ga) LineupEffect(string abbr)
+    {
+        var l = Lineups[abbr];
+        double gpg = Data.League.GoalsPerGame * MatchEngine.REG_SHARE;
+        if (!BottomUp)
+        {
+            double dOff = MatchEngine.OffIndex(Data, l, DlBase) - BaseOff[abbr], dDef = MatchEngine.DefIndex(Data, l, DlBase) - BaseDef[abbr];
+            return (MatchEngine.K_FOR * dOff + dDef, -(MatchEngine.K_AGAINST * dOff + dDef));
+        }
+        var def = Lineup.FromTeam(Data, Data.TeamByAbbr[abbr], Injured.ToHashSet());
+        var (a1, d1) = TeamStrength.Live(this, l, l.G1 != 0 ? l.G1 : def.G1, DlBase);
+        var (a0, d0) = TeamStrength.Live(this, def, def.G1, DlBase);
+        return (gpg * (Math.Exp(a1) - Math.Exp(a0)), gpg * (Math.Exp(d1) - Math.Exp(d0)));
+    }
+
+    /// <summary>Сила клуба сейчас (атака, оборона в лог-голах): из игроков текущего состава, без формы; в старых сохранениях — модель.</summary>
+    public (double att, double dfn) Power(string abbr)
+    {
+        var t = Data.TeamByAbbr[abbr];
+        if (!BottomUp) return (t.Att, t.Dfn);
+        var l = Lineups[abbr];
+        return TeamStrength.Live(this, l, l.G1, DlBase);
+    }
+
+    /// <summary>Место клуба в лиге по силе: общей, атаке и обороне.</summary>
+    public (int all, int att, int dfn) PowerRank(string abbr)
+    {
+        var p = Data.Teams.ToDictionary(t => t.Abbr, t => Power(t.Abbr));
+        int R(Func<(double att, double dfn), double> f) => p.OrderByDescending(kv => f(kv.Value)).Select(kv => kv.Key).ToList().IndexOf(abbr) + 1;
+        return (R(x => x.att - x.dfn), R(x => x.att), R(x => -x.dfn));
+    }
 
     /// <summary>Сдвиг силы без формы — для базы калибровки клубов.</summary>
     public double DlBase(int id) => Data.PlayerById.TryGetValue(id, out var p) ? PlayerModel.Delta(this, p, form: false) : 0;
@@ -187,9 +225,21 @@ public sealed class Career
         if (goalie == 0) goalie = l.G1 != 0 ? l.G1 : l.G2;
         if (goalie == 0)   // все вратари в лазарете — выходит кто есть (экстренный вратарь)
             goalie = Data.Roster(abbr).Where(p => p.IsGoalie).OrderByDescending(p => p.Gsax).Select(p => p.Id).FirstOrDefault();
+        Func<int, double> dl = playoff ? DlPlayoff : Dl;
+        if (BottomUp)
+        {
+            // сила клуба из текущего состава: звенья, травмы, форма, рост — всё уже внутри, поэтому поправки
+            // «относительно базы» обнуляются (база = этот же состав), иначе эффект посчитался бы дважды
+            var (att, dfn) = TeamStrength.Live(this, l, goalie, dl);
+            return new MatchSide
+            {
+                Team = Data.TeamByAbbr[abbr], Lineup = l, Goalie = goalie, B2B = b2b, Dl = dl, Att = att, Dfn = dfn,
+                BaseOff = MatchEngine.OffIndex(Data, l, dl), BaseDef = MatchEngine.DefIndex(Data, l, dl), BaseGsax = MatchEngine.GsaxOf(Data, goalie, dl),
+            };
+        }
         return new MatchSide
         {
-            Team = Data.TeamByAbbr[abbr], Lineup = l, BaseOff = BaseOff[abbr], BaseDef = BaseDef[abbr], BaseGsax = BaseGsax[abbr], Goalie = goalie, B2B = b2b, Dl = playoff ? DlPlayoff : Dl,
+            Team = Data.TeamByAbbr[abbr], Lineup = l, BaseOff = BaseOff[abbr], BaseDef = BaseDef[abbr], BaseGsax = BaseGsax[abbr], Goalie = goalie, B2B = b2b, Dl = dl,
         };
     }
 

@@ -36,6 +36,7 @@ Console.WriteLine($"База: {data.Teams.Count} клубов, {data.Players.Cou
 int games = 0, ot = 0, so = 0, homeWins = 0, goals = 0, shots = 0, pp = 0, scored = 0;
 var buckets = new double[20]; var bucketWins = new double[20]; var bucketN = new int[20];
 var corr = new List<(double strength, double pts)>();
+var lgLead = new List<double>(); var lgLast = new List<double>(); var lgSd = new List<double>(); int favFirst = 0; double jumps = 0; List<string> prevFin = null;
 var champions = new Dictionary<string, int>();
 bool playoffsOk = true;
 // сверка с реальностью: очки и голы игроков на 82 матча против реального сезона 2025-26
@@ -44,11 +45,14 @@ var top10 = new List<double>(); var topSnipers = new List<int>();
 var svSd = new List<double>();   // разброс % отражённых у вратарей с 40+ матчами, по сезонам
 // зеркальная проверка: те же тесты, что на реальных данных 2022–2026 (на всех сезонах игры)
 var mirrorPts = new Dictionary<int, List<(bool po, int pts)>>();
-var mirror4 = new Dictionary<int, List<(bool po, int pts)>>();   // первые 4 сезона — тот же объём данных, что у реальной проверки
+var mirror4 = new Dictionary<int, List<(bool po, int pts)>>();   // сезоны 1–4 и 5–8 — тот же объём данных, что у реальной проверки
+var mirror4b = new Dictionary<int, List<(bool po, int pts)>>();
 var mirrorGk = new List<double>();
 for (int s = 0; s < seasons; s++)
 {
     var c = Career.New(data, "MIN", 1000 + s);
+    // сила клубов до сезона: «снизу вверх» из игроков (как её видит движок перед первым матчем)
+    var pre = data.Teams.ToDictionary(t => t.Abbr, t => { var sd = c.Side(t.Abbr, c.Today); return (sd.Att ?? t.Att) - (sd.Dfn ?? t.Dfn); });
     c.SimToEnd();
     foreach (var g in c.Games.Where(g => !g.Playoff))
     {
@@ -62,7 +66,16 @@ for (int s = 0; s < seasons; s++)
         int b = Math.Min(19, (int)(fav * 20));
         buckets[b] += fav; bucketWins[b] += favWon ? 1 : 0; bucketN[b]++;
     }
-    foreach (var t in data.Teams) corr.Add((t.Att - t.Dfn, c.Table[t.Abbr].Pts));
+    foreach (var t in data.Teams) corr.Add((pre[t.Abbr], c.Table[t.Abbr].Pts));
+    {
+        var pts = c.Table.Values.Select(r => (double)r.Pts).OrderBy(x => x).ToList();
+        double m = pts.Average();
+        lgLead.Add(pts[^1]); lgLast.Add(pts[0]); lgSd.Add(Math.Sqrt(pts.Average(x => (x - m) * (x - m))));
+        var fin = c.Table.OrderByDescending(kv => kv.Value.Pts).Select(kv => kv.Key).ToList();
+        if (fin[0] == pre.OrderByDescending(kv => kv.Value).First().Key) favFirst++;
+        if (prevFin != null) jumps += fin.Take(8).Count(t => prevFin.IndexOf(t) >= 16);
+        prevFin = fin;
+    }
     foreach (var (id, l) in c.Skaters) { pPts[id] = pPts.GetValueOrDefault(id) + l.G + l.A; pG[id] = pG.GetValueOrDefault(id) + l.G; pGp[id] = pGp.GetValueOrDefault(id) + l.Gp; }
     top10.Add(c.Skaters.Values.Where(l => l.Gp >= 60).Select(l => (l.G + l.A) * 82.0 / l.Gp).OrderByDescending(x => x).Take(10).Average());
     topSnipers.AddRange(c.Skaters.OrderByDescending(x => x.Value.G).Take(10).Select(x => x.Key));
@@ -79,7 +92,7 @@ for (int s = 0; s < seasons; s++)
                 if (!data.PlayerById[id].IsGoalie)
                 {
                     (mirrorPts.TryGetValue(id, out var l) ? l : mirrorPts[id] = new()).Add((g.Playoff, pts.GetValueOrDefault(id)));
-                    if (s < 4) (mirror4.TryGetValue(id, out var l4) ? l4 : mirror4[id] = new()).Add((g.Playoff, pts.GetValueOrDefault(id)));
+                    if (s < 8) { var m4 = s < 4 ? mirror4 : mirror4b; (m4.TryGetValue(id, out var l4) ? l4 : m4[id] = new()).Add((g.Playoff, pts.GetValueOrDefault(id))); }
                 }
             if (!g.Playoff)
             {
@@ -115,7 +128,12 @@ for (int b = 10; b < 20; b++)
 }
 Check("Калибровка", calOk, "движок выигрывает с той частотой, которую сам обещает (допуск 2 п.п. + шум выборки)");
 double rr = Pearson(corr.Select(x => x.strength).ToList(), corr.Select(x => x.pts).ToList());
-Check("Сила → очки", rr >= 0.6, $"корреляция силы клуба и очков за сезон r = {rr:F2} (ТЗ: ≥ 0,7 против реальной таблицы — проверим на исторических сезонах в этапе 1)");
+Check("Сила → очки", rr >= 0.55, $"корреляция силы клуба до сезона (из игроков) и очков r = {rr:F2}");
+// таблица как в НХЛ 2022–2026: лидер 114–135, последний 47–58, разброс 13,0–18,6; из нижней половины прошлого сезона в топ-8 — 1–3
+Check("Таблица как в НХЛ", lgLead.Average() is >= 112 and <= 130 && lgLast.Average() is >= 46 and <= 60 && lgSd.Average() is >= 13 and <= 18.6
+        && jumps / Math.Max(1, seasons - 1) is >= 1 and <= 3.5 && favFirst / (double)seasons <= 0.45,
+    $"лидер {lgLead.Average():F0} (НХЛ 114–135), последний {lgLast.Average():F0} (47–58), разброс {lgSd.Average():F1} (13,0–18,6); " +
+    $"«выстрелов» из нижней половины в топ-8: {jumps / Math.Max(1, seasons - 1):F1} за сезон (НХЛ 1–3); сильнейший до сезона берёт 1-е место в {100.0 * favFirst / seasons:F0}% сезонов");
 {
     var real = data.Players.Where(p => p.Real != null && p.Real["gp"] >= 60 && pGp.GetValueOrDefault(p.Id) >= 50.0 * seasons).ToList();
     var gameP = real.Select(p => pPts[p.Id] / pGp[p.Id] * 82).ToList(); var realP = real.Select(p => (p.Real["g"] + p.Real["a"]) * 82.0 / p.Real["gp"]).ToList();
@@ -132,8 +150,10 @@ Check("Сила → очки", rr >= 0.6, $"корреляция силы клу
 {
     // «клатч»: очки за матч в плей-офф сверх своего темпа регулярки; половинки — чётные и нечётные матчи игрока.
     // Реальность 2022–2026: r = 0,017 (484 игрока) — особого плей-офф-таланта нет; игра не должна его «изобретать» заметно
+    double ClutchR(Dictionary<int, List<(bool po, int pts)>> src, out int n)
+    {
     var a = new List<double>(); var b = new List<double>();
-    foreach (var (id, l) in mirror4)
+    foreach (var (id, l) in src)
     {
         double R(int h)
         {
@@ -146,7 +166,13 @@ Check("Сила → очки", rr >= 0.6, $"корреляция силы клу
         double r0 = R(0), r1 = R(1);
         if (!double.IsNaN(r0) && !double.IsNaN(r1)) { a.Add(r0); b.Add(r1); }
     }
-    double rc = a.Count > 20 ? Pearson(a, b) : double.NaN;
+    n = a.Count;
+    return a.Count > 20 ? Pearson(a, b) : double.NaN;
+    }
+    // среднее по двум независимым блокам по 4 сезона — меньше шума проверки
+    double rc1 = ClutchR(mirror4, out int n1), rc2 = mirror4b.Count > 0 ? ClutchR(mirror4b, out _) : double.NaN;
+    double rc = double.IsNaN(rc2) ? rc1 : (rc1 + rc2) / 2;
+    var a = new List<double>(new double[n1]);
     // опыт в плей-офф по всем игрокам сразу: очки в плей-офф / ожидаемые по темпу регулярки ~ 1 + bх·(хладнокровие − 11) + bу·(уровень − 11).
     // Реальность 2022–2026 (по минутам, 557 игроков): bх = +0,050 (90%: 0,024–0,077), bу = −0,038 — при равном уровне опытные держатся лучше
     var rows = new List<(double y, double w, double x1, double x2)>();

@@ -177,7 +177,7 @@ public partial class HubScreen : Control
             h.AddChild(new TeamBadge(opp, 64));
             h.AddChild(Ui.Expand(Ui.V(4, Ui.L($"{(home ? "" : "@ ")}{opp.Name}", 20, Ui.Text, Ui.Bold),
                 Ui.L($"{Ui.Date(next.Date)}{(next.Playoff ? " · плей-офф" : "")}", 14, Ui.Muted),
-                Ui.H(10, Ui.L("Шанс на победу по модели", 13, Ui.Muted), Ui.Bar(p, Ui.AccentBright, 160, 8), Ui.L(Ui.Pct(p), 15, Ui.Text, Ui.Bold)))));
+                Ui.H(10, Ui.L("Шанс на победу", 13, Ui.Muted), Ui.Bar(p, Ui.AccentBright, 160, 8), Ui.L(Ui.Pct(p), 15, Ui.Text, Ui.Bold)))));
             left.AddChild(Section("Следующий матч", h));
         }
         // Последние матчи

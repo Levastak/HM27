@@ -13,6 +13,8 @@ public sealed class MatchSide
     public bool B2B;
     /// <summary>Сдвиг силы игрока (ед. шкалы 1–20): истинный уровень − уровень по данным + форма. null — без модели игрока.</summary>
     public Func<int, double> Dl;
+    /// <summary>Сила клуба «снизу вверх» (из игроков базы); null — сила модели «Сводки» из данных клуба.</summary>
+    public double? Att, Dfn;
 }
 
 public sealed class GoalEvent
@@ -131,8 +133,8 @@ public static class MatchEngine
     {
         double mu = Math.Log(data.League.GoalsPerGame * REG_SHARE);
         double ha = neutral ? 0 : HA;
-        double bh = Math.Exp(mu + home.Team.Att + away.Team.Dfn + ha);
-        double ba = Math.Exp(mu + away.Team.Att + home.Team.Dfn - ha);
+        double bh = Math.Exp(mu + (home.Att ?? home.Team.Att) + (away.Dfn ?? away.Team.Dfn) + ha);
+        double ba = Math.Exp(mu + (away.Att ?? away.Team.Att) + (home.Dfn ?? home.Team.Dfn) - ha);
 
         double dOffH = OffIndex(data, home.Lineup, home.Dl) - home.BaseOff, dOffA = OffIndex(data, away.Lineup, away.Dl) - away.BaseOff;
         double dDefH = DefIndex(data, home.Lineup, home.Dl) - home.BaseDef, dDefA = DefIndex(data, away.Lineup, away.Dl) - away.BaseDef;
