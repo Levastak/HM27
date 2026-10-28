@@ -133,6 +133,9 @@ public sealed class Career
     /// <summary>Сдвиг силы игрока для движка (модель игрока).</summary>
     public double Dl(int id) => Data.PlayerById.TryGetValue(id, out var p) ? PlayerModel.Delta(this, p) : 0;
 
+    /// <summary>Сдвиг силы в плей-офф: + хладнокровие (опыт больших матчей), в пределах, которые не ловит зеркальная проверка.</summary>
+    public double DlPlayoff(int id) => Data.PlayerById.TryGetValue(id, out var p) ? PlayerModel.Delta(this, p) + PlayerModel.Composure(this, p) : 0;
+
     /// <summary>Сдвиг силы без формы — для базы калибровки клубов.</summary>
     public double DlBase(int id) => Data.PlayerById.TryGetValue(id, out var p) ? PlayerModel.Delta(this, p, form: false) : 0;
 
@@ -166,7 +169,7 @@ public sealed class Career
     public ScheduledGame LastGame(string t) => Games.Where(g => g.Played && (g.Home == t || g.Away == t)).OrderByDescending(g => g.Date).FirstOrDefault();
     public bool PlayedYesterday(string t, DateOnly d) => Games.Any(g => g.Date == d.AddDays(-1) && (g.Home == t || g.Away == t));
 
-    public MatchSide Side(string abbr, DateOnly d, bool forPreview = false)
+    public MatchSide Side(string abbr, DateOnly d, bool forPreview = false, bool playoff = false)
     {
         var l = Lineups[abbr];
         bool b2b = PlayedYesterday(abbr, d);
@@ -186,11 +189,11 @@ public sealed class Career
             goalie = Data.Roster(abbr).Where(p => p.IsGoalie).OrderByDescending(p => p.Gsax).Select(p => p.Id).FirstOrDefault();
         return new MatchSide
         {
-            Team = Data.TeamByAbbr[abbr], Lineup = l, BaseOff = BaseOff[abbr], BaseDef = BaseDef[abbr], BaseGsax = BaseGsax[abbr], Goalie = goalie, B2B = b2b, Dl = Dl,
+            Team = Data.TeamByAbbr[abbr], Lineup = l, BaseOff = BaseOff[abbr], BaseDef = BaseDef[abbr], BaseGsax = BaseGsax[abbr], Goalie = goalie, B2B = b2b, Dl = playoff ? DlPlayoff : Dl,
         };
     }
 
-    public MatchOdds Preview(ScheduledGame g) => MatchEngine.Odds(Data, Side(g.Home, g.Date, true), Side(g.Away, g.Date, true), g.Playoff);
+    public MatchOdds Preview(ScheduledGame g) => MatchEngine.Odds(Data, Side(g.Home, g.Date, true, g.Playoff), Side(g.Away, g.Date, true, g.Playoff), g.Playoff);
 
     // ------------------------------------------------------------------ симуляция
     Random RngFor(ScheduledGame g) => new(unchecked(Seed * 1_000_003 ^ g.Id));   // детерминированно (HashCode в .NET случаен по процессам)
@@ -211,7 +214,7 @@ public sealed class Career
                 Lineups[t] = l;
             }
         }
-        var h = Side(g.Home, g.Date); var a = Side(g.Away, g.Date);
+        var h = Side(g.Home, g.Date, playoff: g.Playoff); var a = Side(g.Away, g.Date, playoff: g.Playoff);
         var r = MatchEngine.Play(Data, h, a, RngFor(g), g.Playoff);
         g.Result = r;
         bool mine = g.Home == UserTeam || g.Away == UserTeam;

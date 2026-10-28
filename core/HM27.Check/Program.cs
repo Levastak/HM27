@@ -42,6 +42,10 @@ bool playoffsOk = true;
 var pPts = new Dictionary<int, double>(); var pG = new Dictionary<int, double>(); var pGp = new Dictionary<int, double>();
 var top10 = new List<double>(); var topSnipers = new List<int>();
 var svSd = new List<double>();   // разброс % отражённых у вратарей с 40+ матчами, по сезонам
+// зеркальная проверка: те же тесты, что на реальных данных 2022–2026 (на всех сезонах игры)
+var mirrorPts = new Dictionary<int, List<(bool po, int pts)>>();
+var mirror4 = new Dictionary<int, List<(bool po, int pts)>>();   // первые 4 сезона — тот же объём данных, что у реальной проверки
+var mirrorGk = new List<double>();
 for (int s = 0; s < seasons; s++)
 {
     var c = Career.New(data, "MIN", 1000 + s);
@@ -62,6 +66,33 @@ for (int s = 0; s < seasons; s++)
     foreach (var (id, l) in c.Skaters) { pPts[id] = pPts.GetValueOrDefault(id) + l.G + l.A; pG[id] = pG.GetValueOrDefault(id) + l.G; pGp[id] = pGp.GetValueOrDefault(id) + l.Gp; }
     top10.Add(c.Skaters.Values.Where(l => l.Gp >= 60).Select(l => (l.G + l.A) * 82.0 / l.Gp).OrderByDescending(x => x).Take(10).Average());
     topSnipers.AddRange(c.Skaters.OrderByDescending(x => x.Value.G).Take(10).Select(x => x.Key));
+    if (s < 10)
+    {
+        var byGk = new Dictionary<int, List<(int sa, int ga)>>();
+        foreach (var g in c.Games.Where(g => g.Result != null).OrderBy(g => g.Date).ThenBy(g => g.Id))
+        {
+            var r = g.Result;
+            var pts = new Dictionary<int, int>();
+            foreach (var e in r.Goals.Where(e => e.Kind != "so"))
+                foreach (var id in new[] { e.Scorer, e.A1, e.A2 }) if (id != 0) pts[id] = pts.GetValueOrDefault(id) + 1;
+            foreach (var id in r.HomeDressed.Concat(r.AwayDressed))
+                if (!data.PlayerById[id].IsGoalie)
+                {
+                    (mirrorPts.TryGetValue(id, out var l) ? l : mirrorPts[id] = new()).Add((g.Playoff, pts.GetValueOrDefault(id)));
+                    if (s < 4) (mirror4.TryGetValue(id, out var l4) ? l4 : mirror4[id] = new()).Add((g.Playoff, pts.GetValueOrDefault(id)));
+                }
+            if (!g.Playoff)
+            {
+                int gaH = r.Goals.Count(e => e.Team == g.Away && e.Kind != "so" && e.Kind != "en"), gaA = r.Goals.Count(e => e.Team == g.Home && e.Kind != "so" && e.Kind != "en");
+                (byGk.TryGetValue(r.HomeGoalie, out var a) ? a : byGk[r.HomeGoalie] = new()).Add((r.AwayShots, gaH));
+                (byGk.TryGetValue(r.AwayGoalie, out var b) ? b : byGk[r.AwayGoalie] = new()).Add((r.HomeShots, gaA));
+            }
+        }
+        var halves = byGk.Values.Where(l => l.Count >= 40).Select(l => (
+            a: 1 - l.Where((_, i) => i % 2 == 0).Sum(x => x.ga) / (double)l.Where((_, i) => i % 2 == 0).Sum(x => x.sa),
+            b: 1 - l.Where((_, i) => i % 2 == 1).Sum(x => x.ga) / (double)l.Where((_, i) => i % 2 == 1).Sum(x => x.sa))).ToList();
+        if (halves.Count > 5) mirrorGk.Add(Pearson(halves.Select(x => x.a).ToList(), halves.Select(x => x.b).ToList()));
+    }
     var sv = c.Goalies.Values.Where(x => x.Gp >= 40).Select(x => x.SvPct).ToList();
     if (sv.Count > 5) svSd.Add(Math.Sqrt(sv.Average(x => Math.Pow(x - sv.Average(), 2))));
     if (c.Champion == null || c.Bracket.Count != 15 || c.Games.Count(g => g.Playoff) < 15 * 4) playoffsOk = false;
@@ -97,6 +128,43 @@ Check("Сила → очки", rr >= 0.6, $"корреляция силы клу
     Check("Сверка с реальностью: игроки", rP >= 0.8 && rG >= 0.8 && Math.Abs(gameTop / realTop - 1) <= 0.10 && fringe.Count == 0,
         $"корреляция с сезоном 2025-26 ({real.Count} игроков): очки r = {rP:F2}, голы r = {rG:F2}; средние на 82: очки {gameP.Average():F1}/{realP.Average():F1}; " +
         $"топ-10 бомбардиров {gameTop:F0}/{realTop:F0} очков на 82 ({(gameTop / realTop - 1) * 100:+0;-0}%); игроки с малым временем в топ-10 снайперов: {(fringe.Count == 0 ? "нет" : string.Join(", ", fringe.Take(4)))}");
+}
+{
+    // «клатч»: очки за матч в плей-офф сверх своего темпа регулярки; половинки — чётные и нечётные матчи игрока.
+    // Реальность 2022–2026: r = 0,017 (484 игрока) — особого плей-офф-таланта нет; игра не должна его «изобретать» заметно
+    var a = new List<double>(); var b = new List<double>();
+    foreach (var (id, l) in mirror4)
+    {
+        double R(int h)
+        {
+            var x = l.Where((_, i) => i % 2 == h).ToList();
+            var reg = x.Where(t => !t.po).ToList(); var po = x.Where(t => t.po).ToList();
+            if (po.Count < 4 || reg.Count < 20) return double.NaN;
+            double exp = po.Count * reg.Average(t => t.pts);
+            return (po.Sum(t => t.pts) - exp) / Math.Sqrt(Math.Max(exp, 1e-3));
+        }
+        double r0 = R(0), r1 = R(1);
+        if (!double.IsNaN(r0) && !double.IsNaN(r1)) { a.Add(r0); b.Add(r1); }
+    }
+    double rc = a.Count > 20 ? Pearson(a, b) : double.NaN;
+    // опыт в плей-офф по всем игрокам сразу: очки в плей-офф / ожидаемые по темпу регулярки ~ 1 + bх·(хладнокровие − 11) + bу·(уровень − 11).
+    // Реальность 2022–2026 (по минутам, 557 игроков): bх = +0,050 (90%: 0,024–0,077), bу = −0,038 — при равном уровне опытные держатся лучше
+    var rows = new List<(double y, double w, double x1, double x2)>();
+    foreach (var (id, l) in mirrorPts)
+    {
+        var reg = l.Where(t => !t.po).ToList(); var po = l.Where(t => t.po).ToList();
+        if (po.Count < 5 || reg.Count < 60) continue;
+        var p = data.PlayerById[id];
+        double exp = po.Count * reg.Average(t => t.pts);
+        if (exp <= 0) continue;
+        rows.Add((po.Sum(t => t.pts) / exp, exp, p.AttrEst("cmp") - 11, p.Level - 11));
+    }
+    var bx = Wls(rows);
+    double rg = mirrorGk.Count > 0 ? mirrorGk.Average() : double.NaN;
+    Check("Зеркальная проверка", rc <= 0.12 && rg is >= 0.15 and <= 0.5 && bx.b1 is >= -0.01 and <= 0.09,
+        $"те же тесты, что на реальных данных: «клатч» в плей-офф r = {rc:F3} ({a.Count} игроков, 4 сезона; НХЛ 0,017 ± 0,05, предел 0,12); " +
+        $"опыт в плей-офф: +{bx.b1:F3} очков на единицу хладнокровия при равном уровне (НХЛ +0,050, 90%: 0,024–0,077), уровень {bx.b2:+0.000;-0.000} (НХЛ −0,038); " +
+        $"вратари, % отражённых в чётных и нечётных матчах сезона r = {rg:F2} (НХЛ 0,19–0,55, в среднем 0,34)");
 }
 Check("Вратари: разброс сезона", svSd.Average() is >= 0.008 and <= 0.013,
     $"стандартное отклонение % отражённых у вратарей с 40+ матчами {svSd.Average():F4} (НХЛ 2022–2026: 0,009–0,013)");
@@ -293,6 +361,24 @@ Check("Плей-офф", playoffsOk, $"15 серий и чемпион в каж
 
 Console.WriteLine(fails.Count == 0 ? "\nВсе критерии выполнены." : $"\nНе выполнено: {string.Join(", ", fails)}");
 return fails.Count == 0 ? 0 : 1;
+
+static (double b0, double b1, double b2) Wls(List<(double y, double w, double x1, double x2)> r)
+{
+    // взвешенный МНК для y ~ b0 + b1·x1 + b2·x2 (нормальные уравнения 3×3)
+    double[,] A = new double[3, 4];
+    foreach (var (y, w, x1, x2) in r)
+    {
+        double[] x = { 1, x1, x2 };
+        for (int i = 0; i < 3; i++) { for (int j = 0; j < 3; j++) A[i, j] += w * x[i] * x[j]; A[i, 3] += w * x[i] * y; }
+    }
+    for (int i = 0; i < 3; i++)
+    {
+        int piv = i; for (int k = i + 1; k < 3; k++) if (Math.Abs(A[k, i]) > Math.Abs(A[piv, i])) piv = k;
+        for (int j = 0; j < 4; j++) (A[i, j], A[piv, j]) = (A[piv, j], A[i, j]);
+        for (int k = 0; k < 3; k++) if (k != i) { double f = A[k, i] / A[i, i]; for (int j = 0; j < 4; j++) A[k, j] -= f * A[i, j]; }
+    }
+    return (A[0, 3] / A[0, 0], A[1, 3] / A[1, 1], A[2, 3] / A[2, 2]);
+}
 
 static double Pearson(List<double> x, List<double> y)
 {

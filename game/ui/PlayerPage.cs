@@ -195,7 +195,7 @@ public partial class PlayerPage : Control
         ab.AddChild(Ui.L("ЛИЧНОСТЬ", 10, Ui.Dim, Ui.Bold));
         ab.AddChild(Ui.L(st == null || st.Know < 0.5f ? "Нужно больше наблюдений" : PlayerModel.Personality(st), 13, Ui.Text, Ui.Semi)
             .Also(l => l.TooltipText = st == null || st.Know < 0.5f ? "Характер станет известен, когда клуб лучше узнает игрока" :
-                $"Профессионализм: {PlayerModel.Word(st.Prof)}\nАмбиции: {PlayerModel.Word(st.Amb)}\nЛояльность: {PlayerModel.Word(st.Loy)}\n" +
+                $"{PlayerModel.PersonalityInfo(PlayerModel.Personality(st))}\n\nПрофессионализм: {PlayerModel.Word(st.Prof)}\nАмбиции: {PlayerModel.Word(st.Amb)}\nЛояльность: {PlayerModel.Word(st.Loy)}\n" +
                 $"Лидерство: {PlayerModel.Word(st.Lead)}\nСамообладание: {PlayerModel.Word(st.Temp)}\nАдаптивность: {PlayerModel.Word(st.Adapt)}\nТравмоустойчивость: {PlayerModel.Word(st.Inj)}"));
         ab.AddChild(Ui.Spacer(false, 6));
         ab.AddChild(Ui.L("ЛУЧШАЯ РОЛЬ", 10, Ui.Dim, Ui.Bold));
