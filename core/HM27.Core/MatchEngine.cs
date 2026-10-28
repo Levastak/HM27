@@ -15,6 +15,8 @@ public sealed class MatchSide
     public Func<int, double> Dl;
     /// <summary>Сила клуба «снизу вверх» (из игроков базы); null — сила модели «Сводки» из данных клуба.</summary>
     public double? Att, Dfn;
+    /// <summary>Характеристика игрока на матч (истинная + форма); null — оценка из данных. Нужна движку по сменам.</summary>
+    public Func<PlayerData, string, double> Attr;
 }
 
 public sealed class GoalEvent
@@ -25,7 +27,9 @@ public sealed class GoalEvent
     public int Scorer { get; set; }
     public int A1 { get; set; }
     public int A2 { get; set; }
-    public string Kind { get; set; } = "ev"; // ev | pp | sh | so (победный буллит)
+    public string Kind { get; set; } = "ev"; // ev | pp | sh | en | ev6 | so (победный буллит)
+    /// <summary>Тип броска (движок по сменам): «кистевой», «щелчок», «добивание»…</summary>
+    public string Shot { get; set; }
 }
 
 public sealed class MatchResult
@@ -48,6 +52,9 @@ public sealed class MatchResult
     public Dictionary<int, double> Ratings { get; set; } = new();
     /// <summary>Хроника матча: броски, сейвы, удаления — постановка, согласованная с итогом движка.</summary>
     public List<MatchEvent> Events { get; set; } = new();
+    /// <summary>Протокол игроков (движок по сменам): минуты, броски, блоки, +/−, штраф; у вратарей — броски и ожидаемые голы.
+    /// Хранится только для своих матчей (как хроника), в сезонную статистику попадает всегда.</summary>
+    public Dictionary<int, PlayerBox> Box { get; set; } = new();
     /// <summary>Вратарь снят раньше обычного (стиль игры), и это что-то изменило.</summary>
     public string PullNote { get; set; }
 }
@@ -129,7 +136,7 @@ public static class MatchEngine
     public static double GsaxOf(GameData data, int id, Func<int, double> dl = null) =>
         id != 0 && data.PlayerById.TryGetValue(id, out var g) ? g.Gsax + PlayerModel.G_LVL * (dl?.Invoke(id) ?? 0) : -0.12;
 
-    public static MatchOdds Odds(GameData data, MatchSide home, MatchSide away, bool playoff = false, bool neutral = false)
+    public static MatchOdds Odds(GameData data, MatchSide home, MatchSide away, bool playoff = false, bool neutral = false, double sharp = SHARP)
     {
         double mu = Math.Log(data.League.GoalsPerGame * REG_SHARE);
         double ha = neutral ? 0 : HA;
@@ -162,7 +169,7 @@ public static class MatchEngine
         double phr = phr0 * (1 - tie) / (phr0 + par0), par = par0 * (1 - tie) / (phr0 + par0);
         double q = Math.Clamp((neutral ? 0.5 : OT_HOME) + OT_K * (phr - par), 0.2, 0.8);
         double ph = phr + tie * q;
-        double z = SHARP * Math.Log(ph / (1 - ph));
+        double z = sharp * Math.Log(ph / (1 - ph));
         ph = 1 / (1 + Math.Exp(-z));
         // v4.3: основное время согласовано с итоговой вероятностью
         double phrF = Math.Min(1 - tie, Math.Max(0, ph - tie * q));

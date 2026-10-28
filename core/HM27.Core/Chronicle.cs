@@ -14,6 +14,8 @@ public static class Chronicle
 
     public static void Build(GameData data, ScheduledGame g, MatchSide home, MatchSide away, MatchResult r, Random rng)
     {
+        // движок по сменам сам записал события — остаются оценки
+        if (r.Box.Count > 0) { Rate(data, g, r); return; }
         var ev = new List<MatchEvent>();
         int endT = 3600;
         var ot = r.Goals.Where(e => e.Period >= 4 && e.Kind != "so").ToList();
@@ -97,18 +99,26 @@ public static class Chronicle
                     if ((home ? r.HomeGoalie : r.AwayGoalie) != id) continue;
                     int sh = home ? r.AwayShots : r.HomeShots;
                     int conceded = (home ? r.AwayGoals : r.HomeGoals) - r.Goals.Count(e => e.Team != team && (e.Kind == "so" || e.Kind == "en"));
-                    double exp = sh * 0.098;
+                    // движок по сменам знает ожидаемые голы по броскам в створ; иначе — 9,8% бросков
+                    double exp = r.Box.TryGetValue(id, out var gb) ? gb.Xga : sh * 0.098;
                     v = 6.7 + 0.42 * (exp - conceded) + (conceded == 0 ? 0.6 : 0) + (won ? 0.25 : -0.15);
                 }
                 else
                 {
                     int goals = r.Goals.Count(e => e.Scorer == id && e.Kind != "so");
                     int assists = r.Goals.Count(e => e.A1 == id || e.A2 == id);
-                    int shots = r.Events.Count(e => e.P1 == id && (e.Kind == "shot" || e.Kind == "goal"));
-                    int blocks = r.Events.Count(e => e.Kind == "block" && e.P2 == id);
-                    int pens = r.Events.Count(e => e.Kind == "pen" && e.P1 == id);
-                    // «плюс-минус» по голам в равных составах, пока игрок вероятно на льду (по минутам)
-                    v = 6.55 + 0.85 * goals + 0.5 * assists + 0.07 * shots + 0.06 * blocks - 0.15 * pens + (won ? 0.25 : -0.2) + 0.04 * (gf - ga);
+                    if (r.Box.TryGetValue(id, out var b))
+                    {
+                        // протокол движка по сменам: +/− на льду вместо разницы шайб команды
+                        v = 6.55 + 0.85 * goals + 0.5 * assists + 0.07 * b.S + 0.06 * b.Blk - 0.075 * b.Pim + (won ? 0.25 : -0.2) + 0.12 * b.Pm;
+                    }
+                    else
+                    {
+                        int shots = r.Events.Count(e => e.P1 == id && (e.Kind == "shot" || e.Kind == "goal"));
+                        int blocks = r.Events.Count(e => e.Kind == "block" && e.P2 == id);
+                        int pens = r.Events.Count(e => e.Kind == "pen" && e.P1 == id);
+                        v = 6.55 + 0.85 * goals + 0.5 * assists + 0.07 * shots + 0.06 * blocks - 0.15 * pens + (won ? 0.25 : -0.2) + 0.04 * (gf - ga);
+                    }
                 }
                 r.Ratings[id] = Math.Round(Math.Clamp(v, 5.0, 10.0), 1);
             }

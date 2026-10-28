@@ -1,0 +1,339 @@
+{
+ "games": 5248,
+ "goals_per_game": 6.159,
+ "states": {
+  "5v5": {
+   "min_per_team_game": 47.936,
+   "gf60": 2.547,
+   "cf60": 58.65,
+   "sf60": 28.61,
+   "block_share": 0.279,
+   "miss_share": 0.234,
+   "sh_pct": 0.089,
+   "goals_per_team_game": 2.035
+  },
+  "pp": {
+   "min_per_team_game": 5.147,
+   "gf60": 7.059,
+   "cf60": 94.6,
+   "sf60": 49.2,
+   "block_share": 0.247,
+   "miss_share": 0.233,
+   "sh_pct": 0.1435,
+   "goals_per_team_game": 0.606
+  },
+  "pk": {
+   "min_per_team_game": 5.147,
+   "gf60": 0.859,
+   "cf60": 13.27,
+   "sf60": 9.4,
+   "block_share": 0.118,
+   "miss_share": 0.174,
+   "sh_pct": 0.0913,
+   "goals_per_team_game": 0.074
+  },
+  "4v4": {
+   "min_per_team_game": 0.908,
+   "gf60": 2.425,
+   "cf60": 39.76,
+   "sf60": 22.22,
+   "block_share": 0.223,
+   "miss_share": 0.218,
+   "sh_pct": 0.1091,
+   "goals_per_team_game": 0.037
+  },
+  "3v3": {
+   "min_per_team_game": 0.612,
+   "gf60": 6.269,
+   "cf60": 54.21,
+   "sf60": 33.95,
+   "block_share": 0.162,
+   "miss_share": 0.212,
+   "sh_pct": 0.1846,
+   "goals_per_team_game": 0.064
+  },
+  "en_against": {
+   "min_per_team_game": 0.482,
+   "gf60": 10.207,
+   "cf60": 187.09,
+   "sf60": 83.46,
+   "block_share": 0.326,
+   "miss_share": 0.228,
+   "sh_pct": 0.1223,
+   "goals_per_team_game": 0.082
+  },
+  "en_for": {
+   "min_per_team_game": 0.482,
+   "gf60": 22.751,
+   "cf60": 52.53,
+   "sf60": 22.76,
+   "block_share": 0.222,
+   "miss_share": 0.344,
+   "sh_pct": 0.9995,
+   "goals_per_team_game": 0.183
+  }
+ },
+ "pp_per_team_game": 2.827,
+ "pp_pct": 0.2142,
+ "penalty_duration": {
+  "2": 34624,
+  "5": 2618,
+  "10": 926,
+  "4": 428,
+  "0": 178
+ },
+ "shot_types": {
+  "wrist": {
+   "share": 0.5187,
+   "sh_pct": 0.0837
+  },
+  "snap": {
+   "share": 0.1936,
+   "sh_pct": 0.1199
+  },
+  "slap": {
+   "share": 0.1087,
+   "sh_pct": 0.0774
+  },
+  "backhand": {
+   "share": 0.076,
+   "sh_pct": 0.1108
+  },
+  "tip-in": {
+   "share": 0.0698,
+   "sh_pct": 0.1471
+  },
+  "deflected": {
+   "share": 0.0171,
+   "sh_pct": 0.1533
+  },
+  "wrap-around": {
+   "share": 0.0076,
+   "sh_pct": 0.0774
+  },
+  "poke": {
+   "share": 0.0047,
+   "sh_pct": 0.1357
+  },
+  "bat": {
+   "share": 0.0029,
+   "sh_pct": 0.221
+  }
+ },
+ "score_effects_5v5": {
+  "-3": {
+   "cf_share": 0.5582,
+   "time_share": 0.0636
+  },
+  "-2": {
+   "cf_share": 0.5481,
+   "time_share": 0.0828
+  },
+  "-1": {
+   "cf_share": 0.5324,
+   "time_share": 0.1769
+  },
+  "0": {
+   "cf_share": 0.5,
+   "time_share": 0.3536
+  },
+  "1": {
+   "cf_share": 0.4676,
+   "time_share": 0.1769
+  },
+  "2": {
+   "cf_share": 0.4519,
+   "time_share": 0.0828
+  },
+  "3": {
+   "cf_share": 0.4418,
+   "time_share": 0.0636
+  }
+ },
+ "score_goals_5v5": {
+  "-3": 2.383,
+  "-2": 2.65,
+  "-1": 2.622,
+  "0": 2.486,
+  "1": 2.591,
+  "2": 2.558,
+  "3": 2.571
+ },
+ "zones_5v5": {
+  "D_close": {
+   "share": 0.0592,
+   "block": 0.752,
+   "miss": 0.077,
+   "sh_pct_on_goal": 0.1471,
+   "g_per_att": 0.0252
+  },
+  "D_far": {
+   "share": 0.1991,
+   "block": 0.186,
+   "miss": 0.288,
+   "sh_pct_on_goal": 0.027,
+   "g_per_att": 0.0142
+  },
+  "D_mid": {
+   "share": 0.0898,
+   "block": 0.53,
+   "miss": 0.138,
+   "sh_pct_on_goal": 0.0885,
+   "g_per_att": 0.0294
+  },
+  "F_close": {
+   "share": 0.2596,
+   "block": 0.241,
+   "miss": 0.24,
+   "sh_pct_on_goal": 0.1684,
+   "g_per_att": 0.0874
+  },
+  "F_far": {
+   "share": 0.1347,
+   "block": 0.133,
+   "miss": 0.253,
+   "sh_pct_on_goal": 0.0187,
+   "g_per_att": 0.0114
+  },
+  "F_mid": {
+   "share": 0.2576,
+   "block": 0.268,
+   "miss": 0.244,
+   "sh_pct_on_goal": 0.0974,
+   "g_per_att": 0.0475
+  },
+  "G_far": {
+   "share": 0.0,
+   "block": 0.0,
+   "miss": 0.059,
+   "sh_pct_on_goal": 0.0,
+   "g_per_att": 0.0
+  },
+  "G_mid": {
+   "share": 0.0,
+   "block": 1.0,
+   "miss": 0.0,
+   "sh_pct_on_goal": 0.0,
+   "g_per_att": 0.0
+  }
+ },
+ "rebounds_5v5": {
+  "share_of_unblocked": 0.0801,
+  "g_per_att": 0.1074
+ },
+ "goals_by_period": {
+  "1": 1.767,
+  "2": 2.092,
+  "3": 2.147,
+  "4": 0.152
+ },
+ "assists": {
+  "0": 0.0644,
+  "1": 0.1799,
+  "2": 0.7557
+ },
+ "ot_share": 0.2231,
+ "so_share_of_ot": 0.3185,
+ "home_win_excl_so": 0.5405,
+ "reg_margin": {
+  "1": 0.2281,
+  "2": 0.2504,
+  "3": 0.3049,
+  "4": 0.1405,
+  "5": 0.0498,
+  "6": 0.0262
+ },
+ "shift_sec": {
+  "F": {
+   "mean": 47.3,
+   "median": 46
+  },
+  "D": {
+   "mean": 48.8,
+   "median": 46
+  }
+ },
+ "shifts_per_game": {
+  "F": 19.1,
+  "D": 23.5
+ },
+ "toi_by_rank": {
+  "F": [
+   20.6,
+   19.46,
+   18.5,
+   17.5,
+   16.55,
+   15.65,
+   14.66,
+   13.78,
+   12.79,
+   11.29,
+   10.12,
+   8.66
+  ],
+  "D": [
+   24.44,
+   22.29,
+   20.45,
+   18.77,
+   15.98,
+   13.53
+  ]
+ },
+ "per_game": {
+  "hits": 43.6,
+  "takeaways": 11.9,
+  "giveaways": 23.4
+ },
+ "season_players": {
+  "20222023": {
+   "goals_top1": 64,
+   "goals_top10": 50.3,
+   "g30": 54,
+   "g40": 19,
+   "g50": 5,
+   "pts_top1": 153,
+   "pts_top10": 114.7,
+   "p60": 95,
+   "p80": 31,
+   "p100": 11
+  },
+  "20232024": {
+   "goals_top1": 69,
+   "goals_top10": 51.1,
+   "g30": 47,
+   "g40": 17,
+   "g50": 4,
+   "pts_top1": 144,
+   "pts_top10": 116.4,
+   "p60": 93,
+   "p80": 29,
+   "p100": 9
+  },
+  "20242025": {
+   "goals_top1": 52,
+   "goals_top10": 43.0,
+   "g30": 46,
+   "g40": 8,
+   "g50": 1,
+   "pts_top1": 121,
+   "pts_top10": 102.5,
+   "p60": 85,
+   "p80": 28,
+   "p100": 6
+  },
+  "20252026": {
+   "goals_top1": 53,
+   "goals_top10": 46.0,
+   "g30": 45,
+   "g40": 15,
+   "g50": 2,
+   "pts_top1": 138,
+   "pts_top10": 110.7,
+   "p60": 84,
+   "p80": 26,
+   "p100": 8
+  }
+ }
+}

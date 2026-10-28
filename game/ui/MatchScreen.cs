@@ -351,7 +351,7 @@ public partial class MatchScreen : Control
                 return ($"{S(e.P1)}: {e.Note} — {S(e.P2)} {sv[h]}", Ui.Text, null, "");
             case "miss": return ($"{S(e.P1)} бросает — {e.Note}", Ui.Muted, null, "");
             case "block": return ($"{S(e.P1)} бросает — блокирует {S(e.P2)}", Ui.Muted, null, "");
-            case "pen": return ($"Удаление: {N(e.P1)}, 2 минуты ({e.Note})", Ui.Otl, Ui.Semi, "");
+            case "pen": int pm = e.P2 is 4 or 5 ? e.P2 : 2; return ($"Удаление: {N(e.P1)}, {pm} {(pm == 5 ? "минут" : "минуты")} ({e.Note})", Ui.Otl, Ui.Semi, "");
             default: return (e.Kind, Ui.Muted, null, "");
         }
     }
@@ -415,10 +415,10 @@ public partial class MatchScreen : Control
         center.AddChild(act);
         row.AddChild(Ui.Scroll(center).Also(s => s.SizeFlagsHorizontal = SizeFlags.ExpandFill));
 
-        var right = Ui.V(12); right.CustomMinimumSize = new Vector2(330, 0);
+        var right = Ui.V(12); right.CustomMinimumSize = new Vector2(440, 0);
         foreach (var (t, dressed) in new[] { (_g.Away, r.AwayDressed), (_g.Home, r.HomeDressed) })
-            right.AddChild(Widget.Make($"Оценки: {C.Team(t).City}", RatingsTable(dressed), null, null, 0));
-        row.AddChild(Ui.Scroll(right).Also(s => s.CustomMinimumSize = new Vector2(340, 0)));
+            right.AddChild(Widget.Make($"Протокол: {C.Team(t).City}", RatingsTable(dressed), null, null, 0));
+        row.AddChild(Ui.Scroll(right).Also(s => s.CustomMinimumSize = new Vector2(450, 0)));
     }
 
     Control RatingsTable(List<int> dressed)
@@ -431,6 +431,9 @@ public partial class MatchScreen : Control
             new() { Title = "Игрок", Width = 0, Align = HorizontalAlignment.Left, Cell = p => Ui.L(p.NameRu, 12) },
             new() { Title = "Поз", Width = 28, Cell = p => Ui.L(Ui.PosRu(p.Pos), 11, Ui.Muted) },
             new() { Title = "Г+П", Width = 40, Cell = p => { int g = r.Goals.Count(e => e.Scorer == p.Id && e.Kind != "so"), a = r.Goals.Count(e => e.A1 == p.Id || e.A2 == p.Id); return Ui.L(g + a > 0 ? $"{g}+{a}" : "", 12, Ui.Text, Ui.Semi); } },
+            new() { Title = "Вр", Width = 44, Cell = p => Ui.L(r.Box.TryGetValue(p.Id, out var b) ? Ui.Toi(b.Toi) : "", 11, Ui.Muted) },
+            new() { Title = "Бр", Width = 26, Cell = p => Ui.L(r.Box.TryGetValue(p.Id, out var b) && !p.IsGoalie ? $"{b.S}" : "", 11, Ui.Muted) },
+            new() { Title = "+/−", Width = 32, Cell = p => Ui.L(r.Box.TryGetValue(p.Id, out var b) && !p.IsGoalie ? Ui.Signed(b.Pm, "0") : "", 11, Ui.Muted) },
             new() { Title = "Оц.", Width = 40, Cell = p => { var v = r.Ratings[p.Id]; return Ui.L($"{v:0.0}", 13, v >= 7.5 ? new Color("43D17A") : v >= 6.8 ? Ui.Text : v >= 6.3 ? Ui.Otl : Ui.Loss, Ui.Bold); } },
         }, rows, p => Shell.I?.Go("player", null, p.Id.ToString())).Root;
     }

@@ -8,15 +8,15 @@ namespace HM27.Core;
 /// </summary>
 public static class TeamStrength
 {
-    static readonly (string k, double w)[] Off = { ("fin", 0.3), ("pas", 0.25), ("vis", 0.2), ("hnd", 0.15), ("pp", 0.1) };
-    static readonly (string k, double w)[] Def = { ("dfn", 0.4), ("tka", 0.2), ("blk", 0.15), ("pk", 0.15), ("dec", 0.1) };
+    public static readonly (string k, double w)[] Off = { ("fin", 0.3), ("pas", 0.25), ("vis", 0.2), ("hnd", 0.15), ("pp", 0.1) };
+    public static readonly (string k, double w)[] Def = { ("dfn", 0.4), ("tka", 0.2), ("blk", 0.15), ("pk", 0.15), ("dec", 0.1) };
 
     /// <summary>Множитель разброса сил относительно модели (подбор по таблицам НХЛ).</summary>
     public static double SPREAD = 1.08;
     /// <summary>«Одна шайба»: вклад сверх STAR_AT ед. выше среднего берётся с долей STAR_K (у звёзд отдача убывает).</summary>
     public static double STAR_AT = 3.0, STAR_K = 0.6;
 
-    static double Damp(double v) => v > STAR_AT ? STAR_AT + STAR_K * (v - STAR_AT) : v;
+    public static double Damp(double v) => v > STAR_AT ? STAR_AT + STAR_K * (v - STAR_AT) : v;
 
     /// <summary>Индексы атаки и обороны (ед. шкалы × доля матча) и GSAx вратаря.</summary>
     public static (double off, double def, double g) Index(GameData d, Lineup l, int goalie, Func<PlayerData, string, double> attr, Func<int, double> gsax)
@@ -32,9 +32,11 @@ public static class TeamStrength
         return (off, def, gsax(goalie));
     }
 
-    static double Est(PlayerData p, string k) => p.A.Count > 0 ? p.AttrEst(k) : p.Level;
+    public static double Est(PlayerData p, string k) => p.A.Count > 0 ? p.AttrEst(k) : p.Level;
 
-    sealed record Scale(double A0, double A1, double D0, double D1, double D2);
+    /// <summary>Масштаб: атака = A0 + A1·индекс, оборона = D0 + D1·индекс + D2·GSAx вратаря; G0 — средний GSAx основных вратарей.</summary>
+    public sealed record Scale(double A0, double A1, double D0, double D1, double D2, double G0, double MA, double MY);
+    public static Scale Coef(GameData d) => Cache.GetValue(d, Fit);
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<GameData, Scale> Cache = new();
 
     /// <summary>
@@ -66,7 +68,7 @@ public static class TeamStrength
         double sdOurs = Sd(rows.Select(r => b * r.ix.off - (d1 * r.ix.def + d2 * r.ix.g)));
         double k = sdModel / Math.Max(sdOurs, 1e-9);
         b *= k; d1 *= k; d2 *= k;
-        return new Scale(mA - b * mO, b, mY - d1 * mD - d2 * mG, d1, d2);
+        return new Scale(mA - b * mO, b, mY - d1 * mD - d2 * mG, d1, d2, mG, mA, mY);
     }
 
     /// <summary>Сила клуба по данным базы (до начала карьеры: выбор клуба) — состав по умолчанию, оценки из данных.</summary>
@@ -78,17 +80,18 @@ public static class TeamStrength
         return (SPREAD * (s.A0 + s.A1 * ix.off), SPREAD * (s.D0 + s.D1 * ix.def + s.D2 * ix.g));
     }
 
+    /// <summary>
+    /// Истинная характеристика на матч: розыгрыш от данных + всё «не талантное» из сдвига движка
+    /// (форма, а в плей-офф ещё и хладнокровие). Сдвиг уровня (истинный − данные) уже внутри характеристик, поэтому вычитается.
+    /// </summary>
+    public static Func<PlayerData, string, double> Attr(Career c, Func<int, double> dl) => (p, key) =>
+        !c.Players.TryGetValue(p.Id, out var st) ? Est(p, key) : st.A.GetValueOrDefault(key, st.Lvl) + dl(p.Id) - (st.Ca - p.CaEst) / PlayerModel.CA_PER_LVL;
+
     /// <summary>Сила клуба на матч: текущий состав, вратарь матча, истинные значения с формой.</summary>
     public static (double att, double dfn) Live(Career c, Lineup l, int goalie, Func<int, double> dl)
     {
         var s = Cache.GetValue(c.Data, Fit);
-        double True(PlayerData p, string key)
-        {
-            if (!c.Players.TryGetValue(p.Id, out var st)) return Est(p, key);
-            // поверх истинной характеристики — всё «не талантное» из сдвига движка: форма, а в плей-офф ещё и хладнокровие
-            return st.A.GetValueOrDefault(key, st.Lvl) + dl(p.Id) - (st.Ca - p.CaEst) / PlayerModel.CA_PER_LVL;
-        }
-        var ix = Index(c.Data, l, goalie, True, id => MatchEngine.GsaxOf(c.Data, id, dl));
+        var ix = Index(c.Data, l, goalie, Attr(c, dl), id => MatchEngine.GsaxOf(c.Data, id, dl));
         double att = s.A0 + s.A1 * ix.off, dfn = s.D0 + s.D1 * ix.def + s.D2 * ix.g;
         // разброс × SPREAD вокруг среднего лиги (среднее по базе — ноль атаки/обороны модели)
         return (SPREAD * att, SPREAD * dfn);

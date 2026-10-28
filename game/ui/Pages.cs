@@ -278,6 +278,8 @@ public partial class SquadPage : Control
             cols.Add(new() { Title = "Г", Width = 30, Cell = p => Ui.L($"{C.Skaters.GetValueOrDefault(p.Id)?.G ?? 0}", 12), Sort = p => C.Skaters.GetValueOrDefault(p.Id)?.G ?? 0 });
             cols.Add(new() { Title = "П", Width = 30, Cell = p => Ui.L($"{C.Skaters.GetValueOrDefault(p.Id)?.A ?? 0}", 12), Sort = p => C.Skaters.GetValueOrDefault(p.Id)?.A ?? 0 });
             cols.Add(new() { Title = "О", Width = 34, Cell = p => Ui.L($"{C.Skaters.GetValueOrDefault(p.Id)?.Pts ?? 0}", 13, Ui.Text, Ui.Bold), Sort = p => C.Skaters.GetValueOrDefault(p.Id)?.Pts ?? 0 });
+            cols.Add(new() { Title = "+/−", Width = 38, Cell = p => { var s = C.Skaters.GetValueOrDefault(p.Id); return Ui.L(s == null || s.Toi == 0 ? "" : Ui.Signed(s.Pm, "0"), 12, Ui.Muted); }, Sort = p => C.Skaters.GetValueOrDefault(p.Id)?.Pm ?? -99 });
+            cols.Add(new() { Title = "Вр", Width = 46, Tip = "Среднее время на льду", Cell = p => { var s = C.Skaters.GetValueOrDefault(p.Id); return Ui.L(s == null || s.Gp == 0 || s.Toi == 0 ? "" : Ui.Toi(s.Toi / (double)s.Gp), 12, Ui.Muted); }, Sort = p => { var s = C.Skaters.GetValueOrDefault(p.Id); return s == null || s.Gp == 0 ? 0 : s.Toi / (double)s.Gp; } });
         }
         else
         {

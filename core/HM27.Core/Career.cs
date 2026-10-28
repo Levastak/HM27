@@ -27,6 +27,14 @@ public sealed class SkaterLine
     public int A { get; set; }
     public int Ppg { get; set; }
     public int Gwg { get; set; }
+    /// <summary>Движок по сменам: секунды на льду, броски в створ, попытки, блоки, +/−, штрафные минуты, очки в большинстве.</summary>
+    public int Toi { get; set; }
+    public int S { get; set; }
+    public int Att { get; set; }
+    public int Blk { get; set; }
+    public int Pm { get; set; }
+    public int Pim { get; set; }
+    public int Ppp { get; set; }
     public double RatingSum { get; set; }
     public int Rated { get; set; }
     public double AvgRating => Rated == 0 ? 0 : RatingSum / Rated;
@@ -244,7 +252,7 @@ public sealed class Career
             var (att, dfn) = TeamStrength.Live(this, l, goalie, dl);
             return new MatchSide
             {
-                Team = Data.TeamByAbbr[abbr], Lineup = l, Goalie = goalie, B2B = b2b, Dl = dl, Att = att, Dfn = dfn,
+                Team = Data.TeamByAbbr[abbr], Lineup = l, Goalie = goalie, B2B = b2b, Dl = dl, Att = att, Dfn = dfn, Attr = TeamStrength.Attr(this, dl),
                 BaseOff = MatchEngine.OffIndex(Data, l, dl), BaseDef = MatchEngine.DefIndex(Data, l, dl), BaseGsax = MatchEngine.GsaxOf(Data, goalie, dl),
             };
         }
@@ -254,7 +262,8 @@ public sealed class Career
         };
     }
 
-    public MatchOdds Preview(ScheduledGame g) => MatchEngine.Odds(Data, Side(g.Home, g.Date, true, g.Playoff), Side(g.Away, g.Date, true, g.Playoff), g.Playoff);
+    public MatchOdds Preview(ScheduledGame g) => MatchEngine.Odds(Data, Side(g.Home, g.Date, true, g.Playoff), Side(g.Away, g.Date, true, g.Playoff), g.Playoff,
+        sharp: BottomUp && ShiftEngine.Enabled ? ShiftEngine.SHARP : MatchEngine.SHARP);
 
     // ------------------------------------------------------------------ симуляция
     Random RngFor(ScheduledGame g) => new(unchecked(Seed * 1_000_003 ^ g.Id));   // детерминированно (HashCode в .NET случаен по процессам)
@@ -276,12 +285,13 @@ public sealed class Career
             }
         }
         var h = Side(g.Home, g.Date, playoff: g.Playoff); var a = Side(g.Away, g.Date, playoff: g.Playoff);
-        var r = MatchEngine.Play(Data, h, a, RngFor(g), g.Playoff);
+        // новые карьеры — движок по сменам; старые сохранения (сила модели) — движок «матч целиком»
+        var r = BottomUp && ShiftEngine.Enabled ? ShiftEngine.Play(Data, h, a, RngFor(g), g.Playoff) : MatchEngine.Play(Data, h, a, RngFor(g), g.Playoff);
         g.Result = r;
         bool mine = g.Home == UserTeam || g.Away == UserTeam;
         Chronicle.Build(Data, g, h, a, r, new Random(unchecked(Seed * 7919 + g.Id * 31 + 1)));
-        if (!mine) r.Events = new();   // хронику храним только для своих матчей — сохранение не раздувается
         Record(g);
+        if (!mine) { r.Events = new(); r.Box = new(); }   // хронику и протокол храним только для своих матчей — сохранение не раздувается
         InjuryModel.AfterGame(this, g, new Random(unchecked(Seed * 104729 + g.Id)));
         foreach (var (side, abbr) in new[] { (h, g.Home), (a, g.Away) })
             GoalieStreak[abbr] = side.Goalie == Lineups[abbr].G1 ? GoalieStreak.GetValueOrDefault(abbr) + 1 : 0;
@@ -371,9 +381,14 @@ public sealed class Career
         }
         foreach (var e in r.Goals.Where(e => e.Kind != "so" && e.Scorer != 0))
         {
-            var s = Get(sk, e.Scorer); s.G++; if (e.Kind == "pp") s.Ppg++;
-            if (e.A1 != 0) Get(sk, e.A1).A++;
-            if (e.A2 != 0) Get(sk, e.A2).A++;
+            var s = Get(sk, e.Scorer); s.G++; if (e.Kind == "pp") { s.Ppg++; s.Ppp++; }
+            if (e.A1 != 0) { var a1 = Get(sk, e.A1); a1.A++; if (e.Kind == "pp") a1.Ppp++; }
+            if (e.A2 != 0) { var a2 = Get(sk, e.A2); a2.A++; if (e.Kind == "pp") a2.Ppp++; }
+        }
+        foreach (var (id, b) in r.Box)
+        {
+            if (!Data.PlayerById.TryGetValue(id, out var bp) || bp.IsGoalie) continue;
+            var s = Get(sk, id); s.Toi += b.Toi; s.S += b.S; s.Att += b.Att; s.Blk += b.Blk; s.Pm += b.Pm; s.Pim += b.Pim;
         }
         // Победный гол: гол, после которого у победителя на 1 больше, чем у проигравшего в итоге
         var winTeam = homeWon ? g.Home : g.Away; int loserGoals = homeWon ? r.AwayGoals : r.HomeGoals; int cnt = 0;
@@ -391,8 +406,11 @@ public sealed class Career
         // голы в пустые ворота и победный буллит вратарю не засчитываются
         int hGa = r.AwayGoals - (r.End == "SO" && !homeWon ? 1 : 0) - r.Goals.Count(e => e.Team == g.Away && e.Kind == "en");
         int aGa = r.HomeGoals - (r.End == "SO" && homeWon ? 1 : 0) - r.Goals.Count(e => e.Team == g.Home && e.Kind == "en");
-        G(r.HomeGoalie, r.AwayShots, hGa, homeWon, r.End, hGa == 0);
-        G(r.AwayGoalie, r.HomeShots, aGa, !homeWon, r.End, aGa == 0);
+        // броски по вратарю: из протокола (без бросков по пустым воротам), иначе — броски команды без голов в пустые
+        int hSa = r.Box.TryGetValue(r.HomeGoalie, out var hb) ? hb.Sa : r.AwayShots - r.Goals.Count(e => e.Team == g.Away && e.Kind == "en");
+        int aSa = r.Box.TryGetValue(r.AwayGoalie, out var ab) ? ab.Sa : r.HomeShots - r.Goals.Count(e => e.Team == g.Home && e.Kind == "en");
+        G(r.HomeGoalie, hSa, hGa, homeWon, r.End, hGa == 0);
+        G(r.AwayGoalie, aSa, aGa, !homeWon, r.End, aGa == 0);
     }
 
     static void Mark(StandingRow row, char c)

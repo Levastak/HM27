@@ -368,19 +368,21 @@ public partial class HubScreen : Control
             Func<SkaterLine, int> key = mode == 1 ? s => s.G : mode == 2 ? s => s.A : s => s.Pts;
             var rows = sk.Where(kv => C.Data.PlayerById.TryGetValue(kv.Key, out var p) && !p.IsGoalie && (!mine || p.Team == C.UserTeam))
                 .OrderByDescending(kv => key(kv.Value)).ThenByDescending(kv => kv.Value.G).ThenBy(kv => kv.Value.Gp).Take(50).ToList();
-            var t = new Table(new[] { "#", "Игрок", "Поз", "Клуб", "И", "Г", "П", "О", "ГБ", "ПГ" }, new[] { 30, 0, 40, 140, 36, 36, 36, 44, 40, 40 });
+            var t = new Table(new[] { "#", "Игрок", "Поз", "Клуб", "И", "Г", "П", "О", "+/−", "Бр", "Вр", "ГБ", "ПГ" }, new[] { 30, 0, 40, 140, 36, 36, 36, 44, 44, 40, 52, 40, 40 });
             int i = 0;
             foreach (var (id, s) in rows.Select(kv => (kv.Key, kv.Value)))
             {
                 var p = C.Data.PlayerById[id];
                 t.Add(new Control[] { Ui.L($"{++i}", 13, Ui.Muted), Links.Player(p, null, 14), Ui.L(Ui.PosRu(p.Pos), 12, Ui.Muted), TeamCell(p.Team, 18), Ui.L($"{s.Gp}", 13),
                     Ui.L($"{s.G}", 13, mode == 1 ? Ui.Text : Ui.Muted, mode == 1 ? Ui.Bold : null), Ui.L($"{s.A}", 13, mode == 2 ? Ui.Text : Ui.Muted, mode == 2 ? Ui.Bold : null),
-                    Ui.L($"{s.Pts}", 14, mode == 0 || po ? Ui.Text : Ui.Muted, mode == 0 || po ? Ui.Bold : null), Ui.L($"{s.Ppg}", 13, Ui.Muted), Ui.L($"{s.Gwg}", 13, Ui.Muted) },
+                    Ui.L($"{s.Pts}", 14, mode == 0 || po ? Ui.Text : Ui.Muted, mode == 0 || po ? Ui.Bold : null),
+                    Ui.L(s.Toi > 0 ? Ui.Signed(s.Pm, "0") : "—", 13, Ui.Muted), Ui.L(s.Toi > 0 ? $"{s.S}" : "—", 13, Ui.Muted), Ui.L(Ui.Toi(s.Gp > 0 ? s.Toi / (double)s.Gp : 0), 13, Ui.Muted),
+                    Ui.L($"{s.Ppg}", 13, Ui.Muted), Ui.L($"{s.Gwg}", 13, Ui.Muted) },
                     p.Team == C.UserTeam, () => PlayerCard.Show(this, p, C));
             }
             if (rows.Count == 0) t.Add(new Control[] { Ui.L(po ? "Плей-офф ещё не начался" : "Пока нет сыгранных матчей", 14, Ui.Muted) });
             v.AddChild(t);
-            v.AddChild(Ui.L("ГБ — голы в большинстве, ПГ — победные голы.", 12, Ui.Dim));
+            v.AddChild(Ui.L("Бр — броски в створ, Вр — среднее время на льду, ГБ — голы в большинстве, ПГ — победные голы.", 12, Ui.Dim));
         }
         return Ui.Scroll(v);
     }

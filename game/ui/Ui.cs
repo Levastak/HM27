@@ -261,6 +261,9 @@ public static class Ui
 
     public static string PosRu(string pos) => pos switch { "C" => "Ц", "LW" => "ЛН", "RW" => "ПН", "D" => "З", "G" => "В", _ => pos };
 
+    /// <summary>Время на льду: «18:42».</summary>
+    public static string Toi(double sec) => sec <= 0 ? "—" : $"{(int)sec / 60}:{(int)sec % 60:00}";
+
     public static string Clock(int period, int sec)
     {
         string p = period <= 3 ? $"{period}-й" : period == 4 ? "ОТ" : $"{period - 3}-й ОТ";

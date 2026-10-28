@@ -1,0 +1,138 @@
+using System.Text.Json;
+using HM27.Core;
+
+/// <summary>Сверка движка по сменам с целями НХЛ (data/engine_targets.json): dotnet run -- база.json engine [сезонов]</summary>
+static class EngineReport
+{
+    public static void Run(GameData data, int seasons)
+    {
+        var tp = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(Environment.GetCommandLineArgs().Length > 1 ? Environment.GetCommandLineArgs()[1] : "game/data/hm27-data.json"))!, "..", "..", "data", "engine_targets.json");
+        if (!File.Exists(tp)) tp = "data/engine_targets.json";
+        var tg = JsonDocument.Parse(File.ReadAllText(tp)).RootElement;
+        var D = ShiftEngine.Diag = new ShiftEngine.Diagnostics();
+        var all = new List<Career>();
+        for (int s = 0; s < seasons; s++)
+        {
+            var c = Career.New(data, "MIN", 5000 + s);
+            // только регулярка
+            while (c.Phase == Phase.Regular) c.SimDay();
+            all.Add(c);
+        }
+        int games = D.Games, tgames = 2 * games;
+        Console.WriteLine($"Матчей: {games}");
+        Console.WriteLine($"{"состав",-11} {"мин/к",7} {"(НХЛ)",7} {"г60",6} {"(НХЛ)",6} {"поп60",6} {"(НХЛ)",6} {"блок",5} {"(НХЛ)",5} {"мимо",5} {"(НХЛ)",5} {"сх%",5} {"(НХЛ)",5}");
+        foreach (var k in new[] { "5v5", "pp", "pk", "4v4", "3v3", "en_against", "en_for" })
+        {
+            var t = tg.GetProperty("states").GetProperty(k);
+            double sec = D.Sec.GetValueOrDefault(k), g = D.Goals.GetValueOrDefault(k), at = D.Att.GetValueOrDefault(k), sog = D.Sog.GetValueOrDefault(k);
+            Console.WriteLine($"{k,-11} {sec / tgames / 60,7:F2} {t.GetProperty("min_per_team_game").GetDouble(),7:F2} {(sec > 0 ? 3600 * g / sec : 0),6:F2} {t.GetProperty("gf60").GetDouble(),6:F2} " +
+                $"{(sec > 0 ? 3600 * at / sec : 0),6:F1} {t.GetProperty("cf60").GetDouble(),6:F1} {(at > 0 ? D.Blk.GetValueOrDefault(k) / at : 0),5:F3} {t.GetProperty("block_share").GetDouble(),5:F3} " +
+                $"{(at > 0 ? D.Miss.GetValueOrDefault(k) / at : 0),5:F3} {t.GetProperty("miss_share").GetDouble(),5:F3} {(sog > 0 ? g / sog : 0),5:F3} {t.GetProperty("sh_pct").GetDouble(),5:F3}");
+        }
+        var res = all.SelectMany(c => c.Games.Where(g => !g.Playoff && g.Played)).Select(g => g.Result).ToList();
+        double gpg = res.Average(r => r.HomeGoals + r.AwayGoals - (r.End == "SO" ? 1 : 0));
+        Console.WriteLine($"Голов за матч {gpg:F3} (НХЛ {tg.GetProperty("goals_per_game").GetDouble():F3})");
+        Console.WriteLine($"Большинств на команду {D.PpEntries / (double)tgames:F2} (НХЛ {tg.GetProperty("pp_per_team_game").GetDouble():F2}), реализация {D.Goals.GetValueOrDefault("pp") / Math.Max(1, D.PpEntries):P1} (НХЛ {tg.GetProperty("pp_pct").GetDouble():P1})");
+        double otShare = res.Count(r => r.End != "REG") / (double)res.Count, soShare = res.Count(r => r.End == "SO") / (double)Math.Max(1, res.Count(r => r.End != "REG"));
+        Console.WriteLine($"ОТ {otShare:P1} (НХЛ {tg.GetProperty("ot_share").GetDouble():P1}), из них буллиты {soShare:P1} (НХЛ {tg.GetProperty("so_share_of_ot").GetDouble():P1})");
+        var noSo = res.Where(r => r.End != "SO").ToList();
+        Console.WriteLine($"Победы хозяев без буллитов {noSo.Count(r => r.HomeGoals > r.AwayGoals) / (double)noSo.Count:P1} (НХЛ {tg.GetProperty("home_win_excl_so").GetDouble():P1})");
+        var reg = res.Where(r => r.End == "REG").ToList();
+        var marg = tg.GetProperty("reg_margin");
+        Console.WriteLine("Разница в основное время: " + string.Join("  ", Enumerable.Range(1, 6).Select(m => $"{m}: {reg.Count(r => Math.Min(6, Math.Abs(r.HomeGoals - r.AwayGoals)) == m) / (double)reg.Count:P1} ({marg.GetProperty(m.ToString()).GetDouble():P1})")));
+        Console.WriteLine($"Броски в створ на команду {res.Average(r => (r.HomeShots + r.AwayShots) / 2.0):F1}");
+        // эффект счёта
+        var se = tg.GetProperty("score_effects_5v5");
+        Console.WriteLine("Эффект счёта (доля попыток, 5×5): " + string.Join("  ", Enumerable.Range(-3, 7).Select(df =>
+        {
+            double f = D.ScoreSecAtt.GetValueOrDefault(df), a = D.ScoreSecAtt.GetValueOrDefault(-df);
+            return $"{df:+0;-0;0}: {f / Math.Max(1, f + a):P1} ({se.GetProperty(df.ToString()).GetProperty("cf_share").GetDouble():P1})";
+        })));
+        Console.WriteLine($"Добивания: {D.Rebounds} попыток, реализация {D.RebGoals / Math.Max(1.0, D.Rebounds):P1} (НХЛ 10,7%)");
+        // голы по периодам и передачи
+        var goals = res.SelectMany(r => r.Goals.Where(e => e.Kind != "so")).ToList();
+        var gp = tg.GetProperty("goals_by_period");
+        Console.WriteLine("Голы по периодам: " + string.Join("  ", new[] { 1, 2, 3, 4 }.Select(p => $"{p}: {goals.Count(e => Math.Min(4, e.Period) == p) / (double)res.Count:F2} ({gp.GetProperty(p.ToString()).GetDouble():F2})")));
+        var asst = tg.GetProperty("assists");
+        Console.WriteLine("Передач на гол: " + string.Join("  ", new[] { 0, 1, 2 }.Select(n => $"{n}: {goals.Count(e => (e.A1 != 0 ? 1 : 0) + (e.A2 != 0 ? 1 : 0) == n) / (double)goals.Count:P1} ({asst.GetProperty(n.ToString()).GetDouble():P1})")));
+        // минуты по рангу в составе и смены (по протоколам своих матчей)
+        var mine = all.SelectMany(c => c.Games.Where(g => g.Played && !g.Playoff && g.Result.Box.Count > 0).Select(g => (c, g))).ToList();
+        foreach (var (pos, n) in new[] { ("F", 12), ("D", 6) })
+        {
+            var ranks = new double[n]; int cnt = 0; double shifts = 0, toiAll = 0; int pl = 0;
+            foreach (var (c, g) in mine)
+                foreach (var dressed in new[] { g.Result.HomeDressed, g.Result.AwayDressed })
+                {
+                    var tois = dressed.Where(id => data.PlayerById.TryGetValue(id, out var p) && !p.IsGoalie && (pos == "D") == p.IsDefense && g.Result.Box.ContainsKey(id))
+                        .Select(id => g.Result.Box[id]).ToList();
+                    if (tois.Count < n) continue;
+                    var sorted = tois.Select(b => b.Toi / 60.0).OrderByDescending(x => x).ToList();
+                    for (int i = 0; i < n; i++) ranks[i] += sorted[i];
+                    cnt++;
+                    foreach (var b in tois) { shifts += b.Shifts; toiAll += b.Toi; pl++; }
+                }
+            var real = tg.GetProperty("toi_by_rank").GetProperty(pos).EnumerateArray().Select(x => x.GetDouble()).ToList();
+            Console.WriteLine($"Минуты {pos}: " + string.Join(" ", Enumerable.Range(0, n).Select(i => $"{ranks[i] / Math.Max(1, cnt):F1}({real[i]:F1})")));
+            Console.WriteLine($"Смены {pos}: {shifts / Math.Max(1, pl):F1} за матч (НХЛ {tg.GetProperty("shifts_per_game").GetProperty(pos).GetDouble():F1}), средняя {toiAll / Math.Max(1, shifts):F1} с (НХЛ {tg.GetProperty("shift_sec").GetProperty(pos).GetProperty("mean").GetDouble():F1})");
+        }
+        // распределение игроков за сезон
+        var sp = tg.GetProperty("season_players");
+        double R(string k) => sp.EnumerateObject().Average(x => x.Value.GetProperty(k).GetDouble());
+        var rows = all.Select(c =>
+        {
+            var g = c.Skaters.Values.Select(x => x.G).OrderByDescending(x => x).ToList();
+            var p = c.Skaters.Values.Select(x => x.Pts).OrderByDescending(x => x).ToList();
+            return (g1: g[0], g10: g.Take(10).Average(), g30: g.Count(x => x >= 30), g40: g.Count(x => x >= 40), g50: g.Count(x => x >= 50),
+                    p1: p[0], p10: p.Take(10).Average(), p60: p.Count(x => x >= 60), p80: p.Count(x => x >= 80), p100: p.Count(x => x >= 100));
+        }).ToList();
+        Console.WriteLine($"Игроки за сезон (игра / НХЛ 2022-26): лидер по голам {rows.Average(x => x.g1):F0}/{R("goals_top1"):F0}, топ-10 {rows.Average(x => x.g10):F1}/{R("goals_top10"):F1}, " +
+            $"30+ {rows.Average(x => x.g30):F0}/{R("g30"):F0}, 40+ {rows.Average(x => x.g40):F0}/{R("g40"):F0}, 50+ {rows.Average(x => x.g50):F1}/{R("g50"):F1}; " +
+            $"лидер по очкам {rows.Average(x => x.p1):F0}/{R("pts_top1"):F0}, топ-10 {rows.Average(x => x.p10):F1}/{R("pts_top10"):F1}, 60+ {rows.Average(x => x.p60):F0}/{R("p60"):F0}, 80+ {rows.Average(x => x.p80):F0}/{R("p80"):F0}, 100+ {rows.Average(x => x.p100):F1}/{R("p100"):F1}");
+        var sogRows = all.Select(c =>
+        {
+            var v = c.Skaters.Select(kv => (s: kv.Value.S, d: data.PlayerById[kv.Key].IsDefense)).ToList();
+            var all2 = v.Select(x => x.s).OrderByDescending(x => x).ToList(); var dd = v.Where(x => x.d).Select(x => x.s).OrderByDescending(x => x).ToList();
+            return (t1: all2[0], t10: all2.Take(10).Average(), n250: all2.Count(x => x >= 250), n200: all2.Count(x => x >= 200), d1: dd[0], d5: dd.Take(5).Average());
+        }).ToList();
+        Console.WriteLine($"Броски в створ за сезон (игра / НХЛ 2023-26): лидер {sogRows.Average(x => x.t1):F0}/359, топ-10 {sogRows.Average(x => x.t10):F0}/305, 250+ {sogRows.Average(x => x.n250):F0}/18, 200+ {sogRows.Average(x => x.n200):F0}/62, " +
+            $"защитник-лидер {sogRows.Average(x => x.d1):F0}/275, топ-5 защитников {sogRows.Average(x => x.d5):F0}/239");
+        Console.WriteLine("Снятый вратарь (сек на матч / голы за / против на матч; НХЛ: −1: 24,8/0,058/0,163, −2: 23,9/0,053/0,171, −3: 7,6/0,02/0,041): " +
+            string.Join("  ", new[] { -1, -2, -3 }.Select(df => $"{df}: {D.PullSec.GetValueOrDefault(df) / games:F1}/{D.PullGf.GetValueOrDefault(df) / games:F3}/{D.PullGa.GetValueOrDefault(df) / games:F3}")));
+        Console.WriteLine("Доля защитников (НХЛ: голы 14,8%, 1-я передача 26,4%, 2-я 36,7%): " + string.Join("  ", new[] { "g", "a1", "a2" }.Select(k =>
+            $"{k}: {D.RoleShare.GetValueOrDefault(k + "_D") / Math.Max(1, D.RoleShare.GetValueOrDefault(k + "_D") + D.RoleShare.GetValueOrDefault(k + "_F")):P1}")));
+        // 5×5 на льду по рангу минут в клубе (как в протоколах НХЛ 2024-26: нападающие тройками, защитники парами)
+        var realF = new[] { (2.88, 2.55), (2.66, 2.51), (2.34, 2.45), (2.17, 2.46) }; var realD = new[] { (2.60, 2.48), (2.53, 2.48), (2.43, 2.52), (2.22, 2.58) };
+        foreach (var (pos, size, real) in new[] { ("F", 3, realF), ("D", 2, realD) })
+        {
+            var b = new double[4, 3];
+            foreach (var team in data.Teams)
+            {
+                var ids = D.Es5Sec.Keys.Where(id => data.PlayerById.TryGetValue(id, out var p) && p.Team == team.Abbr && !p.IsGoalie && (pos == "D") == p.IsDefense)
+                    .OrderByDescending(id => D.Es5Sec[id]).ToList();
+                for (int i = 0; i < ids.Count; i++)
+                {
+                    int k = i / size; if (k > 3) { if (pos == "D") k = 3; else continue; }
+                    b[k, 0] += D.Es5Sec[ids[i]]; b[k, 1] += D.Es5Gf.GetValueOrDefault(ids[i]); b[k, 2] += D.Es5Ga.GetValueOrDefault(ids[i]);
+                }
+            }
+            Console.WriteLine($"5×5 на льду, {pos} по рангу: " + string.Join("  ", Enumerable.Range(0, 4).Select(k => $"{3600 * b[k, 1] / b[k, 0]:F2}/{3600 * b[k, 2] / b[k, 0]:F2} ({real[k].Item1:F2}/{real[k].Item2:F2})")));
+        }
+        // лучшие бомбардиры: игра против реального сезона, IPP (доля очков от голов команды при нём на льду)
+        Console.WriteLine("Лучшие по очкам (среднее за сезон в игре; реальный 2025-26 на 82 матча):");
+        var agg = all.SelectMany(c => c.Skaters).GroupBy(kv => kv.Key).Select(g => (id: g.Key, g: g.Average(x => (double)x.Value.G), a: g.Average(x => (double)x.Value.A),
+            gp: g.Average(x => (double)x.Value.Gp), toi: g.Sum(x => (double)x.Value.Toi) / Math.Max(1, g.Sum(x => x.Value.Gp)) / 60)).OrderByDescending(x => x.g + x.a).Take(15).ToList();
+        foreach (var x in agg)
+        {
+            var p = data.PlayerById[x.id];
+            double ongf = D.OnGf.GetValueOrDefault(x.id) / seasons;
+            string real = p.Real != null && p.Real.GetValueOrDefault("gp") > 0 ? $"{82.0 * p.Real["g"] / p.Real["gp"]:F0}+{82.0 * p.Real["a"] / p.Real["gp"]:F0}" : "—";
+            Console.WriteLine($"  {p.NameRu,-24} {p.Team} {x.g:F0}+{x.a:F0}={x.g + x.a:F0} за {x.gp:F0} м., {x.toi:F1} мин, IPP {(x.g + x.a) / Math.Max(1, ongf):P0}; реально {real}");
+        }
+        // таблица
+        var pts = all.Select(c => c.Table.Values.Select(r => (double)r.Pts).OrderByDescending(x => x).ToList()).ToList();
+        Console.WriteLine($"Таблица: лидер {pts.Average(p => p[0]):F0}, последний {pts.Average(p => p[^1]):F0}, разброс {pts.Average(p => Sd(p)):F1} (НХЛ: 112–130, 46–60, 13–18,6)");
+        ShiftEngine.Diag = null;
+    }
+
+    static double Sd(List<double> v) { double m = v.Average(); return Math.Sqrt(v.Average(x => (x - m) * (x - m))); }
+}
