@@ -201,6 +201,8 @@ public sealed class Career
             foreach (var p0 in data.Players) if (c.Players.TryGetValue(p0.Id, out var st)) PlayerModel.Align(data, p0, st);
             c.Version = 3;
         }
+        foreach (var p in data.Players)   // свои игроки — точные значения (раньше клуб «узнавал» их несколько недель)
+            if (p.Team == c.UserTeam && c.Players.TryGetValue(p.Id, out var own)) own.Know = 1f;
         foreach (var p in data.Players)   // новые игроки в базе
             if (!c.Players.ContainsKey(p.Id)) c.Players[p.Id] = PlayerModel.Make(c, p, noise: false);
         return c;

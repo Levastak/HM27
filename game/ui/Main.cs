@@ -64,6 +64,9 @@ public partial class Main : Control
         string result;
         try
         {
+            // иконки (звёзды, меню) читаются из SVG в сборке: без них звёзды КА/ПА пустые
+            foreach (var ic in new[] { "star", "star-half", "house", "trophy" })
+                if (Icons.Get(ic) == null) throw new System.Exception($"нет иконки {ic} в сборке");
             var c = Career.New(Data, "MIN", 27);
             Career = c;
             for (int i = 0; i < days; i++) c.SimDay();

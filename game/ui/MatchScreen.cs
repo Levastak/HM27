@@ -118,15 +118,10 @@ public partial class MatchScreen : Control
         row.AddChild(Ui.Expand(TeamColumn(Away, aws, false)));
         var mid = Ui.V(12); mid.CustomMinimumSize = new Vector2(420, 0);
         var chances = Ui.V(8);
-        chances.AddChild(Ui.H(10, Ui.L(Ui.Pct(1 - o.PHome), 34, Ui.Text, Ui.Black), Ui.Spacer(), Ui.L(Ui.Pct(o.PHome), 34, Ui.Text, Ui.Black)));
-        chances.AddChild(SplitBar(1 - o.PHome, new Color(Away.Colors[0]), new Color(Home.Colors[0])));
-        void Line(string k, string v) => chances.AddChild(Ui.H(8, Ui.Expand(Ui.L(k, 12, Ui.Muted)), Ui.L(v, 13, Ui.Text, Ui.Semi)));
-        Line("Ожидаемые голы", $"{o.LamAway:0.0} — {o.LamHome:0.0}");
-        Line("Ничья в основное время", Ui.Pct(o.PTie));
-        Line("Победа хозяев в основное время", Ui.Pct(o.PHomeReg));
-        Line("Победа гостей в основное время", Ui.Pct(o.PAwayReg));
+        chances.AddChild(Ui.H(8, Ui.Icon("mail-open", 16, Ui.Muted), Ui.Expand(Ui.L(Pundits.Forecast(C.Data, _g, o), 15, Ui.Text, Ui.Semi).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart))));
+        chances.AddChild(Ui.L($"Статусы: «{Away.City}» — {Pundits.Status(C, Away.Abbr).label.ToLowerInvariant()}, «{Home.City}» — {Pundits.Status(C, Home.Abbr).label.ToLowerInvariant()}", 12, Ui.Muted));
         if (hs.B2B || aws.B2B) chances.AddChild(Ui.L($"Второй матч за два дня: {string.Join(", ", new[] { aws.B2B ? Away.City : null, hs.B2B ? Home.City : null }.Where(x => x != null))}", 12, Ui.Otl));
-        mid.AddChild(Widget.Make("Шансы на победу", chances));
+        mid.AddChild(Widget.Make("Прогноз журналистов", chances));
         bool mine = _g.Home == C.UserTeam || _g.Away == C.UserTeam;
         if (mine)
         {

@@ -121,13 +121,7 @@ public partial class HomePage : Control
         info.AddChild(Ui.H(8, Ui.L("Форма соперника", 12, Ui.Muted), P.Form(opp.Abbr, 5, 18)));
         h.AddChild(info);
         v.AddChild(h);
-        var bar = Ui.H(10, Ui.L("Шанс на победу (модель)", 12, Ui.Muted), Ui.Expand(new Control()), Ui.L(Ui.Pct(p), 16, Ui.Text, Ui.Black));
-        v.AddChild(bar);
-        var track = new ColorRect { Color = Ui.Line, CustomMinimumSize = new Vector2(0, 6) };
-        track.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        track.Resized += () => { if (track.GetChildCount() > 0) ((ColorRect)track.GetChild(0)).Size = new Vector2((float)(track.Size.X * p), 6); };
-        track.AddChild(new ColorRect { Color = Ui.AccentBright, Size = new Vector2(0, 6) });
-        v.AddChild(track);
+        v.AddChild(Ui.H(6, Ui.Icon("mail-open", 14, Ui.Muted), Ui.L(Pundits.Forecast(C.Data, g, C.Preview(g)), 13, Ui.Muted)));
         bool b2b = C.PlayedYesterday(C.UserTeam, g.Date), ob2b = C.PlayedYesterday(opp.Abbr, g.Date);
         if (b2b || ob2b) v.AddChild(Ui.L(b2b && ob2b ? "Обе команды играли накануне" : b2b ? "У нас второй матч за два дня — подумайте о запасном вратаре" : "Соперник играл накануне — он устал", 12, Ui.Otl));
         return Widget.Make("Следующий матч", v, "Звенья →", () => Shell.I.Go("lines"));
@@ -141,7 +135,6 @@ public partial class HomePage : Control
             new() { Title = "Дата", Width = 110, Align = HorizontalAlignment.Left, Cell = g => Ui.L(Ui.Date(g.Date), 12, Ui.Muted) },
             new() { Title = "", Width = 20, Cell = g => Ui.L(g.Home == C.UserTeam ? "" : "@", 12, Ui.Muted) },
             new() { Title = "Соперник", Width = 0, Align = HorizontalAlignment.Left, Cell = g => P.Team(g.Home == C.UserTeam ? g.Away : g.Home) },
-            new() { Title = "Шанс", Width = 60, Cell = g => { var o = C.Preview(g); return Ui.L(Ui.Pct(g.Home == C.UserTeam ? o.PHome : 1 - o.PHome), 12, Ui.Muted); } },
         }, games, g => P.OpenLink($"club:{(g.Home == C.UserTeam ? g.Away : g.Home)}"));
         return Widget.Make("Ближайшие матчи", grid.Root, "Расписание →", () => Shell.I.Go("schedule"), 0);
     }
@@ -246,7 +239,7 @@ public partial class SquadPage : Control
         if (_abbr != C.UserTeam)
         {
             var o = C.NextGame(C.UserTeam);
-            head.AddChild(Ui.L($"Сила по игрокам: {C.PowerRank(t.Abbr).all}-е место в лиге", 12, Ui.Muted));
+            head.AddChild(Ui.L($"Статус: {Pundits.Status(C, t.Abbr).label}", 12, Ui.Muted));
         }
         else head.AddChild(Ui.L("Щёлкните игрока — профиль. Заголовок колонки — сортировка.", 12, Ui.Dim));
         _box.AddChild(head);

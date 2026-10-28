@@ -246,8 +246,8 @@ public static class PlayerModel
         s.Adapt = I(Cap(11.5 + 2.3 * N(rng), 16) + Math.Min(Math.Max(f.Clubs - 1, 0), 3) * 0.6, 7, 20);
         double missRate = (f.MissLong + 3.0) / (f.Span + 60.0);
         s.Inj = I(13 + 1.5 * N(rng) - 60 * (missRate - 0.05) + iron * 0.8, 5, 19);
-        // знание: свой клуб — с первого дня неплохо, чужие — по известности
-        s.Know = p.Team == c.UserTeam ? 0.55f : (float)Math.Clamp(0.25 + 0.04 * f.Seasons + (p.Level >= 16 ? 0.15 : 0), 0.25, 0.75);
+        // знание: свои игроки — точно (штаб видит их каждый день, как в FM), чужие — по известности
+        s.Know = p.Team == c.UserTeam ? 1f : (float)Math.Clamp(0.25 + 0.04 * f.Seasons + (p.Level >= 16 ? 0.15 : 0), 0.25, 0.75);
         s.Season = noise ? SeasonForm(c, p) : 0;
         Align(c.Data, p, s);          // КА = формула от характеристик (как в FM); на старте — равен КА из данных
         s.Lvl0 = s.Lvl;

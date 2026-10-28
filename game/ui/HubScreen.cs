@@ -177,7 +177,7 @@ public partial class HubScreen : Control
             h.AddChild(new TeamBadge(opp, 64));
             h.AddChild(Ui.Expand(Ui.V(4, Ui.H(0, Ui.L(home ? "" : "@ ", 20, Ui.Text, Ui.Bold), Links.Club(opp, opp.Name, 20, Ui.Text, Ui.Bold)),
                 Ui.L($"{Ui.Date(next.Date)}{(next.Playoff ? " · плей-офф" : "")}", 14, Ui.Muted),
-                Ui.H(10, Ui.L("Шанс на победу", 13, Ui.Muted), Ui.Bar(p, Ui.AccentBright, 160, 8), Ui.L(Ui.Pct(p), 15, Ui.Text, Ui.Bold)))));
+                Ui.H(6, Ui.Icon("mail-open", 14, Ui.Muted), Ui.L(Pundits.Forecast(C.Data, next, o), 13, Ui.Muted)))));
             left.AddChild(Section("Следующий матч", h));
         }
         // Последние матчи
@@ -253,7 +253,7 @@ public partial class HubScreen : Control
     {
         var v = Ui.V(12);
         v.AddChild(Ui.L(team == C.UserTeam ? "Календарь клуба" : $"Календарь: {C.Team(team).Name}", 20, Ui.Text, Ui.Bold));
-        var t = new Table(new[] { "Дата", "", "Соперник", "Результат / шанс", "" }, new[] { 140, 30, 0, 170, 50 });
+        var t = new Table(new[] { "Дата", "", "Соперник", "Результат", "" }, new[] { 140, 30, 0, 170, 50 });
         int lastMonth = 0;
         foreach (var g in C.TeamGames(team).OrderBy(g => g.Date))
         {
@@ -266,10 +266,9 @@ public partial class HubScreen : Control
             else
             {
                 bool home = g.Home == team;
-                double p = home ? C.Preview(g).PHome : 1 - C.Preview(g).PHome;
                 bool b2b = C.PlayedYesterday(team, g.Date);
                 t.Add(new Control[] { Ui.L(Ui.Date(g.Date), 13, g.Date == C.Today ? Ui.Text : Ui.Muted), Ui.L(home ? "" : "@", 13, Ui.Muted), TeamCell(home ? g.Away : g.Home),
-                    Ui.H(8, Ui.Bar(p, Ui.AccentBright, 80, 6), Ui.L(Ui.Pct(p), 13, Ui.Muted)), Ui.L(b2b ? "2-й день" : "", 11, Ui.Otl) }, g.Date == C.Today);
+                    Ui.L("—", 13, Ui.Dim), Ui.L(b2b ? "2-й день" : "", 11, Ui.Otl) }, g.Date == C.Today);
             }
         }
         v.AddChild(t);

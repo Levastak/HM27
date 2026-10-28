@@ -30,8 +30,7 @@ public partial class ClubSelectScreen : Control
         var grid = Ui.Expand(Ui.H(12), true, true);
         body.AddChild(grid);
 
-        var est = d.Teams.ToDictionary(t => t.Abbr, t => TeamStrength.Estimate(d, t));
-        var power = d.Teams.OrderByDescending(t => est[t.Abbr].att - est[t.Abbr].dfn).Select((t, i) => (t.Abbr, i + 1)).ToDictionary(x => x.Abbr, x => x.Item2);
+        var status = Pundits.StatusAll(d, new System.DateOnly(2026, 10, 6));
         foreach (var conf in d.Teams.Select(t => t.Conference).Distinct().OrderBy(x => x))
             foreach (var div in d.Teams.Where(t => t.Conference == conf).Select(t => t.Division).Distinct().OrderBy(x => x))
             {
@@ -40,7 +39,7 @@ public partial class ClubSelectScreen : Control
                 col.AddChild(Ui.L($"{conf} конференция", 11, Ui.Dim));
                 foreach (var t in d.Teams.Where(t => t.Division == div).OrderBy(t => t.City))
                 {
-                    var row = ClubRow(t, power[t.Abbr]);
+                    var row = ClubRow(t, status[t.Abbr].label);
                     _rows[t.Abbr] = row;
                     col.AddChild(row);
                 }
@@ -53,13 +52,13 @@ public partial class ClubSelectScreen : Control
         Select(_selected);
     }
 
-    PanelContainer ClubRow(TeamData t, int rank)
+    PanelContainer ClubRow(TeamData t, string status)
     {
         var h = Ui.H(10);
         h.AddChild(new TeamBadge(t, 34));
         var names = Ui.Expand(Ui.V(0, Ui.L(t.City, 15, Ui.Text, Ui.Semi), Ui.L(t.Name.Replace(t.City, "").Trim() is var n && n.Length > 0 ? n : t.NameEn, 12, Ui.Muted)));
         h.AddChild(names);
-        h.AddChild(Ui.L($"#{rank}", 12, Ui.Dim));
+        h.AddChild(Ui.L(status, 11, StatusColor(status)));
         var p = Ui.Card(h, Ui.Panel, 10);
         p.MouseFilter = MouseFilterEnum.Stop;
         p.MouseDefaultCursorShape = CursorShape.PointingHand;
@@ -91,11 +90,13 @@ public partial class ClubSelectScreen : Control
         var teams = d.Teams;
         var est = teams.ToDictionary(x => x.Abbr, x => TeamStrength.Estimate(d, x));
         int Rank(System.Func<TeamData, double> f) => teams.OrderByDescending(f).ToList().IndexOf(t) + 1;
-        int pr = Rank(x => est[x.Abbr].att - est[x.Abbr].dfn), ar = Rank(x => est[x.Abbr].att), dr = Rank(x => -est[x.Abbr].dfn);
+        int ar = Rank(x => est[x.Abbr].att), dr = Rank(x => -est[x.Abbr].dfn);
+        var st = Pundits.StatusAll(d, new System.DateOnly(2026, 10, 6))[abbr];
         v.AddChild(Ui.Rule());
-        v.AddChild(StatLine("Сила по игрокам", pr));
-        v.AddChild(StatLine("Атака", ar));
-        v.AddChild(StatLine("Оборона", dr));
+        v.AddChild(Ui.H(10, Ui.Expand(Ui.L("Статус", 14, Ui.Text)), Ui.L(st.label, 15, StatusColor(st.label), Ui.Bold)));
+        v.AddChild(Ui.L(st.note, 12, Ui.Muted));
+        v.AddChild(Ui.H(10, Ui.Expand(Ui.L("Атака", 14, Ui.Text)), Ui.L(Pundits.Word(ar), 13, Ui.Muted)));
+        v.AddChild(Ui.H(10, Ui.Expand(Ui.L("Оборона", 14, Ui.Text)), Ui.L(Pundits.Word(dr), 13, Ui.Muted)));
         v.AddChild(Ui.Rule());
         v.AddChild(Ui.L("ЛИДЕРЫ", 12, Ui.Muted, Ui.Semi));
         var inj = d.Teams.SelectMany(x => x.Injured).ToHashSet();
@@ -108,6 +109,8 @@ public partial class ClubSelectScreen : Control
         go.CustomMinimumSize = new Vector2(0, 50);
         v.AddChild(go);
     }
+
+    static Color StatusColor(string s) => s switch { "Элита" => Ui.Gold, "Претендент" => Ui.Win, "На подъёме" or "Борьба за плей-офф" => Ui.Otl, _ => Ui.Muted };
 
     static Control StatLine(string name, int rank)
     {

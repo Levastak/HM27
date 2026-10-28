@@ -1147,6 +1147,8 @@ TRAIT_DEFS = {
     "fight": ("FD", "rate", "fight", None),           # тафгай
 }
 TRAIT_KEYS = list(TRAIT_DEFS)
+# пары, которые вместе читаются как противоречие («бросает при любой возможности» и «сначала пас»; издали и с пятака)
+TRAIT_EXCLUSIVE = [("shoot", "pass"), ("far", "net"), ("far", "tip"), ("far", "reb")]
 TRAIT_Z = 1.65            # ≈ лучшие 5% своей группы (нападающие или защитники)
 # порядок — приоритет при равенстве: «зрелищные» качества впереди спецбригад
 XF_ATTRS = ("spd", "fin", "pas", "hnd", "vis", "pwr", "acc", "dfn", "hit", "fo", "tka", "blk", "pp", "pk")
@@ -1217,6 +1219,10 @@ def traits(S, shots, fen, groups, reg, A):
         keys = [k for _, k in cand]
         if "fight" in keys and "hit" in keys:
             keys.remove("hit")
+        # взаимоисключающие манеры: из пары остаётся более выраженная (кандидаты уже по убыванию)
+        for a_, b_ in TRAIT_EXCLUSIVE:
+            if a_ in keys and b_ in keys:
+                keys.remove(b_ if keys.index(a_) < keys.index(b_) else a_)
         if keys:
             TR[p] = keys[:3]
     # Х-фактор: характеристика, по которой игрок среди лучших 1% регулярных (и не ниже 17); из нескольких — самая редкая
