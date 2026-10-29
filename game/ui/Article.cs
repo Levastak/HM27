@@ -16,7 +16,7 @@ public static class Article
     {
         "Матч" => Ui.Blue,
         "Лазарет" => Ui.Red,
-        "Вечер в НХЛ" or "Неделя в НХЛ" or "Лига" => Ui.Gold,
+        "Вечер в НХЛ" or "Неделя в НХЛ" or "Лига" or "Разговор" => Ui.Gold,
         "Цифры" or "Неделя" => Ui.Win,
         _ => Ui.Muted,
     };
@@ -30,7 +30,7 @@ public static class Article
         return h;
     }
 
-    public static Control Make(Career c, Message m)
+    public static Control Make(Career c, Message m, Action onAnswer = null)
     {
         var col = Ui.V(14);
         col.CustomMinimumSize = new Vector2(0, 0);
@@ -76,7 +76,9 @@ public static class Article
             col.AddChild(Ui.V(6, Ui.L(m.Tag == "Матч" ? "Звёзды матча" : "Герои материала", 16, Ui.Muted, Ui.Cond), ps));
         }
 
-        if (!string.IsNullOrEmpty(m.Link) && !m.Link.StartsWith("press:"))
+        if (m.Options != null) col.AddChild(Narrow(Choices(c, m, onAnswer)));
+
+        if (!string.IsNullOrEmpty(m.Link) && !m.Link.StartsWith("press:") && m.Options == null)
         {
             string label = m.Link.Split(':')[0] switch
             {
@@ -87,6 +89,54 @@ public static class Article
             col.AddChild(Ui.H(0, Ui.B(label, () => P.OpenLink(link), true, 14)));
         }
         return col;
+    }
+
+    /// <summary>Варианты ответа: кнопка, под ней — чем обернётся; после ответа — выбранный вариант и что было дальше.</summary>
+    static Control Choices(Career c, Message m, Action onAnswer)
+    {
+        var v = Ui.V(8);
+        if (m.Pending)
+        {
+            var head = Ui.H(8, Ui.Icon("message-circle", 18, Ui.Gold), Ui.L(m.Required ? "Нужно решение" : "Ваш ответ", 20, Ui.Gold, Ui.CondBold));
+            if (m.Due.HasValue)
+            {
+                int d = m.Due.Value.DayNumber - c.Today.DayNumber;
+                head.AddChild(Ui.L(d <= 0 ? "ответить сегодня" : $"срок — {Ui.DateShort(m.Due.Value)}", 12, Ui.Muted));
+            }
+            v.AddChild(head);
+            foreach (var o in m.Options)
+            {
+                var b = new Button { FocusMode = Control.FocusModeEnum.None, MouseDefaultCursorShape = Control.CursorShape.PointingHand, CustomMinimumSize = new Vector2(0, 58) };
+                var st = Ui.Box(Ui.Panel2, 3, Ui.Line, 14);
+                b.AddThemeStyleboxOverride("normal", st);
+                b.AddThemeStyleboxOverride("hover", Ui.Box(Ui.Panel2.Lightened(0.06f), 3, Ui.Blue, 14));
+                b.AddThemeStyleboxOverride("pressed", Ui.Box(Ui.Blue.Darkened(0.45f), 3, Ui.Blue, 14));
+                var inner = Ui.V(0, Ui.L(o.Label, 16, Ui.Text, Ui.Semi), Ui.L(o.Hint ?? "", 12, Ui.Muted).Also(l => { l.AutowrapMode = TextServer.AutowrapMode.WordSmart; l.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill; }));
+                inner.MouseFilter = Control.MouseFilterEnum.Ignore;
+                foreach (var ch in inner.GetChildren()) if (ch is Control cc) cc.MouseFilter = Control.MouseFilterEnum.Ignore;
+                var mm = Ui.Margin(inner, 14, 8, 14, 8);
+                mm.MouseFilter = Control.MouseFilterEnum.Ignore;
+                mm.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+                b.AddChild(mm);
+                b.CustomMinimumSize = new Vector2(0, string.IsNullOrEmpty(o.Hint) ? 44 : o.Hint.Length > 90 ? 76 : 60);
+                var id = o.Id;
+                b.Pressed += () => { Decisions.Answer(c, m, id); Main.I.Save(); onAnswer?.Invoke(); };
+                v.AddChild(b);
+            }
+            if (!m.Required) v.AddChild(Ui.L("Можно не отвечать сразу: после срока помощник решит сам, по умолчанию.", 11, Ui.Dim));
+        }
+        else
+        {
+            var chosen = m.Options.FirstOrDefault(o => o.Id == m.Choice);
+            var p = new PanelContainer();
+            var sb = new StyleBoxFlat { BgColor = new Color(Ui.Blue, 0.08f), BorderColor = Ui.Blue, BorderWidthLeft = 3 };
+            sb.ContentMarginLeft = 16; sb.ContentMarginRight = 16; sb.ContentMarginTop = 10; sb.ContentMarginBottom = 10;
+            p.AddThemeStyleboxOverride("panel", sb);
+            p.AddChild(Ui.V(4, Ui.L("Ваш ответ: " + (chosen?.Label ?? "—"), 15, Ui.Text, Ui.Semi),
+                Wrap(Ui.L(m.Reply ?? "", 14, Ui.Muted))));
+            v.AddChild(p);
+        }
+        return v;
     }
 
     static Label Wrap(Label l)

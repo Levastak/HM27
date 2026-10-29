@@ -32,35 +32,47 @@ public partial class Shell : Control
     {
         new Section("portal", "Портал", new[]
         {
-            new Item("Обзор", "house", "home", null, "Главное за день: следующий матч, таблица, форма"),
-            new Item("Входящие", "inbox", "inbox", null, "Письма, новости и отчёты"),
+            new Item("Обзор", "house", "home", null, "Главное за день: решения, матч, новости"),
+            new Item("Входящие", "inbox", "inbox", null, "Письма, решения и новости лиги"),
         }),
-        new Section("squad", "Состав", new[]
+        new Section("team", "Команда", new[]
         {
-            new Item("Игроки", "users", "squad", "players", "Весь состав: форма, свежесть, способности"),
-            new Item("Звенья", "list-ordered", "lines", null, "Тройки, пары, спецбригады, вратарь"),
+            new Item("Игроки", "users", "squad", "players", "Состав: форма, свежесть, настрой, способности"),
+            new Item("Звенья", "list-ordered", "lines", null, "Тройки, пары, спецбригады, вратари"),
+            new Item("Раздевалка", "heart-pulse", "room", null, "Настрой игроков и команды: кто доволен, кто нет"),
             new Item("Статистика", "chart-column", "squad", "stats", "Очки, броски, время на льду"),
             new Item("Лазарет", "cross", "medical", null, "Травмы и сроки возвращения"),
             new Item("Тактика", "swords", null, null, "Этап «Тренер»", Soon: true),
-            new Item("Тренировки", "dumbbell", null, null, "Этап «Тренер»", Soon: true),
+        }),
+        new Section("training", "Тренировки", new[]
+        {
+            new Item("Неделя", "dumbbell", null, null, "Этап «Тренер»: нагрузка и упор недели", Soon: true),
+            new Item("Индивидуальные", "target", null, null, "Этап «Тренер»", Soon: true),
+            new Item("Развитие молодых", "trending-up", null, null, "Этап «Тренер»", Soon: true),
+        }),
+        new Section("calendar", "Календарь", new[]
+        {
+            new Item("Календарь", "calendar-days", "schedule", null, "Матчи клуба, результаты, события сезона"),
+            new Item("Последний матч", "clock", null, null, "Протокол, карта бросков и оценки", () => { var g = C.LastGame(C.UserTeam); if (g != null) Main.I.ShowMatch(g); }),
+        }),
+        new Section("deals", "Сделки", new[]
+        {
+            new Item("Обмены", "repeat", null, null, "Этап «Менеджер»", Soon: true),
+            new Item("Свободные агенты", "user", null, null, "Этап «Менеджер»", Soon: true),
+            new Item("Контракты", "newspaper", null, null, "Этап «Менеджер»: продления и потолок зарплат", Soon: true),
+            new Item("Драфт отказов", "log-out", null, null, "Этап «Менеджер»", Soon: true),
         }),
         new Section("scout", "Скаутинг", new[]
         {
-            new Item("Поиск игроков", "search", null, null, "Этап «Ширина»", Soon: true),
-            new Item("Драфт", "graduation-cap", null, null, "Этап «Ширина»", Soon: true),
-            new Item("Обмены", "repeat", null, null, "Этап «Ширина»", Soon: true),
-        }),
-        new Section("match", "Матчи", new[]
-        {
-            new Item("Календарь", "calendar-days", "schedule", null, "Все матчи клуба, результаты и соперники"),
-            new Item("Последний матч", "clock", null, null, "Протокол, статистика и оценки", () => { var g = C.LastGame(C.UserTeam); if (g != null) Main.I.ShowMatch(g); }),
+            new Item("Поиск игроков", "search", null, null, "Этап «Менеджер»", Soon: true),
+            new Item("Проспекты", "graduation-cap", null, null, "Этап «Менеджер»", Soon: true),
+            new Item("Драфт", "trophy", null, null, "Этап «Менеджер»", Soon: true),
         }),
         new Section("club", "Клуб", new[]
         {
-            new Item("Обзор", "landmark", "club", "overview", "Сила, прогноз прессы, лидеры"),
-            new Item("Игроки", "users", "club", "players", "Состав клуба"),
+            new Item("Обзор", "landmark", "club", "overview", "Цели, сила, прогноз прессы, история"),
             new Item("Статистика", "chart-column", "club", "stats", "Клуб на фоне лиги: xG, реализация, вратари"),
-            new Item("Расписание", "calendar-days", "club", "schedule", "Матчи клуба"),
+            new Item("Персонал", "users", null, null, "Этап «Тренер»: ассистенты, тренер вратарей, скауты, врачи", Soon: true),
         }),
         new Section("league", "Лига", new[]
         {
@@ -69,21 +81,16 @@ public partial class Shell : Control
             new Item("Клубы", "shield", "comp", "teams", "Продвинутая статистика всех 32 клубов"),
             new Item("Плей-офф", "git-fork", "comp", "playoffs", "Сетка Кубка Стэнли"),
         }),
-        new Section("career", "Карьера", new[]
-        {
-            new Item("Сохранить", "save", null, null, "Карьера сохраняется и сама после каждого дня", () => Main.I.Save()),
-            new Item("Главное меню", "log-out", null, null, "Сохранить и выйти в меню", () => { Main.I.Save(); Main.I.ShowMenu(); }),
-        }),
     };
 
     string SectionOf(Nav n) => n.Page switch
     {
         "home" or "inbox" => "portal",
-        "squad" or "lines" or "medical" => "squad",
-        "schedule" => "match",
+        "squad" or "lines" or "medical" or "room" => "team",
+        "schedule" => "calendar",
         "club" => n.Arg == null || n.Arg == C.UserTeam ? "club" : null,
         "comp" => "league",
-        "player" => C.Data.PlayerById[int.Parse(n.Arg)].Team == C.UserTeam ? "squad" : null,
+        "player" => C.Data.PlayerById[int.Parse(n.Arg)].Team == C.UserTeam ? "team" : null,
         _ => null,
     };
 
@@ -169,6 +176,7 @@ public partial class Shell : Control
             "player" => new PlayerPage(int.Parse(_cur.Arg), _cur.Sub),
             "club" => _cur.Sub == "schedule" ? Embedded("calendar:" + (_cur.Arg ?? C.UserTeam)) : _cur.Sub == "players" ? new SquadPage(_cur.Arg ?? C.UserTeam) : _cur.Sub == "stats" ? new TeamStatsPage(_cur.Arg ?? C.UserTeam) : new ClubPage(_cur.Arg ?? C.UserTeam),
             "medical" => new MedicalPage(),
+            "room" => new RoomPage(),
             _ => new HomePage(),
         };
         _page.AddChild(view);
@@ -196,8 +204,9 @@ public partial class Shell : Control
         string active = SectionOf(_cur);
         foreach (var sec in Sections()) h.AddChild(SectionButton(sec, sec.Key == active));
         h.AddChild(Ui.Spacer());
-        h.AddChild(SearchBox());
-        h.AddChild(Ui.Spacer(false, 10));
+        h.AddChild(TopIcon("search", "Поиск игрока или клуба", b => OpenSearch(b)));
+        h.AddChild(TopIcon("settings", "Сохранить, настройки, главное меню", b => OpenSettings(b)));
+        h.AddChild(Ui.Spacer(false, 8));
         string phase = C.Phase switch { Phase.Regular => "регулярный чемпионат", Phase.Playoffs => "плей-офф", _ => "сезон завершён" };
         var date = Ui.V(-4, Ui.L(Ui.Date(C.Today, false), 19, Ui.Text, Ui.CondBold, HorizontalAlignment.Right),
             Ui.L($"{Ui.DowLong(C.Today)}, {phase}", 11, Ui.Muted, null, HorizontalAlignment.Right));
@@ -205,6 +214,64 @@ public partial class Shell : Control
         h.AddChild(date);
         h.AddChild(Ui.Spacer(false, 10));
         h.AddChild(ContinueButton());
+        h.AddChild(ToMatchButton());
+    }
+
+    static Button TopIcon(string icon, string tip, Action<Button> onPress)
+    {
+        var b = new Button { FocusMode = FocusModeEnum.None, CustomMinimumSize = new Vector2(38, 38), TooltipText = tip, MouseDefaultCursorShape = CursorShape.PointingHand, SizeFlagsVertical = SizeFlags.ShrinkCenter };
+        var e = Ui.Box(new Color(0, 0, 0, 0), 3, null, 0);
+        b.AddThemeStyleboxOverride("normal", e);
+        b.AddThemeStyleboxOverride("hover", Ui.Box(Ui.Panel2, 3, null, 0));
+        b.AddThemeStyleboxOverride("pressed", Ui.Box(Ui.Panel2, 3, null, 0));
+        var ic = Ui.Icon(icon, 19, Ui.Muted);
+        ic.SetAnchorsPreset(LayoutPreset.FullRect);
+        ic.OffsetLeft = ic.OffsetTop = 9; ic.OffsetRight = ic.OffsetBottom = -9;
+        b.AddChild(ic);
+        b.Pressed += () => onPress(b);
+        return b;
+    }
+
+    void OpenSearch(Control anchor)
+    {
+        var pop = new PopupPanel();
+        pop.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Side, 3, Ui.Blue, 8));
+        var box = SearchBox();
+        pop.AddChild(box);
+        AddChild(pop);
+        pop.PopupHide += () => pop.QueueFree();
+        var gp = anchor.GetScreenPosition();
+        pop.Popup(new Rect2I((int)gp.X - 260, (int)(gp.Y + anchor.Size.Y + 4), 300, 10));
+        box.CallDeferred(Control.MethodName.GrabFocus);
+    }
+
+    void OpenSettings(Control anchor)
+    {
+        var pop = new PopupPanel();
+        pop.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Side, 3, Ui.Line, 6));
+        var v = Ui.V(0);
+        pop.AddChild(v);
+        void Row(string icon, string text, string hint, Action a)
+        {
+            var b = new Button { FocusMode = FocusModeEnum.None, CustomMinimumSize = new Vector2(300, 48), MouseDefaultCursorShape = CursorShape.PointingHand };
+            b.AddThemeStyleboxOverride("normal", Ui.Box(new Color(0, 0, 0, 0), 3, null, 10));
+            b.AddThemeStyleboxOverride("hover", Ui.Box(Ui.Panel2, 3, null, 10));
+            b.AddThemeStyleboxOverride("pressed", Ui.Box(Ui.Panel2, 3, null, 10));
+            var hh = Ui.H(12, Ui.Icon(icon, 18, Ui.Muted), Ui.V(0, Ui.L(text, 14, Ui.Text, Ui.Semi), Ui.L(hint, 11, Ui.Dim)));
+            hh.MouseFilter = MouseFilterEnum.Ignore; SetIgnore(hh);
+            hh.SetAnchorsPreset(LayoutPreset.FullRect); hh.OffsetLeft = 12;
+            b.AddChild(hh);
+            b.Pressed += () => { pop.Hide(); a(); };
+            v.AddChild(b);
+        }
+        Row("save", "Сохранить", "Карьера сохраняется и сама после каждого дня", () => Main.I.Save());
+        Row("user", Names.English ? "Имена: English" : "Имена: по-русски", "Как писать игроков и клубы", () => { Names.English = !Names.English; Main.SaveSettings(); Render(); });
+        Row("star", StarScale.Relative ? "Звёзды: относительно клуба" : "Звёзды: по шкале лиги", "Шкала способностей и потенциала", () => { StarScale.Relative = !StarScale.Relative; Main.SaveSettings(); Render(); });
+        Row("log-out", "Главное меню", "Сохранить и выйти в меню", () => { Main.I.Save(); Main.I.ShowMenu(); });
+        AddChild(pop);
+        pop.PopupHide += () => pop.QueueFree();
+        var gp = anchor.GetScreenPosition();
+        pop.Popup(new Rect2I((int)gp.X - 270, (int)(gp.Y + anchor.Size.Y + 4), 310, 10));
     }
 
     Control SectionButton(Section sec, bool on)
@@ -218,10 +285,10 @@ public partial class Shell : Control
         int badge = sec.Key switch
         {
             "portal" => C.Unread,
-            "squad" => C.Injured.Count(id => C.Data.PlayerById[id].Team == C.UserTeam),
+            "team" => C.Injured.Count(id => C.Data.PlayerById[id].Team == C.UserTeam),
             _ => 0,
         };
-        if (badge > 0) h.AddChild(Badge(badge, sec.Key == "squad" ? Ui.Red : Ui.Blue));
+        if (badge > 0) h.AddChild(Badge(badge, sec.Key == "team" ? Ui.Red : Ui.Blue));
         h.AddChild(Ui.Icon("chevron-down", 13, on ? Ui.Muted : Ui.Dim));
         h.MouseFilter = MouseFilterEnum.Ignore;
         foreach (var ch in h.GetChildren()) if (ch is Control cc) cc.MouseFilter = MouseFilterEnum.Ignore;
@@ -232,6 +299,48 @@ public partial class Shell : Control
         b.CustomMinimumSize = new Vector2(h.GetCombinedMinimumSize().X + 20, 44);
         b.Pressed += () => OpenSection(sec, b);
         return b;
+    }
+
+    /// <summary>Лента ближайших дней: матчи (дома/в гостях, соперник), второй матч за два дня, сегодня.</summary>
+    Control DayStrip()
+    {
+        var h = Ui.H(4);
+        h.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+        string[] dow = { "вс", "пн", "вт", "ср", "чт", "пт", "сб" };
+        for (int i = 0; i < 7; i++)
+        {
+            var d = C.Today.AddDays(i);
+            var g = C.TeamGames(C.UserTeam).FirstOrDefault(x => x.Date == d);
+            bool b2b = g != null && C.TeamGames(C.UserTeam).Any(x => x.Date == d.AddDays(-1));
+            var p = new PanelContainer { CustomMinimumSize = new Vector2(54, 54), MouseFilter = MouseFilterEnum.Stop };
+            var sb = Ui.Box(i == 0 ? new Color(0, 0, 0, 0.45f) : new Color(0, 0, 0, 0.25f), 3, i == 0 ? Ui.Gold : null, 3);
+            sb.ContentMarginTop = sb.ContentMarginBottom = 3;
+            if (g != null && i != 0) { sb.BorderColor = new Color(Ui.Text, 0.35f); sb.SetBorderWidthAll(1); }
+            p.AddThemeStyleboxOverride("panel", sb);
+            var v = Ui.V(-1);
+            v.MouseFilter = MouseFilterEnum.Ignore;
+            v.AddChild(Ui.L(i == 0 ? "сегодня" : $"{dow[(int)d.DayOfWeek]} {d.Day}", 10, i == 0 ? Ui.Gold : new Color(1, 1, 1, 0.7f), Ui.Semi, HorizontalAlignment.Center));
+            if (g != null)
+            {
+                bool home = g.Home == C.UserTeam;
+                var opp = C.Team(home ? g.Away : g.Home);
+                v.AddChild(new TeamBadge(opp, 22) { SizeFlagsHorizontal = SizeFlags.ShrinkCenter });
+                v.AddChild(Ui.L(home ? "дома" : "в гостях", 9, b2b ? Ui.Otl : new Color(1, 1, 1, 0.65f), null, HorizontalAlignment.Center));
+                p.TooltipText = $"{Ui.Date(d)}: {(home ? "дома" : "в гостях")} — «{opp.Name}»{(b2b ? "\nВторой матч за два дня" : "")}";
+                p.MouseDefaultCursorShape = CursorShape.PointingHand;
+                var abbr = opp.Abbr;
+                p.GuiInput += e => { if (e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left }) Go("club", null, abbr); };
+            }
+            else
+            {
+                v.AddChild(Ui.L("·", 16, new Color(1, 1, 1, 0.35f), null, HorizontalAlignment.Center));
+                p.TooltipText = $"{Ui.Date(d)}: без матча";
+            }
+            foreach (var ch in v.GetChildren()) if (ch is Control cc) cc.MouseFilter = MouseFilterEnum.Ignore;
+            p.AddChild(v);
+            h.AddChild(p);
+        }
+        return h;
     }
 
     static Control Badge(int n, Color c)
@@ -330,6 +439,7 @@ public partial class Shell : Control
         var tv = Ui.V(-2, Ui.L(title, 30, fg, Ui.CondBold), Ui.L(sub, 13, new Color(fg, 0.78f)));
         tv.Alignment = BoxContainer.AlignmentMode.Center;
         h.AddChild(Ui.Expand(tv));
+        h.AddChild(DayStrip());
         // вторая краска клуба — тонкая полоса снизу, как кант на свитере
         _stripe.Color = c2;
     }
@@ -357,6 +467,7 @@ public partial class Shell : Control
             "player" => (t.Name, rec),
             "club" => (t.Name, rec),
             "medical" => ("Лазарет", rec),
+            "room" => ("Раздевалка", rec),
             _ => (t.Name, rec),
         };
     }
@@ -375,7 +486,7 @@ public partial class Shell : Control
 
     Control SearchBox()
     {
-        var box = new LineEdit { PlaceholderText = "Игрок или клуб", CustomMinimumSize = new Vector2(210, 34), ClearButtonEnabled = true };
+        var box = new LineEdit { PlaceholderText = "Игрок или клуб", CustomMinimumSize = new Vector2(280, 36), ClearButtonEnabled = true };
         box.SizeFlagsVertical = SizeFlags.ShrinkCenter;
         var sb = Ui.Box(Ui.Panel, 3, Ui.Line, 10);
         sb.ContentMarginLeft = 32;
@@ -422,24 +533,27 @@ public partial class Shell : Control
         string label, sub;
         bool enabled = C.Phase != Phase.Finished;
         var g = C.UserGameToday();
+        int need = Decisions.Blocking(C);
+        bool block = enabled && need > 0;
         if (!enabled) { label = "Сезон завершён"; sub = C.Champion != null ? $"Кубок: «{C.Team(C.Champion).City}»" : ""; }
+        else if (block) { label = "Нужно решение"; sub = need == 1 ? "одно письмо ждёт ответа" : $"{need} письма ждут ответа"; }
         else if (g != null) { label = "Матч дня"; sub = g.Home == C.UserTeam ? $"с «{C.Team(g.Away).City}»" : $"в гостях у «{C.Team(g.Home).City}»"; }
         else
         {
-            var next = C.NextGame(C.UserTeam);
             label = "Продолжить";
-            sub = next != null ? $"следующий матч {Ui.DateShort(next.Date)}" : "следующий день";
+            var tomorrow = C.Today.AddDays(1);
+            sub = $"к {Ui.DateShort(tomorrow)}{(C.TeamGames(C.UserTeam).Any(x => x.Date == tomorrow) ? " · матч" : "")}";
         }
         var b = new Button { FocusMode = FocusModeEnum.None, CustomMinimumSize = new Vector2(196, 46), Disabled = !enabled, MouseDefaultCursorShape = CursorShape.PointingHand };
-        // день матча — янтарь табло, обычный день — синяя линия
-        var bg = g != null ? Ui.Gold : Ui.Blue;
+        // день матча — янтарь табло, ждёт решения — красный, обычный день — синяя линия
+        var bg = block ? Ui.Red : g != null ? Ui.Gold : Ui.Blue;
         var fg = Ui.ReadableOn(bg);
         b.AddThemeStyleboxOverride("normal", Ui.Box(bg, 3, null, 12));
         b.AddThemeStyleboxOverride("hover", Ui.Box(bg.Lightened(0.1f), 3, null, 12));
         b.AddThemeStyleboxOverride("pressed", Ui.Box(bg.Darkened(0.15f), 3, null, 12));
         b.AddThemeStyleboxOverride("disabled", Ui.Box(Ui.Panel, 3, Ui.Line, 12));
         if (!enabled) fg = Ui.Muted;
-        var v = Ui.V(-4, Ui.H(6, Ui.L(label, 19, fg, Ui.CondBold), Ui.Spacer(), Ui.Icon(enabled ? "chevrons-right" : "trophy", 18, fg)), Ui.L(sub, 11, new Color(fg, 0.8f)));
+        var v = Ui.V(-4, Ui.H(6, Ui.L(label, 19, fg, Ui.CondBold), Ui.Spacer(), Ui.Icon(!enabled ? "trophy" : block ? "message-circle" : "chevrons-right", 18, fg)), Ui.L(sub, 11, new Color(fg, 0.8f)));
         v.Alignment = BoxContainer.AlignmentMode.Center;
         v.MouseFilter = MouseFilterEnum.Ignore;
         SetIgnore(v);
@@ -449,18 +563,44 @@ public partial class Shell : Control
         return b;
     }
 
+    /// <summary>«Продолжить»: обязательное письмо → к нему; день матча → матч; иначе — следующий день.</summary>
     void OnContinue()
     {
         if (C.Phase == Phase.Finished) return;
+        var need = C.Messages.Where(m => m.Required && m.Pending).OrderBy(m => m.Id).FirstOrDefault();
+        if (need != null) { Go("inbox", null, need.Id.ToString()); return; }
         var g = C.UserGameToday();
-        if (g == null)
-        {
-            C.SimToUserGame();
-            Main.I.Save();
-            g = C.UserGameToday();
-        }
-        if (g != null) Main.I.ShowMatch(g);
-        else Render();
+        if (g != null) { Main.I.ShowMatch(g); return; }
+        C.SimDay();
+        Main.I.Save();
+        Render();
+    }
+
+    /// <summary>«До матча»: дни без матчей подряд, но с остановкой на обязательном письме.</summary>
+    void OnToMatch()
+    {
+        if (C.Phase == Phase.Finished) return;
+        if (Decisions.Blocking(C) > 0 || C.UserGameToday() != null) { OnContinue(); return; }
+        C.SimToUserGame(stopOnDecision: true);
+        Main.I.Save();
+        Render();
+    }
+
+    Control ToMatchButton()
+    {
+        var b = new Button { FocusMode = FocusModeEnum.None, CustomMinimumSize = new Vector2(44, 46), TooltipText = "До следующего матча (остановится, если понадобится ваше решение)",
+            MouseDefaultCursorShape = CursorShape.PointingHand, Disabled = C.Phase == Phase.Finished || C.UserGameToday() != null || Decisions.Blocking(C) > 0 };
+        var bg = Ui.Blue.Darkened(0.25f);
+        b.AddThemeStyleboxOverride("normal", Ui.Box(bg, 3, null, 0));
+        b.AddThemeStyleboxOverride("hover", Ui.Box(bg.Lightened(0.12f), 3, null, 0));
+        b.AddThemeStyleboxOverride("pressed", Ui.Box(bg.Darkened(0.15f), 3, null, 0));
+        b.AddThemeStyleboxOverride("disabled", Ui.Box(Ui.Panel, 3, Ui.Line, 0));
+        var ic = Ui.Icon("skip-forward", 18, b.Disabled ? Ui.Dim : Colors.White);
+        ic.SetAnchorsPreset(LayoutPreset.FullRect);
+        ic.OffsetLeft = 12; ic.OffsetRight = -12; ic.OffsetTop = 13; ic.OffsetBottom = -13;
+        b.AddChild(ic);
+        b.Pressed += OnToMatch;
+        return b;
     }
 
     // ------------------------------------------------------------------ вкладки раздела

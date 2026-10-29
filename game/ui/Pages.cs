@@ -334,10 +334,9 @@ public partial class SquadPage : Control
             } },
             new() { Title = "Поз", Width = 40, Cell = p => Ui.L(Ui.PosRu(p.Pos), 12, Ui.Muted), Sort = p => "C LWRWD G".IndexOf(p.Pos), Desc = false },
             new() { Title = "Возр", Width = 40, Cell = p => Ui.L(p.Age(age)?.ToString() ?? "", 12), Sort = p => p.Age(age) ?? 0, Desc = false },
-            new() { Title = "Страна", Width = 50, Cell = p => Ui.L(p.Country ?? "", 11, Ui.Muted), Sort = p => p.Country ?? "", Desc = false },
-            new() { Title = "Рост", Width = 40, Cell = p => Ui.L(p.Height?.ToString() ?? "", 12, Ui.Muted), Sort = p => p.Height ?? 0 },
             new() { Title = "В составе", Width = 92, Align = HorizontalAlignment.Left, Cell = p => { var r = P.Role(p.Id, _abbr); return Ui.L(r, 12, r == "Травма" ? Ui.Loss : r == "Запас" ? Ui.Dim : Ui.Muted); }, Sort = p => RoleOrder(p.Id), Desc = false },
             new() { Title = "Форма", Width = 96, Align = HorizontalAlignment.Left, Tip = "По оценкам за последние 8 матчей относительно его обычного уровня", Cell = p => Ui.FormCell(PlayerForm.Of(C, p.Id)), Sort = p => PlayerForm.Of(C, p.Id).Score },
+            new() { Title = "Настрой", Width = 132, Align = HorizontalAlignment.Left, Tip = "Роль и минуты, результаты, оценки и ваши решения. Подробно — «Раздевалка»", Cell = p => RoomPage.MoodCell(C, p.Id), Sort = p => C.Players.TryGetValue(p.Id, out var s) ? s.Morale : 60 },
             new() { Title = "Свежесть", Width = 70, Align = HorizontalAlignment.Left, Tip = "Нагрузка за сезон: большие минуты и плотный календарь утомляют", Cell = p => Ui.FreshCell(PlayerModel.State(C, p.Id)), Sort = p => PlayerModel.State(C, p.Id)?.Fresh ?? 100 },
             new() { Title = "Способности", Width = 86, Cell = p => Ui.Stars(StarScale.StarsV(C, p, PlayerModel.Visible(C, p, "ca")), 13), Sort = p => PlayerModel.Visible(C, p, "ca"),
                     Tip = StarScale.Relative ? "Оценка штаба относительно вашего клуба: 5★ — уровень лучшего в своей группе" : "Оценка штаба по шкале лиги" },
@@ -459,7 +458,9 @@ public partial class InboxPage : Control
             var title = Ui.L(x.Subject, 14, x.Read ? Ui.Muted : Ui.Text, x.Read ? Ui.Medium : Ui.Semi);
             title.ClipText = true; title.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
             var v = Ui.V(2,
-                Ui.H(8, Article.Tag(x.Tag ?? "Письмо", 13), Ui.Expand(Ui.L(x.From, 11, Ui.Dim)), Ui.L(Ui.DateShort(x.Date), 11, Ui.Dim)),
+                Ui.H(8, Article.Tag(x.Tag ?? "Письмо", 13), Ui.Expand(Ui.L(x.From, 11, Ui.Dim)),
+                    x.Pending ? Ui.L(x.Required ? "нужно решение" : "ждёт ответа", 11, x.Required ? Ui.Red : Ui.Gold, Ui.Semi) : new Control(),
+                    Ui.L(Ui.DateShort(x.Date), 11, Ui.Dim)),
                 Ui.H(6, x.Read ? new Control() : new ColorRect { Color = Ui.Blue, CustomMinimumSize = new Vector2(6, 6), SizeFlagsVertical = SizeFlags.ShrinkCenter }, Ui.Expand(title)));
             v.MouseFilter = MouseFilterEnum.Ignore;
             SetIgnore(v);
@@ -471,7 +472,7 @@ public partial class InboxPage : Control
         if (_list.GetChildCount() == 0) _list.AddChild(Ui.Margin(Ui.L(_filter == 1 ? "Новостей пока нет" : "Писем пока нет", 13, Ui.Muted), 14, 12, 14, 12));
         Ui.Clear(_view);
         if (msg == null) { _view.AddChild(Ui.L("Выберите письмо слева", 14, Ui.Muted)); return; }
-        _view.AddChild(Article.Make(C, msg));
+        _view.AddChild(Article.Make(C, msg, () => { Build(); Shell.I?.RefreshSide(); }));
     }
 
     static void SetIgnore(Control c)

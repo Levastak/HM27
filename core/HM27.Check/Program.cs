@@ -59,6 +59,14 @@ if (args.Length > 1 && args[1] == "news")
         var g0 = doc.RootElement.GetProperty("Games").EnumerateArray().First(g => g.TryGetProperty("Result", out var r) && r.ValueKind == System.Text.Json.JsonValueKind.Object && r.GetProperty("Events").GetArrayLength() == 0);
         Console.WriteLine("  чужой матч: " + g0.GetRawText().Length + " байт: " + g0.GetRawText()[..Math.Min(900, g0.GetRawText().Length)]);
     }
+    {
+        var all = nc.Players.Values.Select(x => x.Morale).ToList();
+        Console.WriteLine($"Настрой лиги: среднее {all.Average():F1}, SD {Math.Sqrt(all.Average(x => (x - all.Average()) * (x - all.Average()))):F1}, ниже 35: {all.Count(x => x < 35)}, выше 85: {all.Count(x => x > 85)}");
+        foreach (var p in data.Roster(nc.UserTeam).OrderBy(p => nc.Players[p.Id].Morale))
+            Console.Write($"{p.LastRu} {nc.Players[p.Id].Morale:F0}/{nc.Players[p.Id].Grief:F0}  ");
+        Console.WriteLine();
+        Console.WriteLine($"Решений: {nc.Messages.Count(m => m.Options != null)}, ответы: {string.Join(", ", nc.Messages.Where(m => m.Options != null).GroupBy(m => m.Action + ":" + m.Choice).Select(g => g.Key + "×" + g.Count()))}");
+    }
     var ml = nc.Lineups[nc.UserTeam];
     string Nm(int id) => id == 0 ? "—" : data.PlayerById[id].LastRu + (nc.Injured.Contains(id) ? "*" : "");
     Console.WriteLine("Состав: " + string.Join(" | ", ml.F.Select(u => string.Join("-", u.Select(Nm)))) + " || " + string.Join(" | ", ml.D.Select(u => string.Join("-", u.Select(Nm)))) + $" || G {Nm(ml.G1)}/{Nm(ml.G2)}");
@@ -394,6 +402,13 @@ Check("Плей-офф", playoffsOk, $"15 серий и чемпион в каж
     var avg = c.Skaters.Values.Where(x => x.Rated > 0).Sum(x => x.RatingSum) / c.Skaters.Values.Sum(x => x.Rated);
     var gavg = c.Goalies.Values.Where(x => x.Rated > 0).Sum(x => x.RatingSum) / c.Goalies.Values.Sum(x => x.Rated);
     Check("Оценки за матч", avg is >= 6.5 and <= 7.1 && gavg is >= 6.4 and <= 7.3, $"средняя оценка полевых {avg:F2}, вратарей {gavg:F2} (как в FM: 6,5–7,1)");
+    {
+        var mor = c.Players.Values.Select(x => (double)x.Morale).ToList();
+        double mm = mor.Average(), sd = Math.Sqrt(mor.Average(x => (x - mm) * (x - mm)));
+        int dec = c.Messages.Count(m => m.Options != null), open = c.Messages.Count(m => m.Pending && m.Due < c.Today);
+        Check("Настрой и решения", mm is >= 52 and <= 72 && sd is >= 4 and <= 20 && open == 0 && dec >= 3,
+            $"настрой лиги после плей-офф (без матчей тянется к норме): среднее {mm:F1}, разброс {sd:F1}; решений у клуба игрока за сезон {dec}, просроченных без ответа {open}");
+    }
     int userGames = c.Games.Count(g => g.Home == "MIN" || g.Away == "MIN");
     var mine = c.Games.First(g => g.Home == "MIN" || g.Away == "MIN");
     Check("Хроника матча", mine.Result.Events.Count > 60 && mine.Result.Events.Count(e => e.Kind == "goal") == mine.Result.Goals.Count(e => e.Kind != "so")
@@ -401,6 +416,8 @@ Check("Плей-офф", playoffsOk, $"15 серий и чемпион в каж
         $"событий в своём матче: {mine.Result.Events.Count} (голы совпадают со счётом), чужие матчи без хроники");
 
     double ptsBase = 0, ptsPull = 0, gBase = 0, gClosed = 0, ties = 0, tiesClosed = 0, n = 0;
+    // настрой выключен: он разносит последствия одного матча на весь сезон и прячет эффект настройки в шуме
+    double morK = Morale.MOR_K; Morale.MOR_K = 0;
     for (int s = 0; s < 12; s++)
     {
         var a = Career.New(data, "SJS", 9000 + s); a.SimToEnd();
@@ -410,6 +427,7 @@ Check("Плей-офф", playoffsOk, $"15 серий и чемпион в каж
         foreach (var g in a.Games.Where(g => !g.Playoff && (g.Home == "SJS" || g.Away == "SJS"))) { gBase += g.Result.HomeGoals + g.Result.AwayGoals; if (g.Result.End != "REG") ties++; n++; }
         foreach (var g in d.Games.Where(g => !g.Playoff && (g.Home == "SJS" || g.Away == "SJS"))) { gClosed += g.Result.HomeGoals + g.Result.AwayGoals; if (g.Result.End != "REG") tiesClosed++; }
     }
+    Morale.MOR_K = morK;
     // по частотам НХЛ 2023-26 (6×5: 0,0023 гола в секунду, в пустые 0,0066) раннее снятие почти нейтрально: оптимум за 3–4 минуты
     // даёт +1 п.п. шанса сравнять, это ~+0,2 очка за сезон — меньше шума 12 сезонов (±0,6); проверяем, что настройка не вредит заметно
     Check("Раннее снятие вратаря", ptsPull >= ptsBase - 24 && ptsPull <= ptsBase + 48, $"«Сан-Хосе», 12 сезонов: очков {ptsBase / 12:F1} → {ptsPull / 12:F1} за сезон (по частотам НХЛ — около нуля, чуть выгоднее)");

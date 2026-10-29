@@ -122,6 +122,10 @@ public sealed class Career
     /// <summary>Сколько стартов подряд у основного вратаря (ИИ даёт отдых).</summary>
     public Dictionary<string, int> GoalieStreak { get; set; } = new();
     public List<Message> Messages { get; set; } = new();
+    /// <summary>Обещания тренера игрокам (Decisions).</summary>
+    public List<Promise> Promises { get; set; } = new();
+    /// <summary>Средний настрой по лиге — точка отсчёта эффекта настроя (Morale.Effect).</summary>
+    public float MoraleMean { get; set; } = 60;
     /// <summary>Модель игрока: истинные характеристики, потенциал, характер, знание клуба, форма.</summary>
     public Dictionary<int, PlayerState> Players { get; set; } = new();
     /// <summary>Сила клубов «снизу вверх» из игроков базы (TeamStrength) — в новых карьерах; старые сохранения — сила модели «Сводки».</summary>
@@ -176,10 +180,20 @@ public sealed class Career
     public void Attach(GameData data) => Data = data;
 
     /// <summary>Сдвиг силы игрока для движка (модель игрока).</summary>
-    public double Dl(int id) => Data.PlayerById.TryGetValue(id, out var p) ? PlayerModel.Delta(this, p) + Fatigue.Penalty(Players.GetValueOrDefault(id), p.IsGoalie) : 0;
+    public double Dl(int id) => Data.PlayerById.TryGetValue(id, out var p) ? PlayerModel.Delta(this, p) + Fatigue.Penalty(Players.GetValueOrDefault(id), p.IsGoalie) + Mood(id) : 0;
+
+    /// <summary>Настрой и игра через боль (ед. шкалы 1–20).</summary>
+    double Mood(int id)
+    {
+        double d = Morale.Effect(this, id);
+        if (Players.TryGetValue(id, out var s) && s.HurtUntil is { } h && h >= Today) d -= HURT_DL;
+        return d;
+    }
+    /// <summary>Игра через боль: минус к уровню (дизайн) и риск травмы × HURT_INJ.</summary>
+    public const double HURT_DL = 0.7, HURT_INJ = 2.5;
 
     /// <summary>Сдвиг силы в плей-офф: + хладнокровие (опыт больших матчей), в пределах, которые не ловит зеркальная проверка.</summary>
-    public double DlPlayoff(int id) => Data.PlayerById.TryGetValue(id, out var p) ? PlayerModel.Delta(this, p) + PlayerModel.Composure(this, p) + Fatigue.Penalty(Players.GetValueOrDefault(id), p.IsGoalie) : 0;
+    public double DlPlayoff(int id) => Data.PlayerById.TryGetValue(id, out var p) ? PlayerModel.Delta(this, p) + PlayerModel.Composure(this, p) + Fatigue.Penalty(Players.GetValueOrDefault(id), p.IsGoalie) + Mood(id) : 0;
 
     /// <summary>
     /// Эффект состава тренера: голов за матч забиваем / пропускаем больше (+) или меньше (−), чем со звеньями «как в НХЛ»
@@ -384,6 +398,7 @@ public sealed class Career
         Record(g);
         InjuryModel.AfterGame(this, g, new Random(unchecked(Seed * 104729 + g.Id)));
         Fatigue.AfterGame(this, g);
+        Morale.AfterGame(this, g);
         if (!mine) { r.Events = new(); r.Box = new(); }   // хронику и протокол храним только для своих матчей — сохранение не раздувается
         foreach (var (side, abbr) in new[] { (h, g.Home), (a, g.Away) })
             GoalieStreak[abbr] = side.Goalie == Lineups[abbr].G1 ? GoalieStreak.GetValueOrDefault(abbr) + 1 : 0;
@@ -425,15 +440,18 @@ public sealed class Career
         if (Today.DayOfWeek == DayOfWeek.Monday) Development.Week(this);   // развитие, форма, знание — раз в неделю
         if (Phase == Phase.Playoffs) SchedulePlayoffDay();
         InboxWriter.Periodic(this);
+        Morale.Daily(this);
+        Decisions.Daily(this);
         News.NewDay(this);
     }
 
     /// <summary>Симулировать до ближайшего матча клуба игрока (сам матч не играется).</summary>
-    public int SimToUserGame()
+    public int SimToUserGame(bool stopOnDecision = false)
     {
         int days = 0;
         while (Phase != Phase.Finished && UserGameToday() == null && days < 400)
         {
+            if (stopOnDecision && Decisions.Blocking(this) > 0) break;   // интерфейс: сначала ответьте на обязательное письмо
             SimDay();
             days++;
             if (Phase == Phase.Playoffs && !Bracket.Any(s => !s.Done && (s.High == UserTeam || s.Low == UserTeam)) && UserGameToday() == null)

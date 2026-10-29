@@ -78,6 +78,12 @@ public sealed class PlayerState
 {
     /// <summary>Свежесть 0–100: нагрузка за сезон (Fatigue).</summary>
     public float Fresh { get; set; } = 100;
+    /// <summary>Настрой 0–100 (Morale): роль и минуты, результаты, свои оценки, решения тренера.</summary>
+    public float Morale { get; set; } = 60;
+    /// <summary>Обида на роль: копится, когда минут меньше ожидаемого, тает сама.</summary>
+    public float Grief { get; set; }
+    /// <summary>Играет через боль до этой даты: слабее и чаще травмируется.</summary>
+    public DateOnly? HurtUntil { get; set; }
     /// <summary>Истинный уровень 1–20.</summary>
     public float Lvl { get; set; }
     /// <summary>Уровень в начале сезона — для стрелок развития.</summary>

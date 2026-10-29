@@ -34,7 +34,8 @@ public static class InjuryModel
                 // риск растёт с временем на льду медленнее минут (у лидеров на минуту меньше силовой борьбы): × (мин / 16,7)^0,5; плюс усталость
                 double min = r.Box.TryGetValue(id, out var bx) && bx.Toi > 0 ? bx.Toi / 60.0 : c.Lineups.TryGetValue(team, out var ln) ? ln.MinutesOf(id) : 16.7;
                 double rate = (p.IsGoalie ? GOALIE_RATE : SKATER_RATE * (0.7 + 0.6 * p.Rating("hit") / 99.0) * Math.Pow(Math.Max(min, 3) / 16.7, 0.5))
-                              * Fatigue.InjuryMult(c.Players.GetValueOrDefault(id));
+                              * Fatigue.InjuryMult(c.Players.GetValueOrDefault(id))
+                              * (c.Players.TryGetValue(id, out var hs) && hs.HurtUntil is { } hu && hu >= c.Today ? Career.HURT_INJ : 1);
                 if (rng.NextDouble() >= rate) continue;
                 double u = rng.NextDouble();
                 int days = u < 0.40 ? rng.Next(2, 8) : u < 0.74 ? rng.Next(8, 26) : u < 0.925 ? rng.Next(26, 61) : rng.Next(61, 151);

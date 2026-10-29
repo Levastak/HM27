@@ -26,8 +26,33 @@ public sealed class Message
     public string QuoteBy { get; set; }
     /// <summary>Вес для портала: 0 — рутина, 3 — главная новость дня.</summary>
     public int Weight { get; set; }
+    // ---- решение: варианты ответа прямо в письме
+    public List<MsgOption> Options { get; set; }
+    /// <summary>Выбранный вариант (null — ещё не ответили).</summary>
+    public string Choice { get; set; }
+    /// <summary>Обязательное: пока нет ответа, «Продолжить» не пускает дальше.</summary>
+    public bool Required { get; set; }
+    /// <summary>Срок ответа; после него — вариант по умолчанию (в автоматическом прогоне — всегда).</summary>
+    public DateOnly? Due { get; set; }
+    /// <summary>Обработчик решения (Decisions) и его объект — обычно id игрока.</summary>
+    public string Action { get; set; }
+    public int Target { get; set; }
+    /// <summary>Что было после ответа — показывается под вариантами.</summary>
+    public string Reply { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore] public bool Pending => Options != null && Choice == null;
     /// <summary>Новость лиги или прессы (лента портала), а не письмо тренеру: не входит в счётчик непрочитанных.</summary>
     [System.Text.Json.Serialization.JsonIgnore] public bool IsNews => Kind == "league" || Tag is "Вечер в НХЛ" or "Пресса" || (Tag == "Клуб" && From == "Пресса");
+}
+
+public sealed class MsgOption
+{
+    public string Id { get; set; }
+    public string Label { get; set; }
+    /// <summary>Чем это обернётся — подсказка под кнопкой.</summary>
+    public string Hint { get; set; }
+    public bool Default { get; set; }
+    public MsgOption() { }
+    public MsgOption(string id, string label, string hint = null, bool def = false) { Id = id; Label = label; Hint = hint; Default = def; }
 }
 
 public sealed class MsgFact

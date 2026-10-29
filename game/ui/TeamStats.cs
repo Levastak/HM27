@@ -214,3 +214,68 @@ public partial class LeagueTeamsPage : Control
                         "PDO и «Г−xG» показывают удачу: сильно выше нормы — результат скорее всего опережает игру.", 12, Ui.Dim).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart));
     }
 }
+
+/// <summary>Раздевалка: настрой команды и каждого игрока, ожидания по роли, обиды и обещания тренера.</summary>
+public partial class RoomPage : Control
+{
+    Career C => P.C;
+    public RoomPage() { SizeFlagsHorizontal = SizeFlags.ExpandFill; SizeFlagsVertical = SizeFlags.ExpandFill; }
+
+    public static Color MoodColor(float m) => m >= 80 ? Ui.Win : m >= 67 ? new Color("8BD3A0") : m >= 47 ? Ui.Text : m >= 32 ? Ui.Otl : Ui.Loss;
+
+    public static Control MoodCell(Career c, int id)
+    {
+        float m = c.Players.TryGetValue(id, out var s) ? s.Morale : Morale.BASE;
+        var bar = new PctBar(m / 100.0) { CustomMinimumSize = new Vector2(46, 18) };
+        var h = Ui.H(6, bar, Ui.L(Morale.Word(m), 12, MoodColor(m), m < 45 ? Ui.Semi : null));
+        h.TooltipText = $"Настрой {m:0} из 100";
+        return h;
+    }
+
+    string Reason(PlayerData p, PlayerState s)
+    {
+        var pr = C.Promises.FirstOrDefault(x => x.Player == p.Id);
+        if (pr != null) return $"ждёт обещанного до {Ui.DateShort(pr.Due)}";
+        if (s.HurtUntil is { } h && h >= C.Today) return "играет через боль";
+        if (s.Grief >= 4) return Morale.Status(C, p) <= 1 ? "мало играет для своего статуса" : "хочет больше времени";
+        var row = C.Table[p.Team];
+        if (row.Streak.StartsWith("П") && row.Streak.Length > 1 && int.TryParse(row.Streak[1..].TrimStart('О'), out var n) && n >= 3) return "давит серия поражений";
+        var f = PlayerForm.Of(C, p.Id);
+        if (f.Games >= 3 && f.Word is "Спад" or "Провал") return "своя игра не идёт";
+        if (s.Morale >= 72) return f.Word is "Отличная" or "Хорошая" ? "в форме и доволен ролью" : "доволен ролью и командой";
+        return "всё спокойно";
+    }
+
+    public override void _Ready()
+    {
+        var v = Ui.V(12);
+        var page = P.Page(v);
+        page.SetAnchorsPreset(LayoutPreset.FullRect);
+        AddChild(page);
+        var roster = C.Roster(C.UserTeam).Where(p => C.Players.ContainsKey(p.Id)).ToList();
+        float team = Morale.Team(C, C.UserTeam);
+        int happy = roster.Count(p => C.Players[p.Id].Morale >= 65), sad = roster.Count(p => C.Players[p.Id].Morale < 45);
+        var tiles = Ui.H(10);
+        tiles.AddChild(PlayerViz.Tile("heart-pulse", "Настрой команды", Morale.Word(team), MoodColor(team), $"{team:0} из 100 · в лиге в среднем {C.MoraleMean:0}",
+            "Средний настрой заявки. Хороший настрой немного добавляет игрокам, плохой — отнимает"));
+        tiles.AddChild(PlayerViz.Tile("trending-up", "Довольны", $"{happy}", Ui.Win, Ui.Plural(happy, "игрок", "игрока", "игроков")));
+        tiles.AddChild(PlayerViz.Tile("trending-down", "Недовольны", $"{sad}", sad > 0 ? Ui.Otl : Ui.Text, sad == 0 ? "никто" : "могут прийти поговорить"));
+        tiles.AddChild(PlayerViz.Tile("handshake", "Обещания", $"{C.Promises.Count}", Ui.Text, C.Promises.Count == 0 ? "нет действующих" : "сверка в срок — по фактам"));
+        v.AddChild(tiles);
+
+        var rows = roster.OrderBy(p => C.Players[p.Id].Morale).ToList();
+        var cols = new List<Col<PlayerData>>
+        {
+            new() { Title = "Игрок", Width = 0, Align = HorizontalAlignment.Left, Cell = p => Links.Player(p, null, 13, C.Injured.Contains(p.Id) ? Ui.Loss : Ui.Text), Sort = p => p.LastRu, Desc = false },
+            new() { Title = "Поз", Width = 36, Cell = p => Ui.L(Ui.PosRu(p.Pos), 12, Ui.Muted) },
+            new() { Title = "Статус в клубе", Width = 130, Align = HorizontalAlignment.Left, Tip = "Чего он ждёт от роли: по месту среди партнёров по позиции", Cell = p => Ui.L(Morale.StatusWord(Morale.Status(C, p), p), 12, Ui.Muted), Sort = p => Morale.Status(C, p), Desc = false },
+            new() { Title = "В составе", Width = 92, Align = HorizontalAlignment.Left, Cell = p => Ui.L(P.Role(p.Id, C.UserTeam), 12, Ui.Muted) },
+            new() { Title = "Настрой", Width = 150, Align = HorizontalAlignment.Left, Cell = p => MoodCell(C, p.Id), Sort = p => C.Players[p.Id].Morale, Desc = false },
+            new() { Title = "Почему", Width = 0, Align = HorizontalAlignment.Left, Cell = p => Ui.L(Reason(p, C.Players[p.Id]), 12, C.Players[p.Id].Grief >= 4 ? Ui.Otl : Ui.Muted) },
+        };
+        var grid = new Grid<PlayerData>(cols, rows, p => Shell.I.Go("player", null, p.Id.ToString()), null, 4);
+        v.AddChild(Widget.Make("Игроки", grid.Root, null, null, 0));
+        v.AddChild(Ui.L("Настрой двигают роль и минуты (звезда ждёт больше времени, чем игрок ротации), результаты, свои оценки и ваши решения — разговоры и обещания. " +
+                        "Сам по себе он медленно возвращается к норме характера. Влияние на игру небольшое: как у формы.", 12, Ui.Dim).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart));
+    }
+}

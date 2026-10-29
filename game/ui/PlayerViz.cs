@@ -126,6 +126,10 @@ public static class PlayerViz
         var inj = InjuryModel.Active(c, p.Id);
         h.AddChild(Tile("heart-pulse", "Здоровье", inj != null ? "Травма" : "Здоров", inj != null ? Ui.Loss : Ui.Win,
             inj != null ? $"до {Ui.DateShort(inj.Until)}" : "готов играть"));
+        // настрой
+        float mor = st?.Morale ?? Morale.BASE;
+        h.AddChild(Tile("heart-pulse", "Настрой", Morale.Word(mor), RoomPage.MoodColor(mor),
+            st != null && st.Grief >= 4 ? "хочет больше времени" : $"{mor:0} из 100", "Настрой: роль и минуты, результаты, свои оценки, решения тренера"));
         // место в составе
         string unitSub = p.IsGoalie ? "вратарь" : p.IsDefense ? "защита" : "нападение";
         var lu = c.Lineups[p.Team];
