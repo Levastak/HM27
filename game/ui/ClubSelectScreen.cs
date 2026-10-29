@@ -93,12 +93,20 @@ public partial class ClubSelectScreen : Control
         v.AddChild(Ui.L(st.note, 12, Ui.Muted));
         v.AddChild(Ui.H(10, Ui.Expand(Ui.L("Прогноз прессы", 14, Ui.Text)), Ui.L($"{Pundits.DivisionPick(d)[abbr]}-е место в дивизионе", 13, Ui.Muted)));
         v.AddChild(Ui.Rule());
-        v.AddChild(Ui.L("ЛИДЕРЫ", 12, Ui.Muted, Ui.Semi));
+        // без цифр, как в FM: кто ведёт клуб и на кого клуб надеется
         var inj = d.Teams.SelectMany(x => x.Injured).ToHashSet();
-        foreach (var p in d.Roster(abbr).Where(p => !p.IsGoalie).OrderByDescending(p => p.Ovr).Take(6))
-            v.AddChild(PlayerLine(p, inj.Contains(p.Id)));
-        var g = d.Roster(abbr).Where(p => p.IsGoalie).OrderByDescending(p => p.Ovr).FirstOrDefault();
-        if (g != null) v.AddChild(PlayerLine(g, inj.Contains(g.Id)));
+        var on = new System.DateOnly(2026, 10, 6);
+        var roster = d.Roster(abbr).ToList();
+        var key = roster.Where(p => !p.IsGoalie).OrderByDescending(p => p.CaEst).Take(4)
+            .Concat(roster.Where(p => p.IsGoalie).OrderBy(p => inj.Contains(p.Id) ? 1 : 0).ThenByDescending(p => p.CaEst).Take(1)).ToList();
+        v.AddChild(Ui.L("КЛЮЧЕВЫЕ ИГРОКИ", 12, Ui.Muted, Ui.Semi));
+        foreach (var p in key) v.AddChild(PlayerLine(p, inj.Contains(p.Id), on, false));
+        var young = roster.Where(p => !key.Contains(p) && (p.Age(on) ?? 30) <= 22).OrderByDescending(p => p.CaEst).Take(3).ToList();
+        if (young.Count > 0)
+        {
+            v.AddChild(Ui.L("ПЕРСПЕКТИВЫ", 12, Ui.Muted, Ui.Semi));
+            foreach (var p in young) v.AddChild(PlayerLine(p, inj.Contains(p.Id), on, true));
+        }
         v.AddChild(Ui.Spacer());
         var go = Ui.B($"Начать карьеру за «{t.City}»", () => Main.I.NewCareer(abbr), true, 17);
         go.CustomMinimumSize = new Vector2(0, 50);
@@ -117,13 +125,16 @@ public partial class ClubSelectScreen : Control
         return h;
     }
 
-    static Control PlayerLine(PlayerData p, bool injured)
+    static Control PlayerLine(PlayerData p, bool injured, System.DateOnly on, bool prospect)
     {
         var h = Ui.H(10);
-        h.AddChild(Ui.L(p.Num?.ToString() ?? "", 13, Ui.Dim).Also(l => { l.CustomMinimumSize = new Vector2(26, 0); l.HorizontalAlignment = HorizontalAlignment.Right; }));
-        h.AddChild(Ui.Expand(Ui.L(p.NameRu + (injured ? " (травма)" : ""), 14, injured ? Ui.Loss : Ui.Text)));
         h.AddChild(Ui.L(Ui.PosRu(p.Pos), 12, Ui.Muted).Also(l => l.CustomMinimumSize = new Vector2(26, 0)));
-        h.AddChild(Ui.Rating(p.Ovr));
+        h.AddChild(Ui.Expand(Ui.L(p.NameRu + (injured ? " (травма)" : ""), 14, injured ? Ui.Loss : Ui.Text)));
+        // роль (из характеристик) или, у молодых, возраст и номер драфта
+        string role = p.Roles.FirstOrDefault()?.Name ?? (p.IsGoalie ? "Вратарь" : "");
+        string pick = p.Fx?.Pick is int pk && pk > 0 ? $", драфт №{pk}" : "";
+        string note = prospect ? $"{p.Age(on)} лет{pick}" : role;
+        h.AddChild(Ui.L(note, 12, Ui.Muted));
         return h;
     }
 }

@@ -73,7 +73,7 @@ public partial class ClubPage : Control
         F("Дивизион", t.Division);
         F("Место в лиге", row.Gp > 0 ? $"{lplace}-е" : "—");
         F("Очки", $"{row.Pts} в {row.Gp} {Ui.Plural(row.Gp, "матче", "матчах", "матчах")}");
-        F("Статус", status.Label, power <= 10 ? Ui.Win : power <= 20 ? Ui.Otl : Ui.Loss);
+        F("Статус", status.Label, status.Label switch { "Элита" => Ui.Gold, "Претендент" => Ui.Win, "На подъёме" or "Борьба за плей-офф" => Ui.Otl, _ => Ui.Muted });
         F("Прогноз прессы", $"{Pundits.DivisionPick(C, t.Abbr)}-е в дивизионе");
         F("Шайбы", $"{row.Gf}–{row.Ga} ({Ui.Signed(row.Gf - row.Ga, "0")})");
         F("Серия", string.IsNullOrEmpty(row.Streak) ? "—" : row.Streak);

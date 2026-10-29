@@ -7,13 +7,32 @@ namespace HM27.Core;
 public static class Pundits
 {
     /// <summary>Статус клуба по месту в лиге по силе и возрасту ядра (8 лучших полевых).</summary>
-    public static (string label, string note) Status(int rank, double coreAge) => rank switch
+    public static (string label, string note) Status(int rank, double coreAge) => Label(Band(rank), coreAge);
+
+    /// <summary>Ступень статуса по месту: 0 — элита (1–4), 1 — претендент (5–10), 2 — середина (11–20), 3 — низ (21+).</summary>
+    public static int Band(int rank) => rank <= 4 ? 0 : rank <= 10 ? 1 : rank <= 20 ? 2 : 3;
+
+    public static (string label, string note) Label(int band, double coreAge) => band switch
     {
-        <= 4 => ("Элита", "Главные претенденты на Кубок Стэнли"),
-        <= 10 => ("Претендент", "Сильный состав, рассчитывает на глубокий плей-офф"),
-        <= 20 => coreAge <= 25.5 ? ("На подъёме", "Молодое ядро, борется за плей-офф") : ("Борьба за плей-офф", "Плей-офф решится в последних матчах"),
+        0 => ("Элита", "Главные претенденты на Кубок Стэнли"),
+        1 => ("Претендент", "Сильный состав, рассчитывает на глубокий плей-офф"),
+        2 => coreAge <= 25.5 ? ("На подъёме", "Молодое ядро, борется за плей-офф") : ("Борьба за плей-офф", "Плей-офф решится в последних матчах"),
         _ => coreAge <= 25.5 ? ("Перестройка", "Ставка на молодёжь, результат — потом") : ("Аутсайдер", "Состав слабее большинства соперников"),
     };
+
+    /// <summary>
+    /// Пресса меняет мнение не каждый день: ступень пересматривается раз в неделю и только с запасом —
+    /// подняться можно, если место на 2 лучше границы, опуститься — если на 3 хуже (иначе статус «мигает» после пары поражений).
+    /// </summary>
+    static int Revise(int band, int rank)
+    {
+        for (int k = 0; k < 3; k++)
+        {
+            int up = band switch { 1 => 2, 2 => 8, 3 => 18, _ => 0 }, down = band switch { 0 => 7, 1 => 13, 2 => 23, _ => 99 };
+            if (rank <= up) band--; else if (rank >= down) band++; else break;
+        }
+        return Math.Clamp(band, 0, 3);
+    }
 
     /// <summary>Прогноз прессы до сезона: место в дивизионе по составу (данные базы).</summary>
     public static Dictionary<string, int> DivisionPick(GameData d)
@@ -45,7 +64,7 @@ public static class Pundits
     /// <summary>
     /// Взгляд прессы на клубы в карьере. Журналисты не знают истинных уровней игроков: до сезона судят по составу
     /// (данные базы — то же, что на экране выбора клуба), по ходу сезона всё больше по таблице:
-    /// вес таблицы gp/(gp+25) — после 25 матчей половина, к концу сезона ~3/4.
+    /// вес таблицы gp/(gp+40) — после 40 матчей половина, к концу сезона ~2/3; статус пересматривается раз в неделю с запасом.
     /// </summary>
     public sealed record View(int All, int Att, int Dfn, string Label, string Note);
 
@@ -59,7 +78,7 @@ public static class Pundits
         var est = d.Teams.ToDictionary(t => t.Abbr, t => TeamStrength.Estimate(d, t));
         double Z(IEnumerable<double> all, double x) { var l = all.ToList(); double m = l.Average(), sd = Math.Sqrt(l.Average(v => (v - m) * (v - m))); return sd < 1e-9 ? 0 : (x - m) / sd; }
         StandingRow R(string a) => c.Table.TryGetValue(a, out var r) ? r : new StandingRow { Team = a };
-        double W(string a) { int gp = R(a).Gp; return gp / (gp + 25.0); }
+        double W(string a) { int gp = R(a).Gp; return gp / (gp + 40.0); }
         double Pts(string a) { var r = R(a); return r.Gp == 0 ? 0 : (2.0 * r.W + r.Otl) / (2.0 * r.Gp); }
         double Gf(string a) { var r = R(a); return r.Gp == 0 ? 0 : (double)r.Gf / r.Gp; }
         double Ga(string a) { var r = R(a); return r.Gp == 0 ? 0 : (double)r.Ga / r.Gp; }
@@ -70,9 +89,20 @@ public static class Pundits
         var att = abbrs.ToDictionary(a => a, a => Mix(a, x => est[x].att, Gf));
         var dfn = abbrs.ToDictionary(a => a, a => Mix(a, x => -est[x].dfn, x => -Ga(x)));
         int Rank(Dictionary<string, double> m, string a) => m.OrderByDescending(kv => kv.Value).Select(kv => kv.Key).ToList().IndexOf(a) + 1;
+        // ступени статуса: в начале сезона — по составу, дальше пересмотр раз в неделю с запасом
+        bool fresh = c.PressBandSeason != c.Season || c.PressBand.Count == 0;
+        if (fresh || c.Today.DayNumber - c.PressBandDate.DayNumber >= 7)
+        {
+            foreach (var a in abbrs)
+            {
+                int r = Rank(all, a);
+                c.PressBand[a] = fresh || !c.PressBand.TryGetValue(a, out var b0) ? Band(r) : Revise(b0, r);
+            }
+            c.PressBandSeason = c.Season; c.PressBandDate = c.Today;
+        }
         _vv = abbrs.ToDictionary(a => a, a =>
         {
-            int r = Rank(all, a); var (label, note) = Status(r, CoreAge(d, a, c.Today));
+            int r = Rank(all, a); var (label, note) = Label(c.PressBand.GetValueOrDefault(a, Band(r)), CoreAge(d, a, c.Today));
             return new View(r, Rank(att, a), Rank(dfn, a), label, note);
         });
         _vc = c; _vd = c.Today; _vg = games;

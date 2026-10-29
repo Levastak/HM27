@@ -92,6 +92,10 @@ public sealed class Career
     /// <summary>Прогноз прессы на сезон: место в дивизионе (считается один раз в начале сезона).</summary>
     public Dictionary<string, int> PressPick { get; set; } = new();
     public int PressPickSeason { get; set; }
+    /// <summary>Статус клуба у прессы (ступень 0–3) и когда его пересматривали — см. Pundits.ViewAll.</summary>
+    public Dictionary<string, int> PressBand { get; set; } = new();
+    public DateOnly PressBandDate { get; set; }
+    public int PressBandSeason { get; set; }
     public string UserTeam { get; set; }
     public DateOnly Today { get; set; }
     public Phase Phase { get; set; }

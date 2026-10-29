@@ -229,7 +229,12 @@ public sealed class PlayerData
     [JsonIgnore] public bool IsGoalie => Pos == "G";
     [JsonIgnore] public bool IsDefense => Pos == "D";
     [JsonIgnore] public bool IsForward => Pos is "C" or "LW" or "RW";
-    [JsonIgnore] public int Ovr => R.TryGetValue("ovr", out var v) ? v : 50;
+    /// <summary>
+    /// Общая оценка 0–100 по нашей модели (КА из данных): звёзды = Ovr / 20, как везде в игре (КА 80 → 0, КА 180 → 5 звёзд).
+    /// Старый рейтинг «Сводки» (r.ovr) больше нигде не показывается — он расходился с КА.
+    /// </summary>
+    [JsonIgnore] public int Ovr => (int)Math.Round(Math.Clamp(CaEst - 80, 1, 100));
+    [JsonIgnore] public int OvrOld => R.TryGetValue("ovr", out var v) ? v : 50;
     public int Rating(string key) => R.TryGetValue(key, out var v) ? v : 50;
 
     public int? Age(DateOnly on)

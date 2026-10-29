@@ -87,6 +87,7 @@ public sealed class Lineup
         l.G1 = gs.Count > 0 ? gs[0] : 0;
         l.G2 = gs.Count > 1 ? gs[1] : 0;
         l.Fill(data, team.Abbr, unavailable);
+        l.SwapInStronger(data, team.Abbr, unavailable);
         l.Pp1 = ValidPp(data, team.Lines.Pp1, l);
         l.Pp2 = ValidPp(data, team.Lines.Pp2, l);
         l.FixPowerPlay(data);
@@ -102,14 +103,40 @@ public sealed class Lineup
         return r;
     }
 
+    /// <summary>
+    /// Здоровый игрок заметно сильнее (КА на 15+) слабейшего в составе той же группы (нападающие / защитники) — выходит вместо него.
+    /// Тренер НХЛ может посадить игрока, но такой разрыв в звеньях из источника почти всегда — пропуск в данных, а не решение.
+    /// </summary>
+    public void SwapInStronger(GameData data, string abbr, ISet<int> unavailable)
+    {
+        for (int guard = 0; guard < 6; guard++)
+        {
+            var dressed = All.ToHashSet();
+            bool changed = false;
+            foreach (bool def in new[] { false, true })
+            {
+                var lines = def ? D : F;
+                var slots = lines.SelectMany((u, i) => u.Select((id, k) => (i, k, id))).Where(x => x.id != 0 && data.PlayerById.ContainsKey(x.id)).ToList();
+                if (slots.Count == 0) continue;
+                var weakest = slots.OrderBy(x => data.PlayerById[x.id].CaEst).First();
+                var bench = data.Roster(abbr).Where(p => !p.IsGoalie && p.IsDefense == def && !unavailable.Contains(p.Id) && !dressed.Contains(p.Id))
+                    .OrderByDescending(p => p.CaEst).FirstOrDefault();
+                if (bench != null && bench.CaEst >= data.PlayerById[weakest.id].CaEst + 15) { lines[weakest.i][weakest.k] = bench.Id; changed = true; }
+            }
+            if (!changed) break;
+        }
+    }
+
     /// <summary>Добрать пустые места лучшими свободными игроками клуба.</summary>
     public void Fill(GameData data, string abbr, ISet<int> unavailable)
     {
         var used = All.ToHashSet();
-        var pool = data.Roster(abbr).Where(p => !unavailable.Contains(p.Id) && !used.Contains(p.Id)).OrderByDescending(p => p.Ovr).ToList();
-        int Take(Func<PlayerData, bool> pref, Func<PlayerData, bool> fallback)
+        var pool = data.Roster(abbr).Where(p => !unavailable.Contains(p.Id) && !used.Contains(p.Id)).OrderByDescending(p => p.CaEst).ToList();
+        // лучший по силе (КА) с поправкой за непривычное место: центр на краю −4, крайний в центре −8, защитник в нападении и наоборот −30.
+        // Раньше брали «своих по позиции» по старому рейтингу — и при неполных звеньях в источнике сильнейший центр мог не попасть в состав
+        int Take(Func<PlayerData, double> penalty)
         {
-            var p = pool.FirstOrDefault(pref) ?? pool.FirstOrDefault(fallback);
+            var p = pool.Where(x => !x.IsGoalie).OrderByDescending(x => x.CaEst - penalty(x)).FirstOrDefault();
             if (p == null) return 0;
             pool.Remove(p);
             return p.Id;
@@ -117,12 +144,11 @@ public sealed class Lineup
         for (int i = 0; i < F.Count; i++)
             for (int s = 0; s < 3; s++)
                 if (F[i][s] == 0)
-                    F[i][s] = Take(p => s == 1 ? p.Pos == "C" : p.Pos is "LW" or "RW", p => p.IsForward) is var id && id != 0 ? id
-                              : Take(p => p.IsDefense, p => !p.IsGoalie);
+                    F[i][s] = Take(p => p.IsDefense ? 30 : s == 1 ? (p.Pos == "C" ? 0 : 8) : (p.Pos == "C" ? 4 : 0));
         for (int i = 0; i < D.Count; i++)
             for (int s = 0; s < 2; s++)
                 if (D[i][s] == 0)
-                    D[i][s] = Take(p => p.IsDefense, p => !p.IsGoalie);
+                    D[i][s] = Take(p => p.IsDefense ? 0 : 30);
         if (G1 == 0) G1 = TakeGoalie();
         if (G2 == 0) G2 = TakeGoalie();
 
