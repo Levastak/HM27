@@ -20,7 +20,9 @@ public static class InjuryModel
         "травма верхней части тела", "травма нижней части тела", "травма верхней части тела", "травма нижней части тела",
         "сотрясение мозга", "растяжение паховой мышцы", "травма колена", "травма плеча", "травма кисти", "травма голеностопа", "болезнь",
     };
-    public const double SKATER_RATE = 0.0165, GOALIE_RATE = 0.005;
+    /// <summary>Частота за матч. Подбор: около 18–19 травм на клуб за сезон (раньше было 25 — слишком часто, много «на пару дней»),
+    /// а потерянных игроко-матчей столько же: травмы реже, но в среднем чуть длиннее. Проверка «Травмы» в HM27.Check.</summary>
+    public const double SKATER_RATE = 0.0122, GOALIE_RATE = 0.0037;
 
     public static void AfterGame(Career c, ScheduledGame g, Random rng)
     {
@@ -35,7 +37,7 @@ public static class InjuryModel
                               * Fatigue.InjuryMult(c.Players.GetValueOrDefault(id));
                 if (rng.NextDouble() >= rate) continue;
                 double u = rng.NextDouble();
-                int days = u < 0.5 ? rng.Next(1, 8) : u < 0.82 ? rng.Next(8, 26) : u < 0.96 ? rng.Next(26, 61) : rng.Next(61, 151);
+                int days = u < 0.40 ? rng.Next(2, 8) : u < 0.74 ? rng.Next(8, 26) : u < 0.925 ? rng.Next(26, 61) : rng.Next(61, 151);
                 var kind = Kinds[rng.Next(Kinds.Length)];
                 if (kind == "болезнь") days = Math.Min(days, 6);
                 c.Injuries.Add(new Injury { Id = id, From = g.Date, Until = g.Date.AddDays(days), Kind = kind });
@@ -57,10 +59,17 @@ public static class InjuryModel
             // у игрока может быть несколько записей — снимаем, только если активных больше нет
             if (c.Injuries.Any(x => x.Id == i.Id && x.Until >= c.Today)) continue;
             c.Injured.Remove(i.Id);
+            if (!c.Data.PlayerById.TryGetValue(i.Id, out var p) || p.Team != c.UserTeam) continue;
+            // помощник возвращает вылечившегося на его место (кто заменял — в запас)
+            var l = c.Lineups[c.UserTeam];
+            var back = l.Restore(c.Data, c.UserTeam, c.Injured.ToHashSet()).Where(x => x.id == p.Id).Select(x => x.key).FirstOrDefault();
+            if (back != null) l.FixPowerPlay(c.Data);
             // о возвращении пишем только после травм дольше недели — короткие помощник отслеживает сам
-            if (c.Data.PlayerById.TryGetValue(i.Id, out var p) && p.Team == c.UserTeam && i.Until.DayNumber - i.From.DayNumber >= 7)
+            if (i.Until.DayNumber - i.From.DayNumber >= 7)
                 InboxWriter.Add(c, "Медицинский отдел", $"{p.NameRu} готов играть",
-                    $"{p.NameRu} восстановился ({i.Kind}) и может вернуться в состав. Сейчас он в запасе — поставьте его в звено, если нужно.",
+                    back != null
+                        ? $"{p.NameRu} восстановился ({i.Kind}). Помощник вернул его в состав: {Lineup.SlotName(back)}. Кто его заменял — снова в запасе. Если хотите иначе — раздел «Звенья»."
+                        : $"{p.NameRu} восстановился ({i.Kind}) и может вернуться в состав. Сейчас он в запасе — поставьте его в звено, если нужно.",
                     "medical", $"player:{p.Id}");
         }
     }

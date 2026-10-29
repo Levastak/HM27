@@ -152,6 +152,23 @@ public sealed class Career
             c.BaseGsax[t.Abbr] = 0.8 * MatchEngine.GsaxOf(data, l.G1, c.DlBase) + 0.2 * MatchEngine.GsaxOf(data, l.G2, c.DlBase);
             c.Table[t.Abbr] = new StandingRow { Team = t.Abbr };
         }
+        // травмированные на старте (по реальным данным): помощник знает, куда их вернуть — как в составе здорового клуба
+        {
+            var ul = c.Lineups[c.UserTeam];
+            var full = Lineup.FromTeam(data, data.TeamByAbbr[c.UserTeam], new HashSet<int>());
+            foreach (var id in inj)
+            {
+                if (!data.PlayerById.TryGetValue(id, out var p) || p.Team != c.UserTeam) continue;
+                List<string> keys;
+                if (p.IsGoalie)
+                {
+                    double g1 = data.PlayerById.TryGetValue(ul.G1, out var a) ? a.CaEst : 0, g2 = data.PlayerById.TryGetValue(ul.G2, out var b) ? b.CaEst : 0;
+                    keys = p.CaEst >= g1 + 5 ? new() { "G1" } : p.CaEst > g2 ? new() { "G2" } : new();
+                }
+                else keys = full.SlotKeys(id).ToList();
+                if (keys.Count > 0) ul.Hold[id] = keys;
+            }
+        }
         InboxWriter.Welcome(c);
         return c;
     }
@@ -204,7 +221,13 @@ public sealed class Career
     public double DlBase(int id) => Data.PlayerById.TryGetValue(id, out var p) ? PlayerModel.Delta(this, p, form: false) : 0;
 
     // ------------------------------------------------------------------ сохранение
-    static readonly JsonSerializerOptions JsonOpts = new() { WriteIndented = false, Converters = { new JsonStringEnumConverter() } };
+    // кириллица без \uXXXX (в 3 раза короче), пустые ссылки не пишутся
+    static readonly JsonSerializerOptions JsonOpts = new()
+    {
+        WriteIndented = false, Converters = { new JsonStringEnumConverter() },
+        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    };
     public string ToJson() => JsonSerializer.Serialize(this, JsonOpts);
     public static Career FromJson(string json, GameData data)
     {
@@ -294,7 +317,9 @@ public sealed class Career
         int goalie = l.G1;
         if (abbr == UserTeam)
         {
-            if (b2b && l.BackupOnB2B && l.G2 != 0) goalie = l.G2;
+            // помощник даёт отдых основному: второй матч за два дня или основной вымотан (свежесть ниже 60%)
+            double fr = Players.TryGetValue(l.G1, out var gs) ? gs.Fresh : 100;
+            if (l.BackupOnB2B && l.G2 != 0 && (b2b || fr < 60)) goalie = l.G2;
         }
         else
         {
@@ -335,7 +360,11 @@ public sealed class Career
         var inj = Injured.ToHashSet();
         foreach (var t in new[] { g.Home, g.Away })
         {
-            if (t == UserTeam) Lineups[t].Repair(Data, t, inj);
+            if (t == UserTeam)
+            {
+                Lineups[t].Restore(Data, t, inj);
+                Lineups[t].Repair(Data, t, inj, hold: true);
+            }
             else
             {
                 // ИИ ставит звенья как в НХЛ, с поправкой на травмы (вернувшиеся из лазарета — снова в составе)

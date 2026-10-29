@@ -11,6 +11,30 @@ void Check(string name, bool ok, string detail)
     if (!ok) fails.Add(name);
 }
 
+if (args.Length > 1 && args[1] == "injuries")
+{
+    // травмы за сезон: сколько, сколько одновременно, игроко-матчи
+    var ic = Career.New(data, "MIN", 31);
+    var simul = new List<int>(); var simulMin = new List<int>();
+    while (ic.Phase == Phase.Regular)
+    {
+        foreach (var t in data.Teams) { int n = ic.Injured.Count(id => data.PlayerById[id].Team == t.Abbr); simul.Add(n); }
+        simulMin.Add(ic.Injured.Count(id => data.PlayerById[id].Team == "MIN"));
+        ic.SimDay();
+    }
+    var newInj = ic.Injuries.Where(i => i.From >= new DateOnly(2026, 10, 6)).ToList();
+    double lost = 0;
+    foreach (var g in ic.Games.Where(g => !g.Playoff))
+        foreach (var t in new[] { g.Home, g.Away })
+            lost += ic.Injuries.Count(i => data.PlayerById[i.Id].Team == t && i.From < g.Date && i.Until >= g.Date);
+    Console.WriteLine($"Новых травм на клуб: {newInj.Count / 32.0:F1}; без пропуска матча (≤1 дня): {newInj.Count(i => i.Until.DayNumber - i.From.DayNumber <= 1) / 32.0:F1}");
+    Console.WriteLine($"Игроко-матчей пропущено на клуб: {lost / 32:F0}");
+    Console.WriteLine($"Одновременно травмированы (клуб-день): среднее {simul.Average():F2}; доля дней с 5+: {simul.Count(x => x >= 5) / (double)simul.Count:P1}; 6+: {simul.Count(x => x >= 6) / (double)simul.Count:P1}; максимум у MIN {simulMin.Max()}");
+    Console.WriteLine($"На старте (реальные травмы из базы): {data.Teams.Average(t => t.Injured.Count):F1} на клуб");
+    var len = newInj.Select(i => i.Until.DayNumber - i.From.DayNumber).ToList();
+    Console.WriteLine($"Длительность: до 7 дней {len.Count(x => x <= 7) / (double)len.Count:P0}, 8–25 {len.Count(x => x is > 7 and <= 25) / (double)len.Count:P0}, 26–60 {len.Count(x => x is > 25 and <= 60) / (double)len.Count:P0}, 60+ {len.Count(x => x > 60) / (double)len.Count:P0}");
+    return 0;
+}
 if (args.Length > 1 && args[1] == "news")
 {
     // все письма карьеры за N дней: проверка текстов новостей глазами
@@ -26,9 +50,31 @@ if (args.Length > 1 && args[1] == "news")
         Console.WriteLine();
     }
     var ts = News.TeamStats(nc);
+    {
+        var js = nc.ToJson();
+        using var doc = System.Text.Json.JsonDocument.Parse(js);
+        Console.WriteLine($"Сохранение: {js.Length / 1024} КБ");
+        foreach (var pr in doc.RootElement.EnumerateObject().OrderByDescending(x => x.Value.GetRawText().Length).Take(8))
+            Console.WriteLine($"  {pr.Name}: {pr.Value.GetRawText().Length / 1024} КБ");
+        var g0 = doc.RootElement.GetProperty("Games").EnumerateArray().First(g => g.TryGetProperty("Result", out var r) && r.ValueKind == System.Text.Json.JsonValueKind.Object && r.GetProperty("Events").GetArrayLength() == 0);
+        Console.WriteLine("  чужой матч: " + g0.GetRawText().Length + " байт: " + g0.GetRawText()[..Math.Min(900, g0.GetRawText().Length)]);
+    }
     var ml = nc.Lineups[nc.UserTeam];
+    string Nm(int id) => id == 0 ? "—" : data.PlayerById[id].LastRu + (nc.Injured.Contains(id) ? "*" : "");
+    Console.WriteLine("Состав: " + string.Join(" | ", ml.F.Select(u => string.Join("-", u.Select(Nm)))) + " || " + string.Join(" | ", ml.D.Select(u => string.Join("-", u.Select(Nm)))) + $" || G {Nm(ml.G1)}/{Nm(ml.G2)}");
+    Console.WriteLine($"PP1 {string.Join("-", ml.Pp1.Select(Nm))}  PP2 {string.Join("-", ml.Pp2.Select(Nm))}  PK1 {string.Join("-", ml.Pk1.Select(Nm))}; держим места: {string.Join(", ", ml.Hold.Select(kv => Nm(kv.Key) + " " + string.Join("/", kv.Value)))}");
+    Console.WriteLine($"Дубли в составе: {ml.All.Count() - ml.All.Distinct().Count()}");
     Console.WriteLine("Сыгранность звеньев: " + string.Join(", ", ml.F.Select(u => $"{nc.UnitFam(u):0.00}")) + " | пары: " + string.Join(", ", ml.D.Select(u => $"{nc.UnitFam(u):0.00}")));
     Console.WriteLine($"Пар в сыгранности: {nc.Chem?.Count}; эффект нового звена {ShiftEngine.FamE(1 - Math.Exp(-Career.FAM_BASE / Career.FAM_M0)):+0.000;-0.000}, полного {ShiftEngine.FamE(1):+0.000}");
+    {
+        var sk = nc.Skaters.Where(kv => kv.Value.Toi > 30000).Select(kv => (p: data.PlayerById[kv.Key], s: kv.Value)).ToList();
+        double gpTot = nc.Games.Count(g => g.Played);
+        Console.WriteLine($"Потери за матч (обе команды): {nc.Skaters.Values.Sum(x => x.Gv) / gpTot:F1}, отборы {nc.Skaters.Values.Sum(x => x.Tk) / gpTot:F1}, силовые {nc.Skaters.Values.Sum(x => x.Hit) / gpTot:F1}");
+        foreach (var x in sk.OrderByDescending(x => x.s.Gv * 3600.0 / x.s.Toi).Take(8))
+            Console.WriteLine($"  {x.p.Name,-22} gv60 {x.s.Gv * 3600.0 / x.s.Toi:F2} (НХЛ {(x.p.X != null && x.p.X.ContainsKey("gv_60") ? x.p.X["gv_60"] : -1):F2}) toi {x.s.Toi / 60.0 / x.s.Gp:F1} pp {x.s.Ppp}");
+        var both = sk.Where(x => x.p.X != null && x.p.X.ContainsKey("gv_60")).ToList();
+        Console.WriteLine($"  среднее gv60 игра {both.Average(x => x.s.Gv * 3600.0 / x.s.Toi):F2}, НХЛ {both.Average(x => x.p.X["gv_60"]):F2}");
+    }
     Console.WriteLine($"Сумма сейвов сверх ожидаемых по лиге: {nc.Goalies.Values.Sum(g => g.Gsax):0.0} при {nc.Goalies.Values.Sum(g => g.Ga)} пропущенных; xG полевых {nc.Skaters.Values.Sum(s => s.Ixg):0} при {nc.Skaters.Values.Sum(s => s.G)} голах");
     return 0;
 }
@@ -165,8 +211,10 @@ Check("Таблица как в НХЛ", lgLead.Average() is >= 112 and <= 130 &
     double realTop = data.Players.Where(p => p.Real != null && p.Real["gp"] >= 60).Select(p => (p.Real["g"] + p.Real["a"]) * 82.0 / p.Real["gp"]).OrderByDescending(x => x).Take(10).Average();
     double gameTop = top10.Average();
     // среди 10 лучших снайперов сезона — почти нет игроков с реальным временем меньше 14 минут за матч
-    // (не больше одного случая на 10 сезонов: прорыв игрока, которого повысили из-за травм, в НХЛ бывает — Донато, 31 гол в 2024-25)
-    var fringeIds = topSnipers.Where(id => data.PlayerById[id].Toi < 14).ToList();
+    // (не больше одного случая на 10 сезонов среди игроков без «родословной»)
+    // «прорыв с родословной» — не нарушение: был сезон на 25+ голов (Кузьменко, Донато) или свежий топ-10 драфта (Мартон)
+    bool Pedigree(PlayerData p) => (p.Bio?.Nhl.Any(r => r[3].GetInt32() >= 25) ?? false) || (p.Bio?.Draft is { Count: >= 4 } dr && dr[3].GetInt32() <= 10 && dr[0].GetInt32() >= 2023);
+    var fringeIds = topSnipers.Where(id => data.PlayerById[id].Toi < 14 && !Pedigree(data.PlayerById[id])).ToList();
     var fringe = fringeIds.Select(id => data.PlayerById[id].Name).Distinct().ToList();
     Check("Сверка с реальностью: игроки", rP >= 0.8 && rG >= 0.8 && Math.Abs(gameTop / realTop - 1) <= 0.10 && fringeIds.Count <= Math.Max(1, seasons / 10),
         $"корреляция с сезоном 2025-26 ({real.Count} игроков): очки r = {rP:F2}, голы r = {rG:F2}; средние на 82: очки {gameP.Average():F1}/{realP.Average():F1}; " +

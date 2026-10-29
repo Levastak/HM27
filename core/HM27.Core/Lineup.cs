@@ -23,6 +23,82 @@ public sealed class Lineup
     public double[] DMin { get; set; } = { 24, 20, 16 };
     /// <summary>Во втором матче за два дня в воротах запасной.</summary>
     public bool BackupOnB2B { get; set; } = true;
+    /// <summary>Места игроков своего клуба, выбывших с травмой: после лазарета помощник возвращает их туда (ключи — см. SlotKeys).</summary>
+    public Dictionary<int, List<string>> Hold { get; set; } = new();
+
+    // ------------------------------------------------------------------ места по ключам: «F0:1», «D2:0», «G1», «G2», «PP1:3», «PK2:0»
+    public IEnumerable<string> SlotKeys(int id)
+    {
+        if (id == 0) yield break;
+        for (int i = 0; i < F.Count; i++) for (int s = 0; s < F[i].Length; s++) if (F[i][s] == id) yield return $"F{i}:{s}";
+        for (int i = 0; i < D.Count; i++) for (int s = 0; s < D[i].Length; s++) if (D[i][s] == id) yield return $"D{i}:{s}";
+        if (G1 == id) yield return "G1";
+        if (G2 == id) yield return "G2";
+        foreach (var (u, k) in new[] { (Pp1, "PP1"), (Pp2, "PP2"), (Pk1, "PK1"), (Pk2, "PK2") })
+            for (int s = 0; s < (u?.Length ?? 0); s++) if (u[s] == id) yield return $"{k}:{s}";
+    }
+
+    int[] UnitOf(string key) => key[..3] switch { "PP1" => Pp1, "PP2" => Pp2, "PK1" => Pk1, "PK2" => Pk2, _ => null };
+
+    public int At(string key)
+    {
+        if (key == "G1") return G1;
+        if (key == "G2") return G2;
+        int s = key[^1] - '0';
+        if (key[0] == 'F') { int i = key[1] - '0'; return i < F.Count && s < F[i].Length ? F[i][s] : 0; }
+        if (key[0] == 'D') { int i = key[1] - '0'; return i < D.Count && s < D[i].Length ? D[i][s] : 0; }
+        var u = UnitOf(key);
+        return u != null && s < u.Length ? u[s] : 0;
+    }
+
+    void Put(string key, int id)
+    {
+        if (key == "G1") { G1 = id; return; }
+        if (key == "G2") { G2 = id; return; }
+        int s = key[^1] - '0';
+        if (key[0] == 'F') { int i = key[1] - '0'; if (i < F.Count && s < F[i].Length) F[i][s] = id; return; }
+        if (key[0] == 'D') { int i = key[1] - '0'; if (i < D.Count && s < D[i].Length) D[i][s] = id; return; }
+        var u = UnitOf(key);
+        if (u != null && s < u.Length) u[s] = id;
+    }
+
+    /// <summary>Место словами: «1-е звено, центр», «2-я пара», «основной вратарь», «1-е звено большинства».</summary>
+    public static string SlotName(string key)
+    {
+        if (key == "G1") return "основной вратарь";
+        if (key == "G2") return "запасной вратарь";
+        int s = key[^1] - '0';
+        if (key[0] == 'F') return $"{key[1] - '0' + 1}-е звено, {(s == 0 ? "левый край" : s == 1 ? "центр" : "правый край")}";
+        if (key[0] == 'D') return $"{key[1] - '0' + 1}-я пара";
+        return $"{key[2]}-е звено {(key.StartsWith("PP") ? "большинства" : "меньшинства")}";
+    }
+
+    /// <summary>
+    /// Вернуть вылечившихся на их места (своего клуба): кто их заменял — уходит в запас; основной вратарь снова основной,
+    /// а его сменщик — запасным. Если игрок уже стоит в составе (тренер поставил сам) — место не трогаем.
+    /// </summary>
+    public List<(int id, string key)> Restore(GameData data, string abbr, ISet<int> unavailable)
+    {
+        var done = new List<(int, string)>();
+        foreach (var (id, keys) in Hold.ToList())
+        {
+            if (unavailable.Contains(id)) continue;
+            Hold.Remove(id);
+            if (!data.PlayerById.TryGetValue(id, out var p) || p.Team != abbr) continue;
+            var es = keys.Where(k => k[0] is 'F' or 'D' or 'G').ToList();
+            if (SlotKeys(id).Any(k => k[0] is 'F' or 'D' or 'G')) continue;   // уже в составе
+            foreach (var k in keys)
+            {
+                int was = At(k);
+                if (k == "G1") { if (G2 == id) G2 = 0; G1 = id; if (was != 0 && was != id) G2 = was; continue; }
+                if (k == "G2") { if (G1 != id) G2 = id; continue; }
+                if (k[0] is 'P' && SlotKeys(id).Any(x => x[..3] == k[..3])) continue;
+                Put(k, id);
+            }
+            if (es.Count > 0) done.Add((id, es[0]));
+        }
+        return done;
+    }
 
     /// <summary>
     /// Игра не на своём месте (в равных составах), ед. шкалы 1–20 к атаке и обороне игрока:
@@ -199,8 +275,24 @@ public sealed class Lineup
             var d = dressed.Where(p => p.IsDefense && !ex.Contains(p.Id)).OrderByDescending(p => p.Apg + p.Ixg60).Take(1);
             return f.Concat(d).Select(p => p.Id).Concat(Enumerable.Repeat(0, 5)).Take(5).ToArray();
         }
-        if (Pp1.Count(x => x != 0) < 5) Pp1 = Build(Array.Empty<int>());
-        if (Pp2.Count(x => x != 0) < 5) Pp2 = Build(Pp1);
+        // выбыл один — замена только на его место, остальные в звене остаются (как решил тренер)
+        void Patch(int[] u, IEnumerable<int> other, int nF, Func<PlayerData, double> score)
+        {
+            for (int k = 0; k < u.Length; k++)
+            {
+                if (u[k] != 0) continue;
+                var ex = u.Concat(other).ToHashSet();
+                bool wantD = k >= nF;
+                var pick = dressed.Where(p => p.IsDefense == wantD && !ex.Contains(p.Id)).OrderByDescending(score).FirstOrDefault()
+                        ?? dressed.Where(p => !ex.Contains(p.Id)).OrderByDescending(score).FirstOrDefault();
+                if (pick != null) u[k] = pick.Id;
+            }
+        }
+        double PpScore(PlayerData p) => p.Ixg60 + p.Apg;
+        Pp1 = Pp1.Length == 5 ? Pp1.Select(x => dressed.Any(p => p.Id == x) ? x : 0).ToArray() : new int[5];
+        Pp2 = Pp2.Length == 5 ? Pp2.Select(x => dressed.Any(p => p.Id == x) ? x : 0).ToArray() : new int[5];
+        if (Pp1.All(x => x == 0)) Pp1 = Build(Array.Empty<int>()); else Patch(Pp1, Pp2, 4, PpScore);
+        if (Pp2.All(x => x == 0)) Pp2 = Build(Pp1); else Patch(Pp2, Pp1, 4, PpScore);
         // меньшинство: лучшие в обороне (2 нападающих + 2 защитника)
         int[] Pk(IEnumerable<int> exclude)
         {
@@ -213,8 +305,9 @@ public sealed class Lineup
         var dressedIds = dressed.Select(p => p.Id).ToHashSet();
         Pk1 = (Pk1 ?? new int[4]).Select(x => dressedIds.Contains(x) ? x : 0).ToArray();
         Pk2 = (Pk2 ?? new int[4]).Select(x => dressedIds.Contains(x) ? x : 0).ToArray();
-        if (Pk1.Length != 4 || Pk1.Count(x => x != 0) < 4) Pk1 = Pk(Array.Empty<int>());
-        if (Pk2.Length != 4 || Pk2.Count(x => x != 0) < 4) Pk2 = Pk(Pk1);
+        double PkScore(PlayerData p) => p.Rating("dfn") + 0.5 * p.Rating("blk") + 0.3 * p.Rating("tka");
+        if (Pk1.Length != 4 || Pk1.All(x => x == 0)) Pk1 = Pk(Array.Empty<int>()); else Patch(Pk1, Pk2, 2, PkScore);
+        if (Pk2.Length != 4 || Pk2.All(x => x == 0)) Pk2 = Pk(Pk1); else Patch(Pk2, Pk1, 2, PkScore);
     }
 
     /// <summary>Полностью автоматический состав: лучшие по общему рейтингу на свои позиции.</summary>
@@ -229,8 +322,16 @@ public sealed class Lineup
     }
 
     /// <summary>Убрать недоступных (травма) и добрать замену.</summary>
-    public void Repair(GameData data, string abbr, ISet<int> unavailable)
+    public void Repair(GameData data, string abbr, ISet<int> unavailable, bool hold = false)
     {
+        // свой клуб: запомнить места выбывших, чтобы вернуть их после лазарета
+        if (hold)
+            foreach (var id in All.Where(unavailable.Contains).Distinct().ToList())
+            {
+                if (!data.PlayerById.TryGetValue(id, out var hp) || hp.Team != abbr || Hold.ContainsKey(id)) continue;
+                var keys = SlotKeys(id).ToList();
+                if (keys.Count > 0) Hold[id] = keys;
+            }
         for (int i = 0; i < F.Count; i++) for (int s = 0; s < 3; s++) if (unavailable.Contains(F[i][s]) || !OnTeam(F[i][s])) F[i][s] = 0;
         for (int i = 0; i < D.Count; i++) for (int s = 0; s < 2; s++) if (unavailable.Contains(D[i][s]) || !OnTeam(D[i][s])) D[i][s] = 0;
         if (unavailable.Contains(G1) || !OnTeam(G1)) G1 = 0;

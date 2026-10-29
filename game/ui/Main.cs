@@ -83,7 +83,7 @@ public partial class Main : Control
             ShowClubSelect();
             ShowMenu();
             var row = Career.Table["MIN"];
-            result = $"SMOKE OK: {OS.GetName()} {Engine.GetArchitectureName()}, {Data.Players.Count} игроков, {Ui.Date(Career.Today)}, MIN {row.W}-{row.L}-{row.Otl}, сохранение {FileAccess.GetFileAsString(SavePath).Length / 1024} КБ";
+            result = $"SMOKE OK: {OS.GetName()} {Engine.GetArchitectureName()}, {Data.Players.Count} игроков, {Ui.Date(Career.Today)}, MIN {row.W}-{row.L}-{row.Otl}, сохранение {FileAccess.GetFileAsBytes(SavePath).Length / 1024} КБ (без сжатия {ReadSave().Length / 1024} КБ)";
         }
         catch (Exception e)
         {
@@ -188,7 +188,7 @@ public partial class Main : Control
     {
         try
         {
-            var head = FileAccess.GetFileAsString(SavePath);
+            var head = ReadSave();
             var t = System.Text.RegularExpressions.Regex.Match(head, "\"UserTeam\"\\s*:\\s*\"(\\w+)\"");
             var d = System.Text.RegularExpressions.Regex.Match(head, "\"Today\"\\s*:\\s*\"([0-9-]+)\"");
             return (t.Success ? t.Groups[1].Value : null, d.Success ? DateOnly.Parse(d.Groups[1].Value) : null);
@@ -200,7 +200,7 @@ public partial class Main : Control
     {
         try
         {
-            Career = Career.FromJson(FileAccess.GetFileAsString(SavePath), Data);
+            Career = Career.FromJson(ReadSave(), Data);
             ApplyAccent();
             ShowHub();
         }
@@ -222,8 +222,26 @@ public partial class Main : Control
     public void Save()
     {
         if (Career == null) return;
+        // сохранение сжато gzip: JSON карьеры за сезон — несколько мегабайт, сжатый — в 8–10 раз меньше
+        var raw = System.Text.Encoding.UTF8.GetBytes(Career.ToJson());
+        using var ms = new System.IO.MemoryStream();
+        using (var gz = new System.IO.Compression.GZipStream(ms, System.IO.Compression.CompressionLevel.Optimal, true)) gz.Write(raw, 0, raw.Length);
         using var f = FileAccess.Open(SavePath, FileAccess.ModeFlags.Write);
-        f?.StoreString(Career.ToJson());
+        f?.StoreBuffer(ms.ToArray());
+    }
+
+    /// <summary>Текст сохранения: сжатое (gzip) или старое несжатое.</summary>
+    static string ReadSave()
+    {
+        var bytes = FileAccess.GetFileAsBytes(SavePath);
+        if (bytes.Length > 2 && bytes[0] == 0x1f && bytes[1] == 0x8b)
+        {
+            using var gz = new System.IO.Compression.GZipStream(new System.IO.MemoryStream(bytes), System.IO.Compression.CompressionMode.Decompress);
+            using var outMs = new System.IO.MemoryStream();
+            gz.CopyTo(outMs);
+            return System.Text.Encoding.UTF8.GetString(outMs.ToArray());
+        }
+        return System.Text.Encoding.UTF8.GetString(bytes);
     }
     // ------------------------------------------------------------------ настройки
     const string SettingsPath = "user://settings.cfg";

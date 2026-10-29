@@ -130,10 +130,10 @@ public partial class LinesView : HBoxContainer
         v.AddChild(Section("Игровое время",
             new Segmented(presets.Select(p => p.name).ToArray(), Math.Max(cur, 0), k => { L.FMin = (double[])presets[k].f.Clone(); L.DMin = (double[])presets[k].d.Clone(); Changed(); }),
             Note($"Тройки: {string.Join(" / ", L.FMin.Select(x => x.ToString("0")))} мин · пары: {string.Join(" / ", L.DMin.Select(x => x.ToString("0")))} мин")));
-        var b2b = new CheckBox { Text = "Запасной во 2-м матче за 2 дня", ButtonPressed = L.BackupOnB2B, FocusMode = FocusModeEnum.None };
+        var b2b = new CheckBox { Text = "Давать отдых основному", TooltipText = "Запасной выходит во втором матче за два дня и когда свежесть основного ниже 60%", ButtonPressed = L.BackupOnB2B, FocusMode = FocusModeEnum.None };
         b2b.Toggled += on => { L.BackupOnB2B = on; Main.I.Save(); };
         var g2 = C.Data.PlayerById.GetValueOrDefault(L.G2);
-        v.AddChild(Section("Вратари", Ui.H(0, Ui.L("Основной: ", 12, Ui.Text), Links.Player(C, L.G1, C.Short(L.G1), 12), Ui.L(" · запасной: ", 12, Ui.Text), Links.Player(C, L.G2, C.Short(L.G2), 12)), b2b, Note("Усталость во втором матче подряд стоит команде около 5% голов. Поменять вратарей — во вкладке любого звена, место «В».")));
+        v.AddChild(Section("Вратари", Ui.H(0, Ui.L("Основной: ", 12, Ui.Text), Links.Player(C, L.G1, C.Short(L.G1), 12), Ui.L(" · запасной: ", 12, Ui.Text), Links.Player(C, L.G2, C.Short(L.G2), 12)), b2b, Note("Запасной выходит во втором матче за два дня и когда свежесть основного ниже 60%: усталость стоит команде около 5% голов. Поменять вратарей — место «В» в любом звене.")));
 
         var (gF, gA) = C.LineupEffect(C.UserTeam);
         v.AddChild(Section("Анализ состава",

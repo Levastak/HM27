@@ -79,6 +79,9 @@ public static class ShiftEngine
     /// составы по умолчанию дают прежнюю силу; лига в целом не меняется (плюс одних — минус против них).
     /// </summary>
     public static double FAM_MAX = 0.025, FAM_REF = 0.75;
+    /// <summary>Учётный xG (протокол, статистика, сейвы сверх ожидаемых): ожидание броска без вратаря чуть ниже факта, потому что
+    /// средний вратарь движка (GMult) пропускает чуть больше; поправка делает сумму «сейвов сверх ожидаемых» по лиге ≈ 0. На исходы не влияет.</summary>
+    public const double XG_CAL = 1.019;
     public static double FamE(double f) => Math.Log(1 + Math.Clamp(FAM_MAX * (f - FAM_REF) / FAM_REF, -FAM_MAX, FAM_MAX));
     public static long PairKey(int a, int b) => a < b ? ((long)a << 32) | (uint)b : ((long)b << 32) | (uint)a;
     /// <summary>Вес защитника в выборе бросающего (доля попыток защитников при 5×5 — 34,8%).</summary>
@@ -846,14 +849,15 @@ public static class ShiftEngine
                 double mL = Math.Exp(LNG_FAR * (s.Lng - (s.D ? refs?.LngD ?? 11 : refs?.LngF ?? 11)));
                 Diag.S(s.Id, "lngx", p - p / mL);
             }
-            if (!empty) { o.GBox.Sa++; o.GBox.Xga += Math.Min(0.95, xg); s.Box.Ixg += Math.Min(0.95, xg); }
+            double xgRep = Math.Min(0.95, xg) * XG_CAL;   // xG для протокола и статистики (на исход не влияет)
+            if (!empty) { o.GBox.Sa++; o.GBox.Xga += xgRep; s.Box.Ixg += xgRep; }
             if (rng.NextDouble() < p)
             {
                 if (Diag != null) { Diag.Add(Diag.Goals, lb); if (rebound) Diag.RebGoals++; if (lb == "5v5") Diag.S(s.Id, (z == 0 || rebound ? "close" : z == 2 ? "far" : "mid") + "_g5"); }
-                curZ = rebound ? 0 : z; curXg = Math.Min(0.95, xg);
+                curZ = rebound ? 0 : z; curXg = Math.Round(xgRep, 3);
                 Goal(t, o, s, type, rebound ? prev : null); curZ = -1; curXg = 0; return;
             }
-            r.Events.Add(new MatchEvent { T = T, Team = t.Abbr, Kind = "shot", P1 = s.Id, P2 = o.Goalie, Note = type, Z = rebound ? 0 : z, Xg = Math.Min(0.95, xg) });
+            r.Events.Add(new MatchEvent { T = T, Team = t.Abbr, Kind = "shot", P1 = s.Id, P2 = o.Goalie, Note = type, Z = rebound ? 0 : z, Xg = Math.Round(xgRep, 3) });
             if (!rebound && rng.NextDouble() < FREEZE) { foPending = t == H ? 2 : 3; return; }   // вратарь накрыл — вбрасывание в зоне атаки бросавших
             // добивание
             if (!rebound && rng.NextDouble() < REB_P / (1 - FREEZE))

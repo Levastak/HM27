@@ -302,6 +302,28 @@ public static class Ui
         return L(w, 12, col, w is "Уставший" or "Вымотан" ? Semi : null);
     }
 
+    /// <summary>Форма для таблиц: стрелка-тренд и слово.</summary>
+    public static Control FormCell(PlayerForm.Info f)
+    {
+        if (f.Games < 3) return L("—", 12, Dim);
+        var col = f.Word switch { "Отличная" => Win, "Хорошая" => new Color("8BD3A0"), "Обычная" => Muted, "Спад" => Otl, _ => Loss };
+        string icon = f.Word is "Отличная" or "Хорошая" ? "trending-up" : f.Word is "Спад" or "Провал" ? "trending-down" : null;
+        var h = H(4, icon != null ? Icon(icon, 14, col) : new Control { CustomMinimumSize = new Vector2(14, 14) }, L(f.Word, 12, col, f.Word == "Обычная" ? null : Semi));
+        h.TooltipText = $"Оценка в последних матчах {f.Recent:0.0} при обычной {f.Recent - f.Score:0.0}";
+        return h;
+    }
+
+    /// <summary>Свежесть для таблиц: батарейка и процент.</summary>
+    public static Control FreshCell(PlayerState s)
+    {
+        double fr = s?.Fresh ?? 100;
+        var col = fr >= Fatigue.FRESH_OK + 10 ? Win : fr >= Fatigue.FRESH_OK ? Text : fr >= 55 ? Otl : Loss;
+        string icon = fr >= 85 ? "battery-full" : fr >= 60 ? "battery-medium" : "battery-low";
+        var h = H(4, Icon(icon, 16, col), L($"{fr:0}%", 12, col, fr < Fatigue.FRESH_OK ? Semi : null));
+        h.TooltipText = $"{Fatigue.Word(s)}: нагрузка последних дней. Ниже {Fatigue.FRESH_OK:0}% игрок слабее и чаще травмируется";
+        return h;
+    }
+
     /// <summary>Время на льду: «18:42».</summary>
     public static string Toi(double sec) => sec <= 0 ? "—" : $"{(int)sec / 60}:{(int)sec % 60:00}";
 
