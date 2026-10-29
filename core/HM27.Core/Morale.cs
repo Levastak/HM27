@@ -63,6 +63,9 @@ public static class Morale
                 if (set.Contains(p.Id) && (!p.IsGoalie || p.Id == goalie))
                 {
                     Add(s, won ? 1.8 : r.End == "REG" ? -1.8 : -0.5);
+                    // разгром бьёт сильнее, крупная победа — чуть поднимает (цена раннего снятия вратаря — лишние шайбы в пустые)
+                    int margin = Math.Abs(r.HomeGoals - r.AwayGoals);
+                    if (margin >= 3) Add(s, (won ? 0.6 : -1.2) * Math.Min(3, margin - 2));
                     if (r.Ratings.TryGetValue(p.Id, out var rt)) Add(s, (rt - 7.0) * 2.2);
                     if (!p.IsGoalie)
                     {

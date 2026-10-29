@@ -19,6 +19,10 @@ public sealed class MatchSide
     public Func<PlayerData, string, double> Attr;
     /// <summary>Сыгранность пары партнёров 0–1 (движок по сменам); null — без сыгранности (нейтрально).</summary>
     public Func<int, int, double> Fam;
+    /// <summary>Темп на этот матч (−1/0/+1): из состава или по решению помощника (Coach.Prepare).</summary>
+    public int Tempo;
+    /// <summary>Когда снимать вратаря (секунд до конца) при −1 и −2; null — как обычно в НХЛ.</summary>
+    public double? Pull1, Pull2;
 }
 
 public sealed class GoalEvent
@@ -163,7 +167,7 @@ public static class MatchEngine
         if (away.B2B && !home.B2B) { la *= B2B; lh /= B2B; }
         if (playoff) { lh *= PO_TOT; la *= PO_TOT; }
         else if (!neutral) { lh *= HA_MULT; la /= HA_MULT; }
-        double tempo = (1 + TEMPO_K * home.Lineup.Tempo) * (1 + TEMPO_K * away.Lineup.Tempo);
+        double tempo = (1 + TEMPO_K * home.Tempo) * (1 + TEMPO_K * away.Tempo);
         lh *= tempo; la *= tempo;
 
         double phr0 = 0, par0 = 0;
@@ -204,7 +208,7 @@ public static class MatchEngine
         {
             var trail = outcome > 0 ? away : home;
             int diff = Math.Abs(hg - ag);
-            if (trail.Lineup.EarlyPull && diff <= 2)
+            if ((trail.Pull1 ?? 0) >= 170 && diff <= 2)
             {
                 double u2 = rng.NextDouble();
                 double pt = diff == 1 ? PULL_TIE : PULL_TIE2, pe = diff == 1 ? PULL_EN : PULL_EN2;

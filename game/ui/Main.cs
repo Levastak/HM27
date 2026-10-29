@@ -121,6 +121,8 @@ public partial class Main : Control
                 ShowHub(args.GetValueOrDefault("tab", "overview"), args.GetValueOrDefault("arg"));
                 break;
         }
+        if (args.TryGetValue("popup", out var popup) && popup == "assistant")
+            GetTree().CreateTimer(0.3).Timeout += () => AssistantReview.Open(_screen, Career, Career.UserTeam, l => { });
         if (args.TryGetValue("open", out var open))
             GetTree().CreateTimer(0.3).Timeout += () => (_screen as Shell)?.DebugOpen(open);
         if (args.TryGetValue("shot", out var shot)) Shooter.Arm(this, shot, int.Parse(args.GetValueOrDefault("frames", "12")));

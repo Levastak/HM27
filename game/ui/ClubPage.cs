@@ -83,7 +83,7 @@ public partial class ClubPage : Control
         var best = C.Skaters.Where(kv => C.Data.PlayerById[kv.Key].Team == t.Abbr).OrderByDescending(kv => kv.Value.Pts).FirstOrDefault();
         FL("Лучший бомбардир", best.Key != 0 ? Links.Player(C, best.Key, $"{C.Short(best.Key)} ({best.Value.Pts})", 14, null, Ui.Semi) : Ui.L("—", 14, Ui.Text, Ui.Semi));
         F("В лазарете", $"{C.Injured.Count(id => C.Data.PlayerById[id].Team == t.Abbr)}");
-        F("Темп игры", l.Tempo switch { -1 => "Закрытый", 1 => "Открытый", _ => "Обычный" });
+        F("Темп игры", l.TempoAuto ? "По сопернику" : l.Tempo switch { -1 => "Закрытый", 1 => "Открытый", _ => "Обычный" });
         var v2 = Ui.V(10, Ui.L(t.Name, 34, Ui.Text, Ui.CondBold), g);
         if (t.Abbr != C.UserTeam)
         {

@@ -108,18 +108,47 @@ public partial class LinesView : HBoxContainer
     Control StylePanel()
     {
         var v = Ui.V(12);
-        v.AddChild(Section("Темп игры",
-            new Segmented(new[] { "Закрытый", "Обычный", "Открытый" }, L.Tempo + 1, k => { L.Tempo = k - 1; Changed(); }),
-            Note(L.Tempo switch
-            {
-                -1 => "Меньше моментов у обеих команд (−7% голов). Чаще овертаймы — это помогает слабому выстоять против сильного.",
-                1 => "Больше моментов у обеих команд (+7% голов). Фаворит реже отдаёт очки в овертаймах.",
-                _ => "Обычный хоккей: темп как у среднего клуба НХЛ.",
-            })));
-        var pull = new CheckBox { Text = "Снимать вратаря раньше", ButtonPressed = L.EarlyPull, FocusMode = FocusModeEnum.None };
-        pull.Toggled += on => { L.EarlyPull = on; Changed(); };
-        v.AddChild(Section("Концовка матча", pull,
-            Note("При −1 в конце: +3,5% сравнять счёт и +7% пропустить в пустые. Аналитика НХЛ: тренеры снимают вратаря слишком поздно, раннее снятие в среднем приносит очки.")));
+        var next = C.NextGame(C.UserTeam);
+        MatchSide hs = null, aws = null; bool home = false; string opp = null;
+        if (next != null)
+        {
+            (hs, aws) = C.Sides(next, true); home = next.Home == C.UserTeam;
+            opp = "«" + C.Data.TeamByAbbr[home ? next.Away : next.Home].Name + "»";
+        }
+        var tAuto = new CheckBox { Text = "По сопернику — решает помощник", ButtonPressed = L.TempoAuto, FocusMode = FocusModeEnum.None };
+        tAuto.Toggled += on => { L.TempoAuto = on; Changed(); };
+        int shown = L.TempoAuto && next != null ? Coach.Tempo(C, next, hs, aws, home).tempo : L.Tempo;
+        var tSeg = new Segmented(new[] { "Закрытый", "Обычный", "Открытый" }, shown + 1, k => { L.TempoAuto = false; L.Tempo = k - 1; Changed(); });
+        if (L.TempoAuto) tSeg.Modulate = new Color(1, 1, 1, 0.55f);
+        v.AddChild(Section("Темп игры", tAuto, tSeg,
+            Note(L.TempoAuto
+                ? (next == null ? "Помощник выбирает темп перед каждым матчем: со слабым — открытый, с сильным — закрытый."
+                    : "Следующий матч: " + Coach.TempoText(Coach.Tempo(C, next, hs, aws, home).tempo, Coach.Tempo(C, next, hs, aws, home).gain, opp, next.Playoff))
+                : L.Tempo switch
+                {
+                    -1 => "Меньше моментов у обеих команд (−7% голов). Чаще овертаймы — это помогает слабому выстоять против сильного, а сильному стоит очков.",
+                    1 => "Больше моментов у обеих команд (+7% голов). Фаворит реже отдаёт очки в овертаймах, слабый — чаще проигрывает в основное время.",
+                    _ => "Обычный хоккей: темп как у среднего клуба НХЛ.",
+                })));
+        Control pullPlan = null;
+        if (L.Pull == Coach.ASSIST && next != null)
+        {
+            var pp = Coach.Pull(C, next, hs, aws, home);
+            Control Cell(string k, string val, Color col) => Ui.V(-2, Ui.L(k, 11, Ui.Dim), Ui.L(val, 20, col, Ui.CondBold));
+            pullPlan = Ui.H(18, Cell("при −1", Coach.Clock(pp.T1), Ui.Text), Cell("при −2", Coach.Clock(pp.T2), Ui.Text),
+                Cell("сравнять", $"{100 * pp.Tie1:0}%", Ui.Gold), Cell("за 2:00", $"{100 * pp.TieUsual1:0}%", Ui.Muted));
+        }
+        string pullNote = L.Pull switch
+        {
+            Coach.ASSIST => next == null ? "Помощник рассчитывает время на каждый матч: чем опаснее соперник в атаке, тем позже."
+                : "Следующий матч. " + Coach.PullWhy(Coach.Pull(C, next, hs, aws, home), opp) + " «Сравнять» — шанс отыграться при −1 за 10 минут до конца. Цена раннего снятия — чаще крупные поражения.",
+            Coach.EARLY => $"Всегда за {Coach.Clock(Coach.EARLY1)} при −1 и за {Coach.Clock(Coach.EARLY2)} при −2, кто бы ни был соперник. Шансов сравнять больше, но чаще шайбы в пустые и крупные поражения.",
+            _ => "Как большинство тренеров НХЛ: за 2:00 при −1 и −2. Реже крупные поражения, но и сравнивают реже.",
+        };
+        v.AddChild(Section("Снятие вратаря",
+            new Segmented(new[] { "Как в НХЛ", "По расчёту", "Рано" }, L.Pull switch { Coach.ASSIST => 1, Coach.EARLY => 2, _ => 0 },
+                k => { L.Pull = k switch { 1 => Coach.ASSIST, 2 => Coach.EARLY, _ => Coach.USUAL }; Changed(); }),
+            pullPlan ?? new Control(), Note(pullNote)));
         var presets = new (string name, double[] f, double[] d)[]
         {
             ("Ровно", new double[] { 17, 16, 15, 12 }, new double[] { 21, 20, 19 }),
@@ -136,11 +165,14 @@ public partial class LinesView : HBoxContainer
         v.AddChild(Section("Вратари", Ui.H(0, Ui.L("Основной: ", 12, Ui.Text), Links.Player(C, L.G1, C.Short(L.G1), 12), Ui.L(" · запасной: ", 12, Ui.Text), Links.Player(C, L.G2, C.Short(L.G2), 12)), b2b, Note("Запасной выходит во втором матче за два дня и когда свежесть основного ниже 60%: усталость стоит команде около 5% голов. Поменять вратарей — место «В» в любом звене.")));
 
         var (gF, gA) = C.LineupEffect(C.UserTeam);
+        var (fF, fA) = Coach.FamGoals(C, L);
+        double famNet = fF - fA;
         v.AddChild(Section("Анализ состава",
             Ui.H(8, Ui.Expand(Ui.L("Забиваем за матч", 12, Ui.Muted)), Ui.L(Ui.Signed(gF), 14, gF >= -0.005 ? Ui.Win : Ui.Loss, Ui.Bold)),
             Ui.H(8, Ui.Expand(Ui.L("Пропускаем за матч", 12, Ui.Muted)), Ui.L(Ui.Signed(gA), 14, gA <= 0.005 ? Ui.Win : Ui.Loss, Ui.Bold)),
-            Note("По сравнению со звеньями, с которыми клуб начал сезон. Считает движок матча.")));
-        var auto = Ui.B("Авто-состав", () => Set(Lineup.Auto(C.Data, C.UserTeam, C.Injured.ToHashSet())));
+            Ui.H(8, Ui.Expand(Ui.L("Сыгранность звеньев", 12, Ui.Muted)), Ui.L(Ui.Signed(famNet), 14, famNet >= -0.005 ? Ui.Win : Ui.Loss, Ui.Bold)),
+            Note("Способности — по сравнению со звеньями, с которыми клуб начал сезон. Сыгранность — голов за матч в пользу клуба против обычной: новые звенья теряют, сыгранные прибавляют.")));
+        var auto = Ui.B("Вариант помощника", () => AssistantReview.Open(this, C, C.UserTeam, Set));
         var nhl = Ui.B("Как в НХЛ", () => Set(Lineup.FromTeam(C.Data, C.Team(C.UserTeam), C.Injured.ToHashSet())));
         auto.AddThemeFontSizeOverride("font_size", 12); nhl.AddThemeFontSizeOverride("font_size", 12);
         v.AddChild(Ui.H(8, Ui.Expand(auto), Ui.Expand(nhl)));
@@ -389,7 +421,7 @@ public partial class LinesView : HBoxContainer
 
     void Set(Lineup l)
     {
-        l.Tempo = L.Tempo; l.EarlyPull = L.EarlyPull; l.BackupOnB2B = L.BackupOnB2B;
+        l.Tempo = L.Tempo; l.TempoAuto = L.TempoAuto; l.Pull = L.Pull; l.BackupOnB2B = L.BackupOnB2B;
         C.Lineups[C.UserTeam] = l;
         Changed();
     }

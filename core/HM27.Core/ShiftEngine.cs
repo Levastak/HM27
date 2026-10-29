@@ -124,8 +124,8 @@ public static class ShiftEngine
     // ───────────── смены (карты смен НХЛ: нападающие 47 с, защитники 49 с)
     public const double SHIFT_F = 48, SHIFT_D = 51, SHIFT_SD = 9, PP1_SEC = 65, PK_SHIFT = 40, OT_SHIFT = 40;
     // ───────────── вратарь (НХЛ 2023-26: со снятым вратарём при −1 — 25 с за матч, при −2 — 24 с, при −3 — 8 с):
-    // снятие при −1 за ~2:00 до конца, при −2 за ~2:05, при −3 (в трети случаев) за ~3:40; «раньше обычного» — ещё на 75–90 с раньше
-    public const double PULL1 = 120, PULL2 = 125, PULL3 = 220, PULL_SD = 25, EARLY1 = 75, EARLY2 = 90;
+    // снятие при −1 за ~2:00 до конца, при −2 за ~2:05, при −3 (в трети случаев) за ~3:40; план тренера (Coach) — ± PULL_JIT
+    public const double PULL1 = 120, PULL2 = 125, PULL3 = 220, PULL_SD = 25, PULL_JIT = 8;
     // ───────────── усталость: энергия 0–1; на льду тратится (меньше при высокой выносливости), на скамейке восстанавливается
     public static double DRAIN = 0.0058, REC = 0.0045, FAT_AT = 0.7, FAT_K = 5.0;
     // ───────────── вбрасывания (НХЛ 2024-26: 56 за матч; у центров 50,5% + 1,45 п.п. на ед. «вбрасывания»).
@@ -286,7 +286,7 @@ public static class ShiftEngine
             // средний клуб — ноль атаки и обороны; уровень лиги из базы относительно НХЛ 2022-26
             norm = Math.Exp(-spread * (sc.MA + sc.MY)) * d.League.GoalsPerGame / NHL_GPG;
             H = Build(home, true); A = Build(away, false);
-            double tempo = (1 + MatchEngine.TEMPO_K * home.Lineup.Tempo) * (1 + MatchEngine.TEMPO_K * away.Lineup.Tempo);
+            double tempo = (1 + MatchEngine.TEMPO_K * home.Tempo) * (1 + MatchEngine.TEMPO_K * away.Tempo);
             foreach (var (t, o) in new[] { (H, A), (A, H) })
             {
                 t.Mult = Math.Exp(playoff ? 0 : t.Home ? HA_LOG : -HA_LOG) * tempo * (playoff ? MatchEngine.PO_TOT : 1);
@@ -376,8 +376,10 @@ public static class ShiftEngine
             t.GMult = Math.Clamp((1 - MatchEngine.G_W * gs) / (1 - MatchEngine.G_W * sc.G0), 0.8, 1.2);
             t.GBox = new PlayerBox();
             if (data.PlayerById.TryGetValue(s.Goalie, out var gp)) t.GSkill = (Attr(s, gp, "rfx") + Attr(s, gp, "gpos")) / 2 - 11;
-            t.Pull1 = PULL1 + PULL_SD * Normal() + (s.Lineup.EarlyPull ? EARLY1 : 0);
-            t.Pull2 = PULL2 + PULL_SD * Normal() + (s.Lineup.EarlyPull ? EARLY2 : 0);
+            // время снятия: как обычно в НХЛ (разброс по тренерам и ситуациям) или план тренера на матч (± реакция на свисток)
+            double n1 = Normal(), n2 = Normal();
+            t.Pull1 = s.Pull1 is double p1 ? p1 + PULL_JIT * n1 : PULL1 + PULL_SD * n1;
+            t.Pull2 = s.Pull2 is double p2 ? p2 + PULL_JIT * n2 : PULL2 + PULL_SD * n2;
             // при −3 снимают не всегда (примерно в трети таких концовок), зато рано
             t.Pull3 = rng.NextDouble() < 0.35 ? PULL3 + PULL_SD * Normal() : 0;
             return t;

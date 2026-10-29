@@ -17,8 +17,13 @@ public sealed class Lineup
     public int[] Pk2 { get; set; } = new int[4];
     /// <summary>Темп игры: −1 закрытый (−7% голов у обеих команд), 0 обычный, +1 открытый (+7%).</summary>
     public int Tempo { get; set; }
-    /// <summary>Снимать вратаря раньше обычного, когда проигрываем 1–2 шайбы в концовке.</summary>
-    public bool EarlyPull { get; set; }
+    /// <summary>Темп по сопернику: решает помощник перед каждым матчем (Coach.Prepare); Tempo тогда не используется.</summary>
+    public bool TempoAuto { get; set; }
+    /// <summary>Снятие вратаря в концовке: 0 — как обычно в НХЛ (за 2:00), 1 — рано (за 4:00 / 5:00), 2 — по расчёту помощника на этот матч.</summary>
+    public int Pull { get; set; }
+    /// <summary>Старые сохранения: «снимать раньше» → Pull = 1 (не записывается).</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public bool EarlyPull { get => false; set { if (value) Pull = Coach.EARLY; } }
     public double[] FMin { get; set; } = { 20, 17, 14, 9 };
     public double[] DMin { get; set; } = { 24, 20, 16 };
     /// <summary>Во втором матче за два дня в воротах запасной.</summary>
@@ -135,7 +140,7 @@ public sealed class Lineup
         F = F.Select(a => (int[])a.Clone()).ToList(),
         D = D.Select(a => (int[])a.Clone()).ToList(),
         G1 = G1, G2 = G2, Pp1 = (int[])Pp1.Clone(), Pp2 = (int[])Pp2.Clone(), Pk1 = (int[])Pk1.Clone(), Pk2 = (int[])Pk2.Clone(),
-        Tempo = Tempo, EarlyPull = EarlyPull,
+        Tempo = Tempo, TempoAuto = TempoAuto, Pull = Pull,
         FMin = (double[])FMin.Clone(), DMin = (double[])DMin.Clone(), BackupOnB2B = BackupOnB2B,
     };
 
@@ -231,15 +236,16 @@ public sealed class Lineup
     }
 
     /// <summary>Добрать пустые места лучшими свободными игроками клуба.</summary>
-    public void Fill(GameData data, string abbr, ISet<int> unavailable)
+    public void Fill(GameData data, string abbr, ISet<int> unavailable, Func<PlayerData, double> score = null)
     {
+        score ??= p => p.CaEst;
         var used = All.ToHashSet();
-        var pool = data.Roster(abbr).Where(p => !unavailable.Contains(p.Id) && !used.Contains(p.Id)).OrderByDescending(p => p.CaEst).ToList();
+        var pool = data.Roster(abbr).Where(p => !unavailable.Contains(p.Id) && !used.Contains(p.Id)).OrderByDescending(score).ToList();
         // лучший по силе (КА) с поправкой за непривычное место: центр на краю −4, крайний в центре −8, защитник в нападении и наоборот −30.
         // Раньше брали «своих по позиции» по старому рейтингу — и при неполных звеньях в источнике сильнейший центр мог не попасть в состав
         int Take(Func<PlayerData, double> penalty)
         {
-            var p = pool.Where(x => !x.IsGoalie).OrderByDescending(x => x.CaEst - penalty(x)).FirstOrDefault();
+            var p = pool.Where(x => !x.IsGoalie).OrderByDescending(x => score(x) - penalty(x)).FirstOrDefault();
             if (p == null) return 0;
             pool.Remove(p);
             return p.Id;

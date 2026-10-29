@@ -126,7 +126,7 @@ public partial class MatchScreen : Control
     {
         var body = Frame();
         var o = C.Preview(_g);
-        var hs = C.Side(_g.Home, _g.Date); var aws = C.Side(_g.Away, _g.Date);
+        var (hs, aws) = C.Sides(_g, true);
         var row = Ui.H(12);
         row.AddChild(Ui.Expand(TeamColumn(Away, aws, false)));
         var mid = Ui.V(12); mid.CustomMinimumSize = new Vector2(420, 0);
@@ -139,9 +139,12 @@ public partial class MatchScreen : Control
         if (mine)
         {
             var my = C.Lineups[C.UserTeam];
+            var ms = _g.Home == C.UserTeam ? hs : aws;
+            string tempo = (ms.Tempo switch { -1 => "Закрытый", 1 => "Открытый", _ => "Обычный" }) + (my.TempoAuto ? " (по сопернику)" : "");
+            string pull = ms.Pull1 is double p1 ? $"за {Coach.Clock(p1)} при −1, за {Coach.Clock(ms.Pull2 ?? p1)} при −2" : "как в НХЛ, за 2:00";
             var tac = Ui.V(4,
-                Ui.H(8, Ui.Expand(Ui.L("Темп игры", 12, Ui.Muted)), Ui.L(my.Tempo switch { -1 => "Закрытый", 1 => "Открытый", _ => "Обычный" }, 13, Ui.Text, Ui.Semi)),
-                Ui.H(8, Ui.Expand(Ui.L("Снятие вратаря", 12, Ui.Muted)), Ui.L(my.EarlyPull ? "Раньше обычного" : "Как обычно", 13, Ui.Text, Ui.Semi)),
+                Ui.H(8, Ui.Expand(Ui.L("Темп игры", 12, Ui.Muted)), Ui.L(tempo, 13, Ui.Text, Ui.Semi)),
+                Ui.H(8, Ui.Expand(Ui.L("Снятие вратаря", 12, Ui.Muted)), Ui.L(pull, 13, Ui.Text, Ui.Semi)),
                 Ui.H(8, Ui.Expand(Ui.L("Вратарь на матч", 12, Ui.Muted)), Ui.L(C.Short((_g.Home == C.UserTeam ? hs : aws).Goalie), 13, Ui.Text, Ui.Semi)));
             mid.AddChild(Widget.Make("Ваш план на матч", tac, "Звенья →", () => Main.I.ShowHub("lines")));
             var go = Ui.B("Начать матч", StartMatch, true, 18);

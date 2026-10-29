@@ -86,6 +86,7 @@ if (args.Length > 1 && args[1] == "news")
     Console.WriteLine($"Сумма сейвов сверх ожидаемых по лиге: {nc.Goalies.Values.Sum(g => g.Gsax):0.0} при {nc.Goalies.Values.Sum(g => g.Ga)} пропущенных; xG полевых {nc.Skaters.Values.Sum(s => s.Ixg):0} при {nc.Skaters.Values.Sum(s => s.G)} голах");
     return 0;
 }
+if (args.Length > 1 && args[1] == "coach") { CoachCheck.Run(data, true); return 0; }
 if (args.Length > 1 && args[1] == "engine") { EngineReport.Run(data, args.Length > 2 ? int.Parse(args[2]) : 1); return 0; }
 Console.WriteLine($"База: {data.Teams.Count} клубов, {data.Players.Count} игроков, данные на {data.DataDate}; голов за матч на команду {data.League.GoalsPerGame:F3}");
 
@@ -420,9 +421,9 @@ Check("Плей-офф", playoffsOk, $"15 серий и чемпион в каж
     double morK = Morale.MOR_K; Morale.MOR_K = 0;
     for (int s = 0; s < 12; s++)
     {
-        var a = Career.New(data, "SJS", 9000 + s); a.SimToEnd();
-        var b = Career.New(data, "SJS", 9000 + s); b.Lineups["SJS"].EarlyPull = true; b.SimToEnd();
-        var d = Career.New(data, "SJS", 9000 + s); d.Lineups["SJS"].Tempo = -1; d.SimToEnd();
+        var a = Career.New(data, "SJS", 9000 + s); a.Lineups["SJS"].Pull = Coach.USUAL; a.Lineups["SJS"].TempoAuto = false; a.SimToEnd();
+        var b = Career.New(data, "SJS", 9000 + s); b.Lineups["SJS"].Pull = Coach.EARLY; b.Lineups["SJS"].TempoAuto = false; b.SimToEnd();
+        var d = Career.New(data, "SJS", 9000 + s); d.Lineups["SJS"].Pull = Coach.USUAL; d.Lineups["SJS"].TempoAuto = false; d.Lineups["SJS"].Tempo = -1; d.SimToEnd();
         ptsBase += a.Table["SJS"].Pts; ptsPull += b.Table["SJS"].Pts;
         foreach (var g in a.Games.Where(g => !g.Playoff && (g.Home == "SJS" || g.Away == "SJS"))) { gBase += g.Result.HomeGoals + g.Result.AwayGoals; if (g.Result.End != "REG") ties++; n++; }
         foreach (var g in d.Games.Where(g => !g.Playoff && (g.Home == "SJS" || g.Away == "SJS"))) { gClosed += g.Result.HomeGoals + g.Result.AwayGoals; if (g.Result.End != "REG") tiesClosed++; }
@@ -434,6 +435,13 @@ Check("Плей-офф", playoffsOk, $"15 серий и чемпион в каж
     // меньше голов → чуть больше ничьих (+0,6 п.п. при −7% голов), но за 12 сезонов разброс доли ОТ ±1,8 п.п. (матчи расходятся целиком) —
     // проверяем, что голов меньше, а ОТ не падает сверх шума
     Check("Закрытый темп", gClosed < gBase && tiesClosed >= ties - 0.035 * n, $"голов в матчах «Сан-Хосе» {gBase / n:F2} → {gClosed / n:F2}, овертаймов {100 * ties / n:F1}% → {100 * tiesClosed / n:F1}%");
+    {
+        // нет одного верного решения: лучший план помощника зависит от соперника, вариант состава не бесплатный
+        var cc = CoachCheck.Run(data, false);
+        Check("Нет одного верного решения", cc.PullP90 - cc.PullP10 >= 60 && cc.Closed >= 0.1 && cc.Open >= 0.1 && cc.Normal >= 0.1 && cc.WithFamLoss >= cc.Clubs / 2,
+            $"снятие при −1 по расчёту: от {Coach.Clock(cc.PullP10)} до {Coach.Clock(cc.PullP90)} (10–90%); темп по сопернику: закрытый {100 * cc.Closed:0}%, обычный {100 * cc.Normal:0}%, открытый {100 * cc.Open:0}%; " +
+            $"вариант состава теряет в сыгранности у {cc.WithFamLoss} из {cc.Clubs} клубов, обижает кого-то у {cc.WithUpset}, хуже текущего с учётом сыгранности у {cc.NetWorse}");
+    }
 }
 
 // ---------------------------------------------------------------- 5. Путь игрока: «Дальше» → матч → следующий день, сохранение

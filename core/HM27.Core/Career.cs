@@ -159,6 +159,8 @@ public sealed class Career
         // травмированные на старте (по реальным данным): помощник знает, куда их вернуть — как в составе здорового клуба
         {
             var ul = c.Lineups[c.UserTeam];
+            // свой клуб: темп и снятие вратаря по совету помощника на каждый матч (тренер может решить сам)
+            ul.TempoAuto = true; ul.Pull = Coach.ASSIST;
             var full = Lineup.FromTeam(data, data.TeamByAbbr[c.UserTeam], new HashSet<int>());
             foreach (var id in inj)
             {
@@ -352,18 +354,31 @@ public sealed class Career
             var (att, dfn) = TeamStrength.Live(this, l, goalie, dl);
             return new MatchSide
             {
-                Team = Data.TeamByAbbr[abbr], Lineup = l, Goalie = goalie, B2B = b2b, Dl = dl, Att = att, Dfn = dfn, Attr = TeamStrength.Attr(this, dl), Fam = Fam,
+                Team = Data.TeamByAbbr[abbr], Lineup = l, Tempo = l.Tempo, Goalie = goalie, B2B = b2b, Dl = dl, Att = att, Dfn = dfn, Attr = TeamStrength.Attr(this, dl), Fam = Fam,
                 BaseOff = MatchEngine.OffIndex(Data, l, dl), BaseDef = MatchEngine.DefIndex(Data, l, dl), BaseGsax = MatchEngine.GsaxOf(Data, goalie, dl),
             };
         }
         return new MatchSide
         {
-            Team = Data.TeamByAbbr[abbr], Lineup = l, BaseOff = BaseOff[abbr], BaseDef = BaseDef[abbr], BaseGsax = BaseGsax[abbr], Goalie = goalie, B2B = b2b, Dl = dl,
+            Team = Data.TeamByAbbr[abbr], Lineup = l, Tempo = l.Tempo, BaseOff = BaseOff[abbr], BaseDef = BaseDef[abbr], BaseGsax = BaseGsax[abbr], Goalie = goalie, B2B = b2b, Dl = dl,
         };
     }
 
-    public MatchOdds Preview(ScheduledGame g) => MatchEngine.Odds(Data, Side(g.Home, g.Date, true, g.Playoff), Side(g.Away, g.Date, true, g.Playoff), g.Playoff,
-        sharp: BottomUp && ShiftEngine.Enabled ? ShiftEngine.SHARP : MatchEngine.SHARP);
+    public double Sharp => BottomUp && ShiftEngine.Enabled ? ShiftEngine.SHARP : MatchEngine.SHARP;
+
+    public MatchOdds Preview(ScheduledGame g)
+    {
+        var (h, a) = Sides(g, true);
+        return MatchEngine.Odds(Data, h, a, g.Playoff, sharp: Sharp);
+    }
+
+    /// <summary>Стороны матча с планом тренеров на этот матч (темп по сопернику, снятие вратаря — Coach.Prepare).</summary>
+    public (MatchSide home, MatchSide away) Sides(ScheduledGame g, bool preview = false)
+    {
+        var h = Side(g.Home, g.Date, preview, g.Playoff); var a = Side(g.Away, g.Date, preview, g.Playoff);
+        Coach.Prepare(this, g, h, a);
+        return (h, a);
+    }
 
     // ------------------------------------------------------------------ симуляция
     Random RngFor(ScheduledGame g) => new(unchecked(Seed * 1_000_003 ^ g.Id));   // детерминированно (HashCode в .NET случаен по процессам)
@@ -384,11 +399,11 @@ public sealed class Career
                 // ИИ ставит звенья как в НХЛ, с поправкой на травмы (вернувшиеся из лазарета — снова в составе)
                 var keep = Lineups[t];
                 var l = Lineup.FromTeam(Data, Data.TeamByAbbr[t], inj);
-                l.Tempo = keep.Tempo; l.EarlyPull = keep.EarlyPull;
+                l.Tempo = keep.Tempo; l.TempoAuto = keep.TempoAuto; l.Pull = keep.Pull;
                 Lineups[t] = l;
             }
         }
-        var h = Side(g.Home, g.Date, playoff: g.Playoff); var a = Side(g.Away, g.Date, playoff: g.Playoff);
+        var (h, a) = Sides(g);
         // новые карьеры — движок по сменам; старые сохранения (сила модели) — движок «матч целиком»
         var r = BottomUp && ShiftEngine.Enabled ? ShiftEngine.Play(Data, h, a, RngFor(g), g.Playoff) : MatchEngine.Play(Data, h, a, RngFor(g), g.Playoff);
         g.Result = r;
