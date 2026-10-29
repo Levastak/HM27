@@ -263,8 +263,12 @@ public partial class SquadPage : Control
             new() { Title = "Страна", Width = 50, Cell = p => Ui.L(p.Country ?? "", 11, Ui.Muted), Sort = p => p.Country ?? "", Desc = false },
             new() { Title = "Рост", Width = 40, Cell = p => Ui.L(p.Height?.ToString() ?? "", 12, Ui.Muted), Sort = p => p.Height ?? 0 },
             new() { Title = "В составе", Width = 92, Align = HorizontalAlignment.Left, Cell = p => { var r = P.Role(p.Id, _abbr); return Ui.L(r, 12, r == "Травма" ? Ui.Loss : r == "Запас" ? Ui.Dim : Ui.Muted); }, Sort = p => RoleOrder(p.Id), Desc = false },
-            new() { Title = "Способности", Width = 86, Cell = p => Ui.Stars(PlayerModel.StarsOvr(PlayerModel.Visible(C, p, "ca")), 13), Sort = p => PlayerModel.Visible(C, p, "ca"), Tip = "Оценка тренерского штаба" },
-            new() { Title = "Потенциал", Width = 86, Cell = p => Ui.Stars((int)Math.Round(PlayerModel.PotentialStars(C, p).hi * 20), 13), Sort = p => PlayerModel.PotentialStars(C, p).hi, Tip = "Потолок по оценке скаутов (верхняя граница)" },
+            new() { Title = "Форма", Width = 84, Align = HorizontalAlignment.Left, Tip = "По оценкам за последние 8 матчей относительно его обычного уровня", Cell = p => Ui.FormLabel(PlayerForm.Of(C, p.Id)), Sort = p => PlayerForm.Of(C, p.Id).Score },
+            new() { Title = "Свежесть", Width = 76, Align = HorizontalAlignment.Left, Tip = "Нагрузка за сезон: большие минуты и плотный календарь утомляют", Cell = p => Ui.FreshLabel(PlayerModel.State(C, p.Id)), Sort = p => PlayerModel.State(C, p.Id)?.Fresh ?? 100 },
+            new() { Title = "Способности", Width = 86, Cell = p => Ui.Stars(StarScale.StarsV(C, p, PlayerModel.Visible(C, p, "ca")), 13), Sort = p => PlayerModel.Visible(C, p, "ca"),
+                    Tip = StarScale.Relative ? "Оценка штаба относительно вашего клуба: 5★ — уровень лучшего в своей группе" : "Оценка штаба по шкале лиги" },
+            new() { Title = "Потенциал", Width = 86, Cell = p => Ui.Stars(StarScale.StarsV(C, p, PlayerModel.PotentialRange(C, p).hi), 13), Sort = p => PlayerModel.PotentialRange(C, p).hi,
+                    Tip = "Потолок по оценке скаутов (верхняя граница)" + (StarScale.Relative ? ", относительно вашего клуба" : "") },
         };
         if (!gk)
             foreach (var (key, name, tip) in new[] { ("fin", "Зав", "Завершение"), ("pas", "Пер", "Передача"), ("vis", "Вид", "Видение"), ("dfn", "Обор", "Позиционная оборона"), ("spd", "Скор", "Скорость"), ("sta", "Вын", "Выносливость") })
@@ -410,7 +414,7 @@ public partial class MedicalPage : Control
         };
         if (club) cols.Add(new() { Title = "Клуб", Width = 150, Align = HorizontalAlignment.Left, Cell = x => P.Team(x.p.Team), Sort = x => x.p.Team, Desc = false });
         cols.Add(new() { Title = "Поз", Width = 40, Cell = x => Ui.L(Ui.PosRu(x.p.Pos), 12, Ui.Muted) });
-        cols.Add(new() { Title = "Способности", Width = 90, Cell = x => Ui.Stars(x.p.Ovr, 12), Sort = x => x.p.Ovr });
+        cols.Add(new() { Title = "Способности", Width = 90, Cell = x => Ui.Stars(StarScale.StarsV(C, x.p, PlayerModel.Visible(C, x.p, "ca")), 12), Sort = x => PlayerModel.Visible(C, x.p, "ca") });
         cols.Add(new() { Title = "Травма", Width = 230, Align = HorizontalAlignment.Left, Cell = x => Ui.L(Cap(x.i.Kind), 12, Ui.Text) });
         cols.Add(new() { Title = "С", Width = 70, Cell = x => Ui.L(x.i.From > C.Today.AddDays(-400) ? Ui.DateShort(x.i.From) : "—", 12, Ui.Muted) });
         cols.Add(new() { Title = "Вернётся", Width = 140, Cell = x => { int d = x.i.Until.DayNumber - C.Today.DayNumber + 1; return Ui.L($"{Ui.DateShort(x.i.Until.AddDays(1))} ({d} {Ui.Plural(d, "день", "дня", "дней")})", 12, d <= 3 ? Ui.Win : d <= 14 ? Ui.Otl : Ui.Loss); }, Sort = x => x.i.Until.DayNumber, Desc = false });

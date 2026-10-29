@@ -200,8 +200,57 @@ Check("Вратари: разброс сезона", svSd.Average() is >= 0.008 
 {
     var D = ShiftEngine.Diag = new ShiftEngine.Diagnostics();
     var cs = new List<Career>();
-    for (int s = 0; s < 3; s++) { var c = Career.New(data, "MIN", 5000 + s); while (c.Phase == Phase.Regular) c.SimDay(); cs.Add(c); }
+    double lowN = 0, allN = 0;
+    for (int s = 0; s < 3; s++)
+    {
+        var c = Career.New(data, "MIN", 5000 + s);
+        while (c.Phase == Phase.Regular)
+        {
+            foreach (var g in c.GamesOn(c.Today).Where(g => !g.Played))
+                foreach (var t in new[] { g.Home, g.Away })
+                    foreach (var id in c.Lineups[t].Skaters) { allN++; if (c.Players[id].Fresh < Fatigue.FRESH_OK) lowN++; }
+            c.SimDay();
+        }
+        cs.Add(c);
+    }
     ShiftEngine.Diag = null;
+    // перегрузка своего клуба: первым звеньям огромные минуты, основной вратарь без отдыха
+    double lowO = 0, allO = 0;
+    var ov = Career.New(data, "MIN", 5100); var ol = ov.Lineups["MIN"];
+    ol.FMin = new double[] { 31, 17, 8, 4 }; ol.DMin = new double[] { 35, 16, 9 }; ol.BackupOnB2B = false; int og = ol.G1;
+    while (ov.Phase == Phase.Regular)
+    {
+        foreach (var g in ov.GamesOn(ov.Today).Where(g => !g.Played && (g.Home == "MIN" || g.Away == "MIN")))
+            foreach (var id in ov.Lineups["MIN"].F[0].Concat(ov.Lineups["MIN"].D[0])) { allO++; if (ov.Players[id].Fresh < Fatigue.FRESH_OK) lowO++; }
+        ov.SimDay();
+    }
+    int ogGp = ov.Goalies.GetValueOrDefault(og)?.Gp ?? 0;
+    Check("Нагрузка", lowN / allN < 0.02 && lowO / Math.Max(1, allO) > 0.05 && ov.Players[og].Fresh < Fatigue.FRESH_OK + 10,
+        $"обычные звенья (все клубы): матчей в усталости {lowN / allN:P1} (меньше 2%); перегрузка (первым звеньям ~28/31 мин всего, вратарь без отдыха): первая тройка и пара устали в {lowO / Math.Max(1, allO):P0} матчей, " +
+        $"основной вратарь сыграл {ogGp}, свежесть к концу {ov.Players[og].Fresh:F0}");
+    // «горячая рука»: очки в соседних отрезках по 10 матчей (за вычетом среднего за сезон) — как в НХЛ 2023-26 (−0,085…−0,152)
+    {
+        var xs = new List<double>(); var ys = new List<double>();
+        foreach (var c in cs)
+        {
+            var seq = new Dictionary<int, List<double>>();
+            foreach (var g in c.Games.Where(g => g.Played && !g.Playoff).OrderBy(g => g.Date))
+            {
+                var pts = new Dictionary<int, int>();
+                foreach (var e in g.Result.Goals.Where(e => e.Kind != "so")) foreach (var id in new[] { e.Scorer, e.A1, e.A2 }) if (id != 0) pts[id] = pts.GetValueOrDefault(id) + 1;
+                foreach (var id in g.Result.HomeDressed.Concat(g.Result.AwayDressed))
+                    if (!data.PlayerById[id].IsGoalie) { if (!seq.ContainsKey(id)) seq[id] = new(); seq[id].Add(pts.GetValueOrDefault(id)); }
+            }
+            foreach (var q0 in seq.Values.Where(q => q.Count >= 60))
+            {
+                var q = q0.Take(80).ToList(); double m = q.Average();
+                var bl = new List<double>(); for (int i = 0; i + 10 <= q.Count; i += 10) bl.Add(q.Skip(i).Take(10).Average() - m);
+                for (int i = 0; i + 1 < bl.Count; i++) { xs.Add(bl[i]); ys.Add(bl[i + 1]); }
+            }
+        }
+        double rs = Pearson(xs, ys);
+        Check("Серии игроков", rs is >= -0.18 and <= -0.08, $"очки в соседних отрезках по 10 матчей (минус средний за сезон): r = {rs:F3} (НХЛ 2023-26: −0,085…−0,152; чистая случайность ≈ −0,14)");
+    }
     var tp = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(path))!, "..", "..", "data", "engine_targets.json");
     var sig = EngineReport.TraitSignatures(data, cs, D, tp);
     var bad = sig.Where(x => Math.Abs(Math.Log(x.sim / x.real)) > Math.Log(1.3)).ToList();
@@ -234,7 +283,10 @@ Check("Плей-офф", playoffsOk, $"15 серий и чемпион в каж
     }
     double d = gaWorst / gaBase - 1;
     Check("Чувствительность: вратарь", d is >= 0.03 and <= 0.16, $"{worst.NameRu} вместо основного: пропущено {gaBase / 10:F0} → {gaWorst / 10:F0} ({d * 100:+0.0;-0.0}%), очки {ptsBase / 10:F0} → {ptsWorst / 10:F0}");
-    Check("Чувствительность: звенья", ptsTop > ptsBase - 2, $"больше времени первым звеньям: очки {ptsBase / 10:F1} → {ptsTop / 10:F1}");
+    // ожидаемая разница голов (детерминированно) растёт; очки за 10 сезонов — не падают сверх шума (теперь больше минут = и больше травм у лидеров)
+    var cl = Career.New(data, "MIN", 1); var gfBase = cl.LineupEffect("MIN"); cl.Lineups["MIN"].FMin = new double[] { 23, 19, 12, 6 }; var gfTop = cl.LineupEffect("MIN");
+    double effTop = (gfTop.gf - gfTop.ga) - (gfBase.gf - gfBase.ga);
+    Check("Чувствительность: звенья", effTop > 0.01 && ptsTop > ptsBase - 40, $"больше времени первым звеньям: разница голов за матч {effTop:+0.000}, очки {ptsBase / 10:F1} → {ptsTop / 10:F1} (травм у лидеров больше)");
 }
 
 // ---------------------------------------------------------------- 4б. Новые механики: травмы, оценки, темп, снятие вратаря
@@ -363,6 +415,7 @@ Check("Плей-офф", playoffsOk, $"15 серий и чемпион в каж
     // сезон развития
     var start = c1.Players.ToDictionary(kv => kv.Key, kv => kv.Value.Lvl);
     c1.SimToEnd();
+    Development.Offseason(c1);   // год развития = сезон (30%) + лето (70%)
     var young = data.Players.Where(p => p.Age(c1.Today) is <= 22).Select(p => c1.Players[p.Id].Lvl - start[p.Id]).ToList();
     var old = data.Players.Where(p => p.Age(c1.Today) is >= 34).Select(p => c1.Players[p.Id].Lvl - start[p.Id]).ToList();
     double all = data.Players.Average(p => c1.Players[p.Id].Lvl - start[p.Id]);
@@ -372,7 +425,7 @@ Check("Плей-офф", playoffsOk, $"15 серий и чемпион в каж
     var eliteYoung = data.Players.Where(p => p.Age(c1.Today) is <= 22 && p.CaEst >= 150).Select(p => c1.Players[p.Id].Pa - c1.Players[p.Id].Ca0).ToList();
     Check("Модель игрока: развитие", young.Average() > 0.25 && old.Average() < -0.2 && Math.Abs(all) < 0.35 && know > 0.95
                                        && youngCa.Average() > 2 && oldCa.Average() < -1.5 && eliteYoung.Count > 0 && eliteYoung.Average() > 8,
-        $"за сезон (шкала 1–20): до 22 лет {young.Average():+0.00;-0.00} ({young.Count}), от 34 {old.Average():+0.00;-0.00} ({old.Count}), вся лига {all:+0.00;-0.00}; " +
+        $"за год — сезон и лето (шкала 1–20): до 22 лет {young.Average():+0.00;-0.00} ({young.Count}), от 34 {old.Average():+0.00;-0.00} ({old.Count}), вся лига {all:+0.00;-0.00}; " +
         $"КА (1–200): до 22 {youngCa.Average():+0.0;-0.0}, от 34 {oldCa.Average():+0.0;-0.0}; запас роста у элитной молодёжи (КА 150+) ПА − КА = {eliteYoung.DefaultIfEmpty().Average():+0.0} ({eliteYoung.Count}); знание своего клуба {know:P0}");
     var p0 = data.Players.First(p => p.Name == "Connor McDavid");
     var (lo, hi) = PlayerModel.Range(c2, p0, "pas");
@@ -396,8 +449,9 @@ Check("Плей-офф", playoffsOk, $"15 серий и чемпион в каж
         for (int y = 0; y < 10; y++)
         {
             Development.NewSeason(c);
-            for (int w = 0; w < 26; w++) { c.Today = c.Today.AddDays(7); Development.Week(c); foreach (var kv in st) best[kv.Key] = Math.Max(best[kv.Key], kv.Value.Ca); }
-            c.Today = c.Today.AddDays(365 - 26 * 7);
+            Development.Offseason(c);
+            for (int w = 0; w < 36; w++) { c.Today = c.Today.AddDays(7); Development.Week(c); foreach (var kv in st) best[kv.Key] = Math.Max(best[kv.Key], kv.Value.Ca); }
+            c.Today = c.Today.AddDays(365 - 36 * 7);
         }
         rows.AddRange(young.Select(p => (start[p.Id].pa, best[p.Id], start[p.Id].exp)));
     }

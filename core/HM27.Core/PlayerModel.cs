@@ -76,6 +76,8 @@ public static class Attrs
 /// </summary>
 public sealed class PlayerState
 {
+    /// <summary>Свежесть 0–100: нагрузка за сезон (Fatigue).</summary>
+    public float Fresh { get; set; } = 100;
     /// <summary>Истинный уровень 1–20.</summary>
     public float Lvl { get; set; }
     /// <summary>Уровень в начале сезона — для стрелок развития.</summary>
@@ -121,8 +123,14 @@ public static class PlayerModel
     public const double G_LVL = 0.015;
     /// <summary>Защитник: «минут доверия» на единицу уровня сверх данных.</summary>
     public const double D_LVL = 1.3;
-    /// <summary>Форма ±1 = ±0,35 единицы уровня.</summary>
-    public const double FORM_U = 0.35;
+    /// <summary>
+    /// Форма ±1 = ±0,8 единицы уровня. Зеркальная проверка «Серии игроков»: связь очков в соседних отрезках по 10 матчей
+    /// (за вычетом среднего игрока за сезон) — в НХЛ 2023-26 от −0,085 до −0,15 (чистая случайность ≈ −0,14), т. е. «горячая рука» слабая;
+    /// при 0,35–1,3 игра остаётся в этих пределах.
+    /// </summary>
+    public static double FORM_U = 0.8;
+    /// <summary>Только для проверок: выключить форму (сравнение «серийности» с НХЛ).</summary>
+    public static bool FORM_OFF;
     /// <summary>Пунктов КА (1–200) на единицу шкалы 1–20.</summary>
     public const double CA_PER_LVL = 6.0;
     /// <summary>
@@ -179,6 +187,23 @@ public static class PlayerModel
         return dv[^1];
     }
 
+    /// <summary>Нормальное случайное, обрезанное на ±1,5.</summary>
+    static double Tn(Random rng) => Math.Clamp(N(rng), -1.5, 1.5);
+
+    /// <summary>Вес «родословной» в оценке потолка: чем меньше данных об игроке (погрешность КА) и чем он моложе, тем больше.</summary>
+    public static double Pedigree(PlayerData p, int age)
+    {
+        double se = p.CaData is { Length: > 1 } ? p.CaData[1] : 10;
+        double youth = age <= 23 ? 1 : age == 24 ? 0.75 : age == 25 ? 0.4 : 0;
+        return Math.Clamp((se - 4) / 10.0, 0, 1) * youth;
+    }
+
+    /// <summary>Типичный КА игрока, которого так задрафтовали, на пике (ориентир скаутов): топ-10 — 150, первый раунд — 138…</summary>
+    public static double PedigreeCa(int? pick) => pick switch
+    {
+        null or <= 0 => 112, <= 10 => 150, <= 32 => 138, <= 64 => 126, <= 100 => 118, _ => 112,
+    };
+
     /// <summary>Рост, который ещё впереди в среднем: сумма положительной кривой от возраста до 30.</summary>
     public static double Remaining(GameData data, PlayerData p, int age)
     {
@@ -202,22 +227,31 @@ public static class PlayerModel
         var rng = new Random(unchecked(c.Seed * 7349 ^ (p.Id * 31 + 17)));
         var f = p.Fx ?? new CareerFacts();
         int age = p.Age(c.Today) ?? 26;
-        double dl = noise ? N(rng) * p.LevelSe * 0.8 * (p.IsGoalie ? G_DRAW : 1) : 0;
+        // розыгрыш вокруг данных — без дальних хвостов (±1,5 погрешности): иначе у игроков с маленькой выборкой из ~25 характеристик
+        // почти наверняка какая-то улетает в экстремум («защитник с 25 матчами — лучший снайпер клуба»)
+        double dl = noise ? Tn(rng) * p.LevelSe * 0.8 * (p.IsGoalie ? G_DRAW : 1) : 0;
         var s = new PlayerState { Lvl = C(p.Level + dl), Ca = (float)Math.Clamp(p.CaEst + dl * CA_PER_LVL, 30, 200) };
         foreach (var d in Attrs.For(p))
         {
-            double v = p.AttrEst(d.Key) + (noise ? 0.7 * dl + N(rng) * p.AttrSe(d.Key) * 0.6 : 0);
+            double v = p.AttrEst(d.Key) + (noise ? 0.7 * dl + Tn(rng) * p.AttrSe(d.Key) * 0.6 : 0);
             s.A[d.Key] = C(v);
         }
         // потенциал: средний рост для возраста, у сильных для своего возраста — больше; разброс тем шире, чем моложе
         // Ожидаемый пик: средний рост для возраста (кривые из данных) × талант (сильные для своих лет растут быстрее)
         // × запас до 200. ПА — потолок при идеальных условиях: выше ожидаемого пика, с разбросом вверх.
-        double grow = ExpectedGrowth(c.Data, p, age, s.Ca);
-        double sd = (age <= 20 ? 1.8 : age <= 23 ? 1.3 : age <= 25 ? 0.7 : 0.3) * CA_PER_LVL * Math.Max(Head(s.Ca), 0.3);
+        // У молодых с маленькой выборкой талант для роста — смесь КА и «родословной» (номер драфта): скауты судят о потолке
+        // по ней, пока НХЛ не дала данных. На текущий КА родословная не влияет — только на запас роста и разброс ПА.
+        double w = Pedigree(p, age);
+        double talentCa = (1 - w) * s.Ca + w * Math.Max(s.Ca, PedigreeCa(f.Pick));
+        double grow = Remaining(c.Data, p, age) * CA_PER_LVL * Talent(talentCa) * Head(s.Ca);
+        double sd = (age <= 20 ? 1.8 : age <= 23 ? 1.3 : age <= 25 ? 0.7 : 0.3) * CA_PER_LVL * Math.Max(Head(s.Ca), 0.3) * (1 + 0.5 * w);
         s.Peak = (float)Math.Clamp(s.Ca + grow, 1, 200);
         double pa = s.Ca + grow * PA_OVER + 0.8 * Math.Abs(N(rng)) * sd + N(rng) * sd * 0.3;
         if (age <= 25 && rng.NextDouble() < 0.03) pa += 15 * Head(s.Ca);              // «поздно раскрывшийся»
-        if (f.Pick is <= 10 && f.Gp < 200) pa += 2.5 * Head(s.Ca);
+
+        // потолок по родословной: при малой выборке скауты держат потолок ближе к тому, кем обычно становятся с таким номером драфта
+        // (у вратарей созревание дольше и непредсказуемее — ориентир на 5% выше)
+        if (w > 0) pa = Math.Max(pa, s.Ca + w * (PedigreeCa(f.Pick) * (p.IsGoalie ? 1.05 : 1) - s.Ca) + 0.3 * Math.Abs(N(rng)) * sd);
         s.Pa = age >= 28 ? s.Ca + 1 : (float)Math.Clamp(Math.Max(pa, s.Peak), 1, 200);
         s.Luck = (float)Math.Clamp(1 + 0.3 * N(rng), 0.4, 1.7);
         s.Pot = C(s.Lvl + (s.Pa - s.Ca) / CA_PER_LVL);
@@ -333,7 +367,7 @@ public static class PlayerModel
         var s = State(c, p.Id);
         if (s == null) return 0;
         double d = (s.Ca - p.CaEst) / CA_PER_LVL;
-        if (form) d += FORM_U * s.Form * (p.IsGoalie ? G_FORM : 1) + s.Season;
+        if (form && !FORM_OFF) d += FORM_U * s.Form * (p.IsGoalie ? G_FORM : 1) + s.Season;
         return d;
     }
 
@@ -368,6 +402,17 @@ public static class PlayerModel
     }
 
     /// <summary>Потенциал глазами скаута: звёзды (0,5–5) с разбросом.</summary>
+    /// <summary>Потолок по оценке скаутов — диапазон в КА (1–200): чем лучше клуб знает игрока, тем уже.</summary>
+    public static (double lo, double hi) PotentialRange(Career c, PlayerData p)
+    {
+        var s = State(c, p.Id);
+        if (s == null) return (p.CaEst, p.CaEst);
+        double v = s.Pa + ViewErr(c, p.Id, "pot") * 1.5 * CA_PER_LVL * (1 - s.Know);
+        double w = (2.2 * (1 - s.Know) + 0.3) * CA_PER_LVL;
+        double ca = Visible(c, p, "ca");
+        return (Math.Max(v - w, ca), Math.Max(v + w, ca));
+    }
+
     public static (double lo, double hi) PotentialStars(Career c, PlayerData p)
     {
         var s = State(c, p.Id);
@@ -435,14 +480,23 @@ public static class PlayerModel
 /// <summary>Развитие и старение: раз в неделю, кривые по группам характеристик, потенциал, игровое время, профессионализм.</summary>
 public static class Development
 {
-    public const double WEEKS = 26;
+    /// <summary>
+    /// Годовой рост и старение: ~30% — по ходу сезона (равномерно по ~36 неделям с октября по июнь), ~70% — летом (Offseason).
+    /// Раньше годовая порция растягивалась на 26 недель, а неделя в карьере идёт ~36 раз за сезон — молодые за сезон получали ~1,4 года роста.
+    /// </summary>
+    public const double IN_SEASON = 0.3, SEASON_WEEKS = 36, WEEKS = SEASON_WEEKS / IN_SEASON;
 
     /// <summary>
     /// Неделя развития. Рост не тянется к ПА сам: он зависит от условий —
     /// возраст (кривые из данных), талант, профессионализм и амбиции, игровое время и роль, «удача сезона»,
     /// оценки за игру (небольшой бонус за хорошую игру), травмы (пока травмирован — не растёт). ПА — только потолок.
     /// </summary>
-    public static void Week(Career c)
+    public static void Week(Career c) => Grow(c, 1.0 / WEEKS, 0.04, weekly: true);
+
+    /// <summary>Межсезонье: 70% годового роста и старения разом (сборы, лето), шум — как от нескольких недель.</summary>
+    public static void Offseason(Career c) => Grow(c, 1 - IN_SEASON, 0.15, weekly: false);
+
+    static void Grow(Career c, double share, double noise, bool weekly)
     {
         var inj = c.Injured.ToHashSet();
         var teamGp = c.Table.ToDictionary(kv => kv.Key, kv => kv.Value.Gp);
@@ -461,8 +515,8 @@ public static class Development
                 double cv = PlayerModel.Curve(c.Data, Attrs.CurveGroup(d.Key), age);
                 double g = hurt ? 0 : Math.Max(cv, 0) * talent * cond * nearPa;
                 double dec = Math.Min(cv, 0) * (1.15 - 0.03 * (s.Prof - 10));
-                sumCa += (g + dec) / WEEKS;
-                double dv = (g + dec) / WEEKS + 0.04 * N(rng);
+                sumCa += (g + dec) * share;
+                double dv = (g + dec) * share + noise * N(rng);
                 float old = s.A.GetValueOrDefault(d.Key, s.Lvl);
                 float nv = (float)Math.Clamp(old + dv, 1, 20);
                 s.A[d.Key] = nv;
@@ -477,6 +531,7 @@ public static class Development
                                            : (float)Math.Clamp(s.Ca + sumCa / n * PlayerModel.CA_PER_LVL + 0.15 * N(rng), 1, Math.Max(s.Pa, s.Ca));
                 s.Pot = (float)Math.Clamp(s.Lvl + (s.Pa - s.Ca) / PlayerModel.CA_PER_LVL, 1, 20);
             }
+            if (!weekly) continue;
             // форма: плавное случайное блуждание, у стабильных — тише
             double con = s.A.GetValueOrDefault(p.IsGoalie ? "gcon" : "con", 11);
             // спокойные (самообладание) — тише, эмоциональные — громче

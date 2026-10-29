@@ -214,13 +214,18 @@ public partial class Main : Control
     public static void LoadSettings()
     {
         var cfg = new ConfigFile();
-        if (cfg.Load(SettingsPath) == Error.Ok) Names.English = (bool)cfg.GetValue("names", "english", true);
+        if (cfg.Load(SettingsPath) == Error.Ok)
+        {
+            Names.English = (bool)cfg.GetValue("names", "english", true);
+            StarScale.Relative = (bool)cfg.GetValue("stars", "relative", true);
+        }
     }
 
     public static void SaveSettings()
     {
         var cfg = new ConfigFile();
         cfg.SetValue("names", "english", Names.English);
+        cfg.SetValue("stars", "relative", StarScale.Relative);
         cfg.Save(SettingsPath);
     }
 }

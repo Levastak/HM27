@@ -151,6 +151,7 @@ public static class ShiftEngine
     sealed class Sk
     {
         public int Id; public PlayerData P; public bool D;
+        public double PosOff, PosDef;   // потери на своём месте в равных составах (Lineup.SlotPenalty)
         public double Off, Def, FinPart, Phi, Fin, FinE, Lng, W, Pass, A2W, PenW, Drain, Pp, Pk, BlkW, OtVal, So, Fo, HitR, TkR, GvR;
         public readonly double[] Zone = new double[3];
         public bool Thru, Draw, Tip, Back, Wrap, Slap, NetT, BlkT;
@@ -329,6 +330,8 @@ public static class ShiftEngine
             }
             foreach (var line in l.F) { var u = line.Select(Get).Where(x => x != null).ToArray(); if (u.Length > 0) t.F.Add(u); }
             foreach (var pair in l.D) { var u = pair.Select(Get).Where(x => x != null).ToArray(); if (u.Length > 0) t.D.Add(u); }
+            foreach (var sk0 in t.All.Values.ToList())
+                if (l.SlotOf(sk0.Id) is char slot) (sk0.PosOff, sk0.PosDef) = Lineup.SlotPenalty(sk0.P, slot);
             var fMin = l.F.Select((x, i) => i < l.FMin.Length ? l.FMin[i] : 5).ToList();
             var dMin = l.D.Select((x, i) => i < l.DMin.Length ? l.DMin[i] : 5).ToList();
             t.FT = Enumerable.Range(0, t.F.Count).Select(i => fMin[Math.Min(i, fMin.Count - 1)]).ToArray();
@@ -618,8 +621,9 @@ public static class ShiftEngine
             else baseG = nt == 5 ? GF60_5V5 : nt == 4 ? GF60_4V4 : GF60_3V3;
             // атака пятёрки (без доли завершения — она на броске) и оборона пятёрки соперника; вратарь — на броске
             double sOff = 0, sDef = 0;
-            foreach (var s in t.On) { sOff += Eff(s, s.Off) - s.FinPart; }
-            foreach (var s in o.On) sDef += Eff(s, s.Def);
+            bool esT = t.Mode == "es", esO = o.Mode == "es";
+            foreach (var s in t.On) { sOff += Eff(s, s.Off) - s.FinPart - (esT ? s.PosOff : 0); }
+            foreach (var s in o.On) sDef += Eff(s, s.Def) - (esO ? s.PosDef : 0);
             // звено против среднего звена своего вида (на большинство выходят лучшие — база НХЛ это уже знает)
             string mt = UnitKind(t), mo = UnitKind(o);
             double offRef = refs.Off.GetValueOrDefault(mt, refs.Off["es"]) - refs.Off["es"];
@@ -897,7 +901,9 @@ public static class ShiftEngine
             Sk Taker(Team t) => t.On.Where(x => !x.D).OrderByDescending(x => x.P.Pos == "C" ? 1 : 0).ThenByDescending(x => x.Fo).FirstOrDefault() ?? t.On.FirstOrDefault();
             var ch = Taker(H); var ca = Taker(A);
             if (ch == null || ca == null) return;
-            bool homeWins = rng.NextDouble() < 1 / (1 + Math.Exp(-FO_K * (ch.Fo - ca.Fo)));
+            // не центр на вбрасывании: его «вбрасывание» — по шкале крайних, против центров это −3,4 ед.
+            double Fo(Sk x) => x.Fo - (x.P.Pos == "C" ? 0 : Lineup.POS_C_FO);
+            bool homeWins = rng.NextDouble() < 1 / (1 + Math.Exp(-FO_K * (Fo(ch) - Fo(ca))));
             var (w, l, wt, lt) = homeWins ? (ch, ca, H, A) : (ca, ch, A, H);
             w.Box.Fow++; l.Box.Fol++;
             // зона с точки зрения выигравшего: 0 — атаки, 1 — средняя, 2 — своя

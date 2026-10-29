@@ -154,10 +154,10 @@ public sealed class Career
     public void Attach(GameData data) => Data = data;
 
     /// <summary>Сдвиг силы игрока для движка (модель игрока).</summary>
-    public double Dl(int id) => Data.PlayerById.TryGetValue(id, out var p) ? PlayerModel.Delta(this, p) : 0;
+    public double Dl(int id) => Data.PlayerById.TryGetValue(id, out var p) ? PlayerModel.Delta(this, p) + Fatigue.Penalty(Players.GetValueOrDefault(id), p.IsGoalie) : 0;
 
     /// <summary>Сдвиг силы в плей-офф: + хладнокровие (опыт больших матчей), в пределах, которые не ловит зеркальная проверка.</summary>
-    public double DlPlayoff(int id) => Data.PlayerById.TryGetValue(id, out var p) ? PlayerModel.Delta(this, p) + PlayerModel.Composure(this, p) : 0;
+    public double DlPlayoff(int id) => Data.PlayerById.TryGetValue(id, out var p) ? PlayerModel.Delta(this, p) + PlayerModel.Composure(this, p) + Fatigue.Penalty(Players.GetValueOrDefault(id), p.IsGoalie) : 0;
 
     /// <summary>
     /// Эффект состава тренера: голов за матч забиваем / пропускаем больше (+) или меньше (−), чем со звеньями «как в НХЛ»
@@ -301,8 +301,9 @@ public sealed class Career
         bool mine = g.Home == UserTeam || g.Away == UserTeam;
         Chronicle.Build(Data, g, h, a, r, new Random(unchecked(Seed * 7919 + g.Id * 31 + 1)));
         Record(g);
-        if (!mine) { r.Events = new(); r.Box = new(); }   // хронику и протокол храним только для своих матчей — сохранение не раздувается
         InjuryModel.AfterGame(this, g, new Random(unchecked(Seed * 104729 + g.Id)));
+        Fatigue.AfterGame(this, g);
+        if (!mine) { r.Events = new(); r.Box = new(); }   // хронику и протокол храним только для своих матчей — сохранение не раздувается
         foreach (var (side, abbr) in new[] { (h, g.Home), (a, g.Away) })
             GoalieStreak[abbr] = side.Goalie == Lineups[abbr].G1 ? GoalieStreak.GetValueOrDefault(abbr) + 1 : 0;
         if (g.Home == UserTeam || g.Away == UserTeam) InboxWriter.AfterUserGame(this, g);
@@ -338,6 +339,7 @@ public sealed class Career
             if (Phase == Phase.Finished) return;
         }
         Today = Today.AddDays(1);
+        Fatigue.Recover(this, 1);
         InjuryModel.Heal(this);
         if (Today.DayOfWeek == DayOfWeek.Monday) Development.Week(this);   // развитие, форма, знание — раз в неделю
         if (Phase == Phase.Playoffs) SchedulePlayoffDay();
@@ -475,6 +477,7 @@ public sealed class Career
             AddSeries(1, conf, d2[1].Team, d2[2].Team, slot++);
         }
         Today = Today.AddDays(3);
+        Fatigue.Recover(this, 3);
         SchedulePlayoffDay();
         InboxWriter.PlayoffsStart(this);
     }

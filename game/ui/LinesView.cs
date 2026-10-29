@@ -215,12 +215,20 @@ public partial class LinesView : HBoxContainer
         var info = Ui.Expand(Ui.V(0));
         info.AddChild(Ui.H(4, Ui.L(label, 10, Ui.Dim, Ui.Bold), Ui.L(p.Num?.ToString() ?? "", 10, Ui.Muted)));
         info.AddChild(Ui.L(p.LastRu, 13, inj ? Ui.Loss : Ui.Text, Ui.Semi).Also(l => { l.ClipText = true; l.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis; l.CustomMinimumSize = new Vector2(96, 0); }));
-        info.AddChild(Ui.Stars(fit, 10));
+        // чужое место в равных составах: игрок теряет (Lineup.SlotPenalty)
+        string off = kind switch
+        {
+            "C" when p.IsDefense => "защитник в нападении", "W" when p.IsDefense => "защитник в нападении",
+            "C" when p.Pos != "C" => "не центр: хуже вбрасывания и оборона", "D" when !p.IsDefense => "нападающий в защите",
+            _ => null,
+        };
+        info.AddChild(off == null ? Ui.Stars(fit, 10) : Ui.L("⚠ не своё место", 10, Ui.Otl, Ui.Semi));
         h.AddChild(info);
         h.MouseFilter = MouseFilterEnum.Ignore;
         foreach (var c in h.GetChildren().OfType<Control>()) c.MouseFilter = MouseFilterEnum.Ignore;
         card.AddChild(h);
-        card.TooltipText = $"{p.NameRu} · {Ui.PosRu(p.Pos)}\nПригодность к месту: {fit}/99{(p.Roles.Count > 0 ? "\nЛучшая роль: " + p.Roles[0].Name : "")}\nДвойной щелчок — профиль";
+        card.TooltipText = $"{p.NameRu} · {Ui.PosRu(p.Pos)}\nПригодность к месту: {fit}/99{(p.Roles.Count > 0 ? "\nЛучшая роль: " + p.Roles[0].Name : "")}" +
+            (off != null ? $"\nНе своё место: {off}" : "") + "\nДвойной щелчок — профиль";
         return card;
     }
 

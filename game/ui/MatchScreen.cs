@@ -152,7 +152,7 @@ public partial class MatchScreen : Control
         info.AddChild(Ui.L($"{(home ? "Хозяева" : "Гости")} · {r.W}-{r.L}-{r.Otl}, {r.Pts} {Ui.Plural(r.Pts, "очко", "очка", "очков")} · {C.Sorted(x => x.Conference == t.Conference).FindIndex(x => x.Team == t.Abbr) + 1}-е в конференции", 12, Ui.Muted));
         info.AddChild(Ui.H(8, Ui.L("Форма", 12, Ui.Muted), P.Form(t.Abbr, 5, 18)));
         var g = C.Data.PlayerById.GetValueOrDefault(side.Goalie);
-        if (g != null) info.AddChild(Ui.H(8, Ui.L("Вратарь:", 12, Ui.Muted), Links.Player(g, null, 13, Ui.Text, Ui.Semi), Ui.Stars(g.Ovr, 11)));
+        if (g != null) info.AddChild(Ui.H(8, Ui.L("Вратарь:", 12, Ui.Muted), Links.Player(g, null, 13, Ui.Text, Ui.Semi), Ui.Stars(StarScale.StarsV(C, g, PlayerModel.Visible(C, g, "ca")), 11)));
         v.AddChild(Widget.Make(t.Name, info));
         var l = side.Lineup;
         var lines = Ui.V(2);
@@ -162,7 +162,7 @@ public partial class MatchScreen : Control
             lines.AddChild(Ui.H(0, Ui.L($"З{i + 1}: ", 12, Ui.Muted), Links.Row(l.D[i].Select(id => (Control)Links.Player(C, id, C.Short(id), 12, Ui.Muted)))));
         v.AddChild(Widget.Make("Звенья", lines));
         var inj = C.Injured.Where(id => C.Data.PlayerById[id].Team == t.Abbr).Select(id => C.Data.PlayerById[id]).OrderByDescending(p => p.Ovr).Take(5).ToList();
-        v.AddChild(Widget.Make("Не сыграют", inj.Count == 0 ? Ui.L("Все здоровы", 12, Ui.Muted) : Ui.V(2, inj.Select(p => (Control)Ui.H(6, Ui.Icon("cross", 12, Ui.Loss), Links.Player(p, null, 12), Ui.Stars(p.Ovr, 10))).ToArray())));
+        v.AddChild(Widget.Make("Не сыграют", inj.Count == 0 ? Ui.L("Все здоровы", 12, Ui.Muted) : Ui.V(2, inj.Select(p => (Control)Ui.H(6, Ui.Icon("cross", 12, Ui.Loss), Links.Player(p, null, 12), Ui.Stars(StarScale.StarsV(C, p, PlayerModel.Visible(C, p, "ca")), 10))).ToArray())));
         return v;
     }
 

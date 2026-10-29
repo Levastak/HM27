@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Godot;
+using HM27.Core;
 
 namespace HM27.UI;
 
@@ -260,6 +261,23 @@ public static class Ui
     }
 
     public static string PosRu(string pos) => pos switch { "C" => "Ц", "LW" => "ЛН", "RW" => "ПН", "D" => "З", "G" => "В", _ => pos };
+
+    /// <summary>Форма словом со стрелкой и цветом.</summary>
+    public static Label FormLabel(PlayerForm.Info f)
+    {
+        if (f.Games < 3) return L("—", 12, Dim);
+        string arrow = f.Arrow > 0 ? "↑ " : f.Arrow < 0 ? "↓ " : "";
+        var col = f.Word switch { "Отличная" => Win, "Хорошая" => new Color("8BD3A0"), "Обычная" => Muted, "Спад" => Otl, _ => Loss };
+        return L(arrow + f.Word, 12, col, f.Arrow != 0 ? Semi : null);
+    }
+
+    /// <summary>Свежесть (нагрузка за сезон) словом и цветом.</summary>
+    public static Label FreshLabel(PlayerState s)
+    {
+        string w = Fatigue.Word(s);
+        var col = w switch { "Свежий" => Muted, "В норме" => Muted, "Уставший" => Otl, _ => Loss };
+        return L(w, 12, col, w is "Уставший" or "Вымотан" ? Semi : null);
+    }
 
     /// <summary>Время на льду: «18:42».</summary>
     public static string Toi(double sec) => sec <= 0 ? "—" : $"{(int)sec / 60}:{(int)sec % 60:00}";

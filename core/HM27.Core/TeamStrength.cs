@@ -22,13 +22,18 @@ public static class TeamStrength
     public static (double off, double def, double g) Index(GameData d, Lineup l, int goalie, Func<PlayerData, string, double> attr, Func<int, double> gsax)
     {
         double off = 0, def = 0;
-        foreach (var id in l.Skaters.Distinct())
+        // по местам в звеньях: на чужом месте игрок теряет (Lineup.SlotPenalty)
+        void Add(int id, double minutes, char slot)
         {
-            if (!d.PlayerById.TryGetValue(id, out var p)) continue;
-            double share = l.MinutesOf(id) / 60.0;
-            off += share * Damp(Off.Sum(x => x.w * (attr(p, x.k) - 11)));
-            def += share * Damp(Def.Sum(x => x.w * (attr(p, x.k) - 11)));
+            if (id == 0 || !d.PlayerById.TryGetValue(id, out var p)) return;
+            var (po, pd) = Lineup.SlotPenalty(p, slot);
+            off += minutes / 60.0 * Damp(Off.Sum(x => x.w * (attr(p, x.k) - 11)) - po);
+            def += minutes / 60.0 * Damp(Def.Sum(x => x.w * (attr(p, x.k) - 11)) - pd);
         }
+        for (int i = 0; i < l.F.Count; i++)
+            for (int s = 0; s < l.F[i].Length; s++) Add(l.F[i][s], i < l.FMin.Length ? l.FMin[i] : 0, s == 0 ? 'L' : s == 1 ? 'C' : 'R');
+        for (int i = 0; i < l.D.Count; i++)
+            foreach (var id in l.D[i]) Add(id, i < l.DMin.Length ? l.DMin[i] : 0, 'D');
         return (off, def, gsax(goalie));
     }
 

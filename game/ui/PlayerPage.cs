@@ -122,6 +122,7 @@ public partial class PlayerPage : Control
         row.AddChild(left);
         row.AddChild(Ui.Expand(Widget.Make("Характеристики", AttrGrid(p))));
         var right = Ui.V(12); right.CustomMinimumSize = new Vector2(330, 0);
+        right.AddChild(Widget.Make("Состояние", Condition(p)));
         right.AddChild(Widget.Make("Форма (последние 20 матчей)", Form(p)));
         right.AddChild(Widget.Make("Сравнение в составе", Compare(p), null, null, 0));
         row.AddChild(right);
@@ -195,12 +196,16 @@ public partial class PlayerPage : Control
         var ab = Ui.V(6);
         var st = PlayerModel.State(C, p.Id);
         double ca = PlayerModel.Visible(C, p, "ca");
-        var (plo, phi) = PlayerModel.PotentialStars(C, p);
+        var (pcLo, pcHi) = PlayerModel.PotentialRange(C, p);
+        double plo = StarScale.Stars(C, p, pcLo), phi = StarScale.Stars(C, p, pcHi);
         ab.AddChild(Ui.L("ТЕКУЩИЕ СПОСОБНОСТИ", 10, Ui.Dim, Ui.Bold));
-        ab.AddChild(Ui.Stars(PlayerModel.StarsOvr(ca), 22).Also(x => x.TooltipText = "Текущие способности по оценке тренерского штаба"));
-        ab.AddChild(Ui.L(Attrs.Verdict(p, ca), 13, Ui.Text, Ui.Semi));
+        ab.AddChild(Ui.Stars(StarScale.StarsV(C, p, ca), 22).Also(x => x.TooltipText = StarScale.Relative
+            ? $"Текущие способности по оценке штаба — относительно вашего клуба (по шкале лиги: {PlayerModel.Stars(ca):0.#} ★)"
+            : "Текущие способности по оценке штаба — по шкале лиги"));
+        ab.AddChild(Ui.L(StarScale.Class(C.Data, p, ca), 13, Ui.Text, Ui.Semi).Also(x => x.TooltipText = "Класс игрока по меркам лиги"));
         ab.AddChild(Ui.Spacer(false, 4));
         ab.AddChild(Ui.L("ПОТЕНЦИАЛ", 10, Ui.Dim, Ui.Bold));
+        ab.AddChild(Ui.L($"Потолок: {StarScale.Class(C.Data, p, (pcLo + pcHi) / 2).ToLowerInvariant()}", 12, Ui.Muted));
         ab.AddChild(Ui.H(6, Ui.Stars((int)Math.Round(phi * 20), 16),
             Ui.L(plo == phi ? "" : $"{plo:0.#}–{phi:0.#} ★", 11, Ui.Muted)).Also(x => x.TooltipText = "Оценка скаутов: чем лучше клуб знает игрока, тем уже диапазон"));
         ab.AddChild(Ui.Spacer(false, 4));
@@ -324,6 +329,23 @@ public partial class PlayerPage : Control
     }
 
     // ---------------------------------------------------------------- форма
+    /// <summary>Форма и свежесть словами, с причиной.</summary>
+    Control Condition(PlayerData p)
+    {
+        var v = Ui.V(6);
+        var f = PlayerForm.Of(C, p.Id);
+        v.AddChild(Ui.H(10, Ui.Expand(Ui.L("Форма", 13, Ui.Muted)), Ui.FormLabel(f)));
+        if (f.Games >= 3) v.AddChild(Ui.L($"Средняя оценка за последние матчи {f.Recent:0.00} — {(f.Score >= 0 ? "выше" : "ниже")} его обычного уровня на {Math.Abs(f.Score):0.00}", 11, Ui.Dim).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart));
+        var st = PlayerModel.State(C, p.Id);
+        v.AddChild(Ui.H(10, Ui.Expand(Ui.L("Свежесть", 13, Ui.Muted)), Ui.FreshLabel(st)));
+        if (st != null && st.Fresh < Fatigue.FRESH_OK)
+        {
+            int recent = C.Games.Count(g => g.Played && g.Date >= C.Today.AddDays(-8) && g.Result.HomeDressed.Concat(g.Result.AwayDressed).Contains(p.Id));
+            v.AddChild(Ui.L($"Устал: {recent} {Ui.Plural(recent, "матч", "матча", "матчей")} за 8 дней{(p.IsGoalie ? "" : " и большие минуты")}. Пара дней отдыха вернёт свежесть.", 11, Ui.Otl).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart));
+        }
+        return v;
+    }
+
     Control Form(PlayerData p)
     {
         var games = C.Games.Where(g => g.Played && g.Result.Ratings.ContainsKey(p.Id)).OrderBy(g => g.Date).TakeLast(20).ToList();
@@ -348,7 +370,7 @@ public partial class PlayerPage : Control
         {
             new() { Title = "#", Width = 22, Cell = x => Ui.L($"{C.Roster(p.Team).Where(same).OrderByDescending(y => y.Ovr).ToList().IndexOf(x) + 1}", 12, Ui.Muted) },
             new() { Title = "Игрок", Width = 0, Align = HorizontalAlignment.Left, Cell = x => Ui.L(x.NameRu, 13, x.Id == p.Id ? Colors.White : Ui.Text, x.Id == p.Id ? Ui.Semi : null) },
-            new() { Title = "Способности", Width = 84, Cell = x => Ui.Stars(x.Ovr, 12) },
+            new() { Title = "Способности", Width = 84, Cell = x => Ui.Stars(StarScale.StarsV(C, x, PlayerModel.Visible(C, x, "ca")), 12) },
         }, list, x => { if (x.Id != p.Id) Shell.I.Go("player", null, x.Id.ToString()); }, x => x.Id == p.Id);
         return grid.Root;
     }

@@ -24,6 +24,33 @@ public sealed class Lineup
     /// <summary>Во втором матче за два дня в воротах запасной.</summary>
     public bool BackupOnB2B { get; set; } = true;
 
+    /// <summary>
+    /// Игра не на своём месте (в равных составах), ед. шкалы 1–20 к атаке и обороне игрока:
+    /// крайний в центре — оборона −0,8 (обязанности центра) и вбрасывания −3,4 (НХЛ 2024-26: крайние выигрывают у центров 45%);
+    /// защитник в нападении — атака −3, оборона −1; нападающий в защите — оборона −3,5, атака −0,5;
+    /// центр на краю и крайний на другом краю — без потерь. Вбрасывания измерены, остальное — решение дизайна
+    /// (в НХЛ такие перестановки слишком редки, чтобы мерить).
+    /// </summary>
+    public const double POS_C_DEF = 0.8, POS_C_FO = 3.4, POS_DF_OFF = 3.0, POS_DF_DEF = 1.0, POS_FD_DEF = 3.5, POS_FD_OFF = 0.5;
+
+    /// <summary>Потери игрока на месте slot: 'L', 'C', 'R' — в тройке, 'D' — в паре.</summary>
+    public static (double off, double def) SlotPenalty(PlayerData p, char slot)
+    {
+        if (p == null || p.IsGoalie) return (0, 0);
+        if (slot == 'D') return p.IsDefense ? (0, 0) : (POS_FD_OFF, POS_FD_DEF);
+        if (p.IsDefense) return (POS_DF_OFF, POS_DF_DEF);
+        if (slot == 'C' && p.Pos != "C") return (0, POS_C_DEF);
+        return (0, 0);
+    }
+
+    /// <summary>Место игрока в равных составах ('L','C','R','D') или null, если его нет в звеньях.</summary>
+    public char? SlotOf(int id)
+    {
+        foreach (var line in F) for (int s = 0; s < line.Length; s++) if (line[s] == id) return s == 0 ? 'L' : s == 1 ? 'C' : 'R';
+        foreach (var pair in D) if (pair.Contains(id)) return 'D';
+        return null;
+    }
+
     public static readonly string[] FSlotNames = { "ЛН", "Ц", "ПН" };
     public static readonly string[] DSlotNames = { "ЛЗ", "ПЗ" };
 

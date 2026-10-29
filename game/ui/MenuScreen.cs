@@ -48,6 +48,10 @@ public partial class MenuScreen : Control
         names = MenuButton(NamesText(), () => { Names.English = !Names.English; Main.SaveSettings(); names.Text = NamesText(); }, false);
         names.TooltipText = "Имена игроков и названия клубов: как в НХЛ (по-английски) или по-русски. Остальной текст — по-русски.";
         col.AddChild(names);
+        Button stars = null;
+        stars = MenuButton(StarsText(), () => { StarScale.Relative = !StarScale.Relative; Main.SaveSettings(); stars.Text = StarsText(); }, false);
+        stars.TooltipText = "Звёзды способностей и потенциала: относительно вашего клуба (как в FM — 5★ у лучшего в своей группе) или по шкале лиги.";
+        col.AddChild(stars);
         col.AddChild(MenuButton("Выход", () => GetTree().Quit(), false));
         col.AddChild(Ui.Spacer(false, 30));
         col.AddChild(Ui.L($"Версия {Main.Version} · сезон 2026-27 · данные на {main.Data.DataDate}", 13, Ui.Dim));
@@ -60,6 +64,7 @@ public partial class MenuScreen : Control
         AddChild(m);
     }
 
+    static string StarsText() => StarScale.Relative ? "Звёзды: относительно клуба" : "Звёзды: по шкале лиги";
     static string NamesText() => Names.English ? "Имена: English" : "Имена: по-русски";
 
     static Button MenuButton(string text, Action a, bool primary)
