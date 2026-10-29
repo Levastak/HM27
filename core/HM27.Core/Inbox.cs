@@ -72,10 +72,10 @@ public static class InboxWriter
         var g = c.Data.PlayerById.GetValueOrDefault(l.G1);
         Add(c, "Помощник тренера", "Состав на старт сезона",
             $"Ключевые игроки по созданию моментов: {string.Join(", ", top)}.\n" +
-            (g != null ? $"Основной вратарь — {g.NameRu} (сейвы сверх ожидаемого {g.Gsax * 100:+0.0;-0.0}% от ожидаемых голов).\n" : "") +
+            (g != null ? $"Основной вратарь — {g.NameRu}.\n" : "") +
             (c.Injured.Any(id => c.Data.PlayerById.TryGetValue(id, out var p) && p.Team == c.UserTeam)
                 ? $"В лазарете: {string.Join(", ", c.Injured.Where(id => c.Data.PlayerById[id].Team == c.UserTeam).Select(id => c.Data.PlayerById[id].NameRu))}.\n" : "") +
-            "\nСовет: во втором матче за два дня лучше ставить запасного вратаря — усталость стоит команде около 5% голов.",
+            "\nВо втором матче за два дня я бы ставил запасного — основной после вчерашней игры заметно слабее.",
             "match");
     }
 

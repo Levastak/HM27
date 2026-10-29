@@ -110,12 +110,19 @@ public static class News
         else if (win && pre < 0.4)
         {
             headline = Pick(rng, $"Вопреки прогнозу: {score} с {O}", $"Никто не ставил, а мы взяли: {score}", $"Сенсация {(home ? "дома" : "на выезде")}: {score} с {O}");
-            lead = $"До матча шансы были {Math.Round(pre * 100)}% — но победа{end} {score}.";
+            lead = $"Фаворитом считался соперник, но победа{end} {score} — наша.";
         }
         else if (win)
         {
             headline = Pick(rng, $"Победа над {O}: {score}{end}", $"{score}{end}: ещё два очка в копилку", $"{O} обыграны — {score}{end}");
-            lead = gwg != null ? $"Победную шайбу забросил {Name(c, gwg.Scorer)}.{(multi.pts >= 2 ? $" {Name(c, multi.id)} — {N(multi.pts, "очко", "очка", "очков")}." : "")}" : $"Победа {score}{end}.";
+            // поздний гол, спасший матч (за 2 минуты до сирены), — главное в подводке
+            var lateTie = goals.LastOrDefault(e => e.Team == me && e.Period == 3 && e.Sec >= 1080 && goals.Count(z => z.Team == me && (z.Period < 3 || (z.Period == 3 && z.Sec <= e.Sec))) == goals.Count(z => z.Team == op && (z.Period < 3 || (z.Period == 3 && z.Sec <= e.Sec))));
+            if (lateTie != null && r.End != "REG")
+                lead = $"{Name(c, lateTie.Scorer)} сравнял счёт в концовке, а {(r.End == "SO" ? "в серии буллитов" : "в овертайме")} {(r.End == "SO" ? "точнее оказались мы" : $"всё решил {Name(c, gwg?.Scorer ?? 0)}")}.";
+            else if (gwg != null)
+                lead = multi.pts >= 2 && multi.id == gwg.Scorer ? $"Победную шайбу забросил {Name(c, gwg.Scorer)}, у него {N(multi.pts, "очко", "очка", "очков")}."
+                    : $"Победную шайбу забросил {Name(c, gwg.Scorer)}.{(multi.pts >= 2 ? $" {Name(c, multi.id)} — {N(multi.pts, "очко", "очка", "очков")}." : "")}";
+            else lead = $"Победа {score}{end}.";
         }
         else if (their == 0)
         {
@@ -140,19 +147,119 @@ public static class News
         else
         {
             headline = Pick(rng, $"Поражение от {O}: {score}", $"{score}: {O} оказались сильнее", $"Без очков: {score} с {O}");
-            lead = pre > 0.6 ? $"Обидно: до матча мы были фаворитами ({Math.Round(pre * 100)}%)." : "Соперник был точнее в ключевые моменты.";
+            lead = pre > 0.6 ? "Обидное поражение: перед матчем фаворитом считались мы." : "Соперник был точнее в ключевые моменты.";
         }
 
-        // цитата помощника — по качеству моментов
+        // ---------- ход матча словами: кто, когда и что это изменило (цифры — в плашке, не в цитатах)
+        int capId = c.Roster(me).FirstOrDefault(p => p.Fx?.Cap == "C")?.Id ?? c.Roster(me).FirstOrDefault(p => p.Fx?.Cap == "A")?.Id ?? 0;
+        var myStar = r.Ratings.Where(kv => mine.Contains(kv.Key)).OrderByDescending(kv => kv.Value).Select(kv => kv.Key).FirstOrDefault();
+        var shotsBy = new Dictionary<(string, int), int>();
+        foreach (var e in r.Events.Where(e => e.Kind is "shot" or "goal"))
+        {
+            int per = Math.Min(4, e.T / 1200 + 1);
+            shotsBy[(e.Team, per)] = shotsBy.GetValueOrDefault((e.Team, per)) + 1;
+        }
+        int mySh = home ? r.HomeShots : r.AwayShots, opSh = home ? r.AwayShots : r.HomeShots;
+        bool comeback = win && worst <= -2, blown = !win && best >= 2;
+        bool goalieStole = win && mySv >= 32 && opSh >= mySh + 8;
+        bool theirGoalie = !win && opSa - my >= 32 && mySh >= opSh + 8;
+        bool dominated = mySh >= opSh + 10, outshot = opSh >= mySh + 10;
+        bool ppFail = ppOppMe >= 3 && ppgMe == 0, pkFail = ppgOp >= 2;
+        bool late = gwg != null && win && (gwg.Period >= 4 || (gwg.Period == 3 && gwg.Sec >= 1080));
+
+        string PerG(int p) => p switch { 1 => "первого периода", 2 => "второго периода", 3 => "третьего периода", _ => "овертайма" };
+        string PerN(int p) => p switch { 1 => "В первом периоде", 2 => "Во втором периоде", 3 => "В третьем периоде", _ => "В овертайме" };
+        string When(GoalEvent e)
+        {
+            if (e.Period >= 4) return $"на {e.Sec / 60 + 1}-й минуте овертайма";
+            int left = 1200 - e.Sec;
+            if (e.Period == 3 && left <= 60) return $"за {N(left, "секунду", "секунды", "секунд")} до сирены";
+            if (e.Period == 3 && left <= 150) return "в концовке";
+            if (e.Sec < 60) return $"в самом начале {PerG(e.Period)}";
+            return $"на {e.Sec / 60 + 1}-й минуте {PerG(e.Period)}";
+        }
+        string How(GoalEvent e) => e.Kind switch { "pp" => " в большинстве", "sh" => " в меньшинстве", "en" => " в пустые ворота", "ev6" => " при игре без вратаря", _ => "" };
+
+        var story = new List<string>();
+        if (goals.Count == 0) story.Add(r.End == "SO" ? "Шестьдесят пять минут без голов — всё решили буллиты." : "Голов не было.");
+        else
+        {
+            var lines = new List<string>();
+            int x = 0, y = 0;
+            var run = new List<GoalEvent>();
+            void Flush()
+            {
+                if (run.Count == 0) return;
+                int m = run.Count(z => z.Team == me), t = run.Count - m;
+                lines.Add(t == 0 ? $"Дальше забивали только мы: ещё {N(m, "шайба", "шайбы", "шайб")} — {string.Join(", ", run.Select(z => c.Short(z.Scorer)).Distinct())}."
+                        : m == 0 ? $"Дальше {O} забросили ещё {N(t, "шайбу", "шайбы", "шайб")}."
+                        : "Дальше голы посыпались с обеих сторон.");
+                run.Clear();
+            }
+            for (int i = 0; i < goals.Count; i++)
+            {
+                var e = goals[i];
+                bool ours = e.Team == me;
+                int bx = x, byy = y;
+                if (ours) x++; else y++;
+                string who = ours ? Name(c, e.Scorer) : $"{Name(c, e.Scorer)} ({O})";
+                string w = When(e), h = How(e);
+                // в результативном матче — только поворотные голы: первый, сравнял, вывел вперёд, отрыв в две шайбы, сократил, победный, последний
+                bool twoDown = !ours && y - x == 2 && byy - bx == 1, cut = ours && byy - bx >= 2;
+                bool key = i == 0 || x == y || bx == byy || e == gwg || i == goals.Count - 1 || e.Kind == "en" || twoDown || cut;
+                if (goals.Count > 6 && !key) { run.Add(e); continue; }
+                Flush();
+                if (i == 0) lines.Add(ours ? $"Первым отличился {Name(c, e.Scorer)}{h} {w}." : $"Первыми забили {O}: {Name(c, e.Scorer)}{h} {w}.");
+                else if (x == y) lines.Add(ours ? $"{Name(c, e.Scorer)} сравнял счёт {w}{h} — {x}:{y}." : $"{O} отыгрались: {Name(c, e.Scorer)} {w}{h}, {x}:{y}.");
+                else if (e == gwg && ours) lines.Add($"Победную шайбу {w} забросил {Name(c, e.Scorer)}{h} — {x}:{y}.");
+                else if (ours && bx == byy) lines.Add($"{Name(c, e.Scorer)} {w}{h} снова вывел нас вперёд — {x}:{y}.");
+                else if (!ours && bx == byy) lines.Add($"{who} {w}{h} вывел соперника вперёд — {x}:{y}.");
+                else if (twoDown) lines.Add($"{who} {w}{h} увеличил отрыв — {x}:{y}.");
+                else if (cut) lines.Add($"{Name(c, e.Scorer)} {w}{h} сократил отставание — {x}:{y}.");
+                else if (ours && e.Kind == "en") lines.Add($"{Name(c, e.Scorer)} поставил точку броском в пустые ворота — {x}:{y}.");
+                else lines.Add(ours ? $"{Name(c, e.Scorer)}{h} {w} — {x}:{y}." : $"{who}{h} {w} — {x}:{y}.");
+            }
+            Flush();
+            story.Add(string.Join(" ", lines));
+        }
+        if (r.End == "SO") story.Add("В серии буллитов " + (win ? "точнее оказались мы." : $"удача была на стороне {O}."));
+        // перевес по броскам в каком-то периоде — как говорят комментаторы
+        foreach (int p in new[] { 1, 2, 3 })
+        {
+            int sm = shotsBy.GetValueOrDefault((me, p)), so = shotsBy.GetValueOrDefault((op, p));
+            if (sm >= so + 8) { story.Add($"{PerN(p)} мы прижали соперника к воротам: {N(sm, "бросок", "броска", "бросков")} против {so}."); break; }
+            if (so >= sm + 8) { story.Add($"{PerN(p)} нас заперли в зоне: {N(so, "бросок", "броска", "бросков")} у {O} против наших {sm}."); break; }
+        }
+        if (goalieStole) story.Add($"{Name(c, myG)} отразил {N(mySv, "бросок", "броска", "бросков")} — без него счёт был бы совсем другим.");
+        else if (theirGoalie) story.Add($"{Name(c, opG)} у ворот соперника отразил {N(opSa - my, "бросок", "броска", "бросков")} и почти в одиночку отстоял матч.");
+        if (pkFail) story.Add($"Подвела дисциплина: в большинстве {O} забили {N(ppgOp, "раз", "раза", "раз")}.");
+        else if (ppFail) story.Add($"Наше большинство не реализовало ни одного из {N(ppOppMe, "шанса", "шансов", "шансов")}.");
+
+        // цитата: после победы — лучший игрок матча, после поражения — капитан
+        int speaker = win ? myStar : (capId != 0 ? capId : myStar);
         string quote;
-        if (!hasBox) quote = win ? "Важная победа. Двигаемся дальше." : "Разберём ошибки и двинемся дальше.";
-        else if (win && xgMe >= xgOp + 0.6) quote = Pick(rng, $"Мы контролировали игру: по качеству моментов {F1(xgMe)} против {F1(xgOp)}. Так и надо.", $"Создали больше — {F1(xgMe)} ожидаемых голов против {F1(xgOp)}. Победа заслуженная.");
-        else if (win && xgOp >= xgMe + 0.6) quote = Pick(rng, $"Будем честны: соперник создал больше ({F1(xgOp)} против {F1(xgMe)}). Выручил {c.Short(myG)} — {mySv} {Plural(mySv, "сейв", "сейва", "сейвов")}.", $"Очки взяли, но по игре есть вопросы: xG {F1(xgMe)} — {F1(xgOp)} не в нашу пользу.");
-        else if (win) quote = Pick(rng, "Равный матч, решили детали. Такие игры надо выигрывать.", $"По моментам почти поровну ({F1(xgMe)} — {F1(xgOp)}), но реализовали лучше мы.");
-        else if (xgMe >= xgOp + 0.6) quote = Pick(rng, $"Моменты были — {F1(xgMe)} ожидаемых голов против {F1(xgOp)}. Не забили. На дистанции такое выравнивается, но очки уже ушли.", $"Обидно: создали больше ({F1(xgMe)} — {F1(xgOp)}), а {c.Short(opG)} стоял стеной.");
-        else if (xgOp >= xgMe + 0.6) quote = Pick(rng, $"Проиграли по делу: соперник создал заметно больше ({F1(xgOp)} против {F1(xgMe)}). Будем разбирать игру в обороне.", "Мало создавали и много позволяли. Над этим и будем работать.");
-        else quote = Pick(rng, "Равная игра, но удача была на их стороне.", $"По моментам — паритет ({F1(xgMe)} — {F1(xgOp)}). Не хватило точности.");
-        if (hasBox && ppOppMe >= 3 && ppgMe == 0) quote += $" И большинство: 0 из {ppOppMe} — это нужно чинить.";
+        if (comeback) quote = Pick(rng, "Никто в раздевалке не опустил голову. Сказали друг другу: играем своё — и это сработало.", "После такого начала легко было сломаться. Но это не про нас.");
+        else if (blown) quote = Pick(rng, "Мы сами отдали этот матч. Вели — и перестали делать простые вещи. Это на нас.", "Нельзя так терять преимущество. Разберём каждую ошибку.");
+        else if (win && r.End == "SO") quote = Pick(rng, "Буллиты — это лотерея, но сегодня билет был наш.", "Два очка есть два очка. Главное — не отпустили игру в основное время.");
+        else if (win && late) quote = gwg.Scorer == speaker
+            ? Pick(rng, "Увидел, что вратарь чуть сместился, и просто бросил. Огромное чувство.", "Такие голы запоминаются надолго. Но это заслуга всей смены.")
+            : Pick(rng, $"{c.Short(gwg.Scorer)} в концовке — это класс. Такие игроки и выигрывают такие матчи.", "Терпели до последнего — и дождались своего момента.");
+        else if (win && shutout) quote = speaker == myG
+            ? Pick(rng, "Ребята перед мной блокировали всё, что можно. Этот ноль — общий.", "Хорошо видел шайбу весь вечер. Приятное чувство.")
+            : Pick(rng, $"{c.Short(myG)} сегодня был стеной. Мы перед ним старались не мешать.", "Сыграли надёжно сзади, а впереди своё забили.");
+        else if (goalieStole) quote = Pick(rng, $"Честно — {c.Short(myG)} нас сегодня вытащил. Во втором периоде мы просто выживали.", $"Скажем спасибо {c.Short(myG)}. Мы должны помогать ему больше.");
+        else if (win && hat != 0 && hat == speaker) quote = Pick(rng, "Шайба сегодня сама шла в ворота. Партнёры отдавали так, что оставалось подставить клюшку.", "Три гола — это приятно, но важнее два очка.");
+        else if (win && my - their >= 4) quote = Pick(rng, "Хороший вечер. Много бросали, давили, и в какой-то момент шайбы полетели.", "Сыграли так, как готовились. Но завтра это уже ничего не значит.");
+        else if (win && dominated) quote = Pick(rng, "Много бросали и давили — рано или поздно это должно было сработать.", "Мы владели шайбой большую часть матча. Так и надо играть.");
+        else if (win) quote = Pick(rng, "Не самый красивый матч, но такие тоже нужно выигрывать.", "Тяжёлые два очка. Соперник был неудобным, но мы терпели.", "Сделали работу. Есть что поправить, но победа — это главное.");
+        else if (theirGoalie) quote = Pick(rng, $"Бросали много, но у {c.Short(opG)} был его вечер. Бывает. Продолжаем делать то же самое.", "Моменты были, вратарь соперника сыграл здорово. Голову не опускаем.");
+        else if (r.End != "REG") quote = Pick(rng, "Очко лучше, чем ничего, но хотелось двух.", "Дотянули до овертайма, а там чуть-чуть не хватило.");
+        else if (their - my >= 3) quote = Pick(rng, "Говорить особо нечего. Это был не наш вечер. Забыть и готовиться к следующему.", "Стыдно перед болельщиками. Ответим на льду.", "Пропускали слишком легко. Так в этой лиге не выигрывают.");
+        else if (pkFail) quote = Pick(rng, "Слишком много удалений. Против такого большинства так играть нельзя.", "Сами себе усложнили жизнь удалениями.");
+        else if (outshot) quote = Pick(rng, "Проиграли по делу. Отдали им инициативу и так и не вернули.", "Мы слишком долго были в своей зоне. С этим надо что-то делать.");
+        else if (ppFail) quote = Pick(rng, "Большинство сегодня не сработало, а в равных такие матчи не выигрываются.", "Были шансы в большинстве — не использовали. В этом вся разница.");
+        else if (their - my >= 2) quote = Pick(rng, "Слишком много ошибок у своих ворот. Соперник этим воспользовался.", "Отдали им лёгкие голы. Над этим и будем работать.");
+        else quote = Pick(rng, "Равный матч, решили мелочи. В следующий раз эти мелочи должны быть нашими.", "Боролись, но где-то не хватило концентрации. Двигаемся дальше.");
 
         // плашка цифр
         var facts = new List<MsgFact> { new("Счёт", score + (r.End == "OT" ? " ОТ" : r.End == "SO" ? " Б" : ""), home ? "дома" : "в гостях", win ? "good" : "bad") };
@@ -165,33 +272,23 @@ public static class News
             facts.Add(new("Силовые", $"{hitMe}–{hitOp}", $"блоки {blkMe}–{blkOp}"));
         }
 
-        // тело: по периодам, авторы, турнирное положение
-        var body = new System.Text.StringBuilder();
-        var periods = new List<string>();
-        for (int p = 1; p <= Math.Max(3, goals.Count == 0 ? 3 : goals.Max(e => e.Period)); p++)
-        {
-            int x = goals.Count(e => e.Period == p && e.Team == me), y = goals.Count(e => e.Period == p && e.Team == op);
-            periods.Add($"{x}:{y}");
-        }
-        body.Append($"По периодам: {string.Join(", ", periods)}{(r.End == "SO" ? ", буллиты" : "")}.");
-        var scorers = goals.Where(e => e.Team == me).GroupBy(e => e.Scorer).Select(x => x.Count() > 1 ? $"{c.Short(x.Key)} ({x.Count()})" : c.Short(x.Key)).ToList();
-        if (scorers.Count > 0) body.Append($" Голы: {string.Join(", ", scorers)}.");
-        if (gwg != null && win) body.Append($" Победная шайба — {Name(c, gwg.Scorer)}{(gwg.Shot != null ? $", {gwg.Shot}" : "")}.");
-        body.Append($"\n\n{c.Short(myG)}: {mySv} {Plural(mySv, "сейв", "сейва", "сейвов")} из {mySa}.");
+        // тело: ход матча, вратари, турнирное положение
+        var body = new System.Text.StringBuilder(string.Join("\n\n", story));
         if (!g.Playoff)
         {
             var row = c.Table[me];
             var t = c.Team(me);
             var div = c.Sorted(x => x.Division == t.Division);
             int place = div.FindIndex(x => x.Team == me) + 1;
-            body.Append($" У нас {row.W}-{row.L}-{row.Otl}, {N(row.Pts, "очко", "очка", "очков")} — {Ord(place)} место в дивизионе.");
+            body.Append($"\n\nВ таблице: {row.W}-{row.L}-{row.Otl}, {N(row.Pts, "очко", "очка", "очков")}, {Ord(place)} место в дивизионе.");
             if (row.Streak.Length > 1 && int.TryParse(row.Streak[1..].TrimStart('О'), out var sn) && sn >= 3)
-                body.Append(row.Streak[0] == 'В' ? $" Серия побед — {sn}." : row.Streak.StartsWith("П") ? $" Серия поражений — {sn}." : "");
+                body.Append(row.Streak[0] == 'В' ? $" Серия побед — {sn}." : row.Streak.StartsWith("П") ? $" Без побед — {N(sn, "матч", "матча", "матчей")} подряд." : "");
         }
 
         // три звезды
         var stars = r.Ratings.OrderByDescending(kv => kv.Value).Take(3).Select(kv => kv.Key).ToList();
-        Post(c, "Помощник тренера", "Матч", headline, lead, body.ToString(), "match", $"game:{g.Id}", me, win ? 2 : 1, facts, stars, quote, "Помощник тренера");
+        string by = speaker != 0 && c.Data.PlayerById.TryGetValue(speaker, out var sp) ? sp.NameRu + (speaker == capId ? ", капитан" : "") : "Помощник тренера";
+        Post(c, "Пресс-служба клуба", "Матч", headline, lead, body.ToString(), "match", $"game:{g.Id}", me, win ? 2 : 1, facts, stars, quote, by);
     }
 
     // ================================================================ «Вечер в НХЛ»: события вчерашнего дня по лиге
@@ -517,8 +614,8 @@ public static class News
             if (f.Word == "Отличная" && recentPts >= recentGp && !Recent($"player:{p.Id}", 21))
                 cands.Add((2.0, () => Post(c, "Пресса", "Пресса", Pick(rng, $"{p.LastRu} в огне", $"Невозможно остановить: {p.LastRu}", $"{p.LastRu} тащит команду"),
                     $"{N(recentPts, "очко", "очка", "очков")} в последних {N(recentGp, "матче", "матчах", "матчах")}. Лучший отрезок его сезона.",
-                    $"За сезон — {s.G}+{s.A} в {N(s.Gp, "матче", "матчах", "матчах")}, ожидаемые голы его бросков — {F1(s.Ixg)}.\n\n" +
-                    (s.G > s.Ixg + 3 ? "Забивает заметно больше, чем «положено» по моментам: часть — мастерство, часть — удача, которая рано или поздно кончится." : "Голы подкреплены моментами: это не случайность, а игра."),
+                    $"За сезон — {s.G}+{s.A} в {N(s.Gp, "матче", "матчах", "матчах")}.\n\n" +
+                    (s.G > s.Ixg + 3 ? "Скауты соперников уже шутят, что шайба его любит: забивает даже из позиций, откуда обычно не забивают. Вопрос — надолго ли." : "Он не просто удачно бросает — он постоянно оказывается там, где рождаются моменты."),
                     "board", $"player:{p.Id}", me, 1, new List<MsgFact> { new("Последние матчи", $"{recentPts} оч.", $"в {recentGp}", "good"), new("Сезон", $"{s.G}+{s.A}", $"{s.Gp} матчей"), new("xG", F1(s.Ixg), "по броскам в створ") },
                     new List<int> { p.Id })));
         }
