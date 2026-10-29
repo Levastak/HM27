@@ -21,6 +21,8 @@ public sealed class PlayerBox
     public int Sa { get; set; }
     public int Ga { get; set; }
     public double Xga { get; set; }     // ожидаемые голы по броскам в створ (без поправки на вратаря)
+    /// <summary>Полевой: ожидаемые голы своих бросков в створ (по зоне, типу и навыку броска; без вратаря).</summary>
+    public double Ixg { get; set; }
 }
 
 /// <summary>
@@ -799,7 +801,7 @@ public static class ShiftEngine
                 double mL = Math.Exp(LNG_FAR * (s.Lng - (s.D ? refs?.LngD ?? 11 : refs?.LngF ?? 11)));
                 Diag.S(s.Id, "lngx", p - p / mL);
             }
-            if (!empty) { o.GBox.Sa++; o.GBox.Xga += Math.Min(0.95, xg); }
+            if (!empty) { o.GBox.Sa++; o.GBox.Xga += Math.Min(0.95, xg); s.Box.Ixg += Math.Min(0.95, xg); }
             if (rng.NextDouble() < p)
             {
                 if (Diag != null) { Diag.Add(Diag.Goals, lb); if (rebound) Diag.RebGoals++; if (lb == "5v5") Diag.S(s.Id, (z == 0 || rebound ? "close" : z == 2 ? "far" : "mid") + "_g5"); }

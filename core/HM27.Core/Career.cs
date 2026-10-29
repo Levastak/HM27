@@ -40,6 +40,8 @@ public sealed class SkaterLine
     public int Hit { get; set; }
     public int Tk { get; set; }
     public int Gv { get; set; }
+    /// <summary>Ожидаемые голы бросков в створ (движок по сменам).</summary>
+    public double Ixg { get; set; }
     public double FoPct => Fow + Fol == 0 ? 0 : Fow / (double)(Fow + Fol);
     public double RatingSum { get; set; }
     public int Rated { get; set; }
@@ -56,6 +58,9 @@ public sealed class GoalieLine
     public int Sa { get; set; }
     public int Ga { get; set; }
     public int So { get; set; }
+    /// <summary>Ожидаемые голы по броскам в створ (движок по сменам): сейвы сверх ожидаемых = Xga − Ga.</summary>
+    public double Xga { get; set; }
+    public double Gsax => Xga - Ga;
     public double RatingSum { get; set; }
     public int Rated { get; set; }
     public double AvgRating => Rated == 0 ? 0 : RatingSum / Rated;
@@ -401,7 +406,7 @@ public sealed class Career
         {
             if (!Data.PlayerById.TryGetValue(id, out var bp) || bp.IsGoalie) continue;
             var s = Get(sk, id); s.Toi += b.Toi; s.S += b.S; s.Att += b.Att; s.Blk += b.Blk; s.Pm += b.Pm; s.Pim += b.Pim;
-            s.Fow += b.Fow; s.Fol += b.Fol; s.Hit += b.Hit; s.Tk += b.Tk; s.Gv += b.Gv;
+            s.Fow += b.Fow; s.Fol += b.Fol; s.Hit += b.Hit; s.Tk += b.Tk; s.Gv += b.Gv; s.Ixg += b.Ixg;
         }
         // Победный гол: гол, после которого у победителя на 1 больше, чем у проигравшего в итоге
         var winTeam = homeWon ? g.Home : g.Away; int loserGoals = homeWon ? r.AwayGoals : r.HomeGoals; int cnt = 0;
@@ -412,6 +417,7 @@ public sealed class Career
         {
             if (goalie == 0) return;
             var x = Get(gk, goalie); x.Gp++; x.Sa += sa; x.Ga += ga;
+            if (r.Box.TryGetValue(goalie, out var gb)) x.Xga += gb.Xga;
             if (r.Ratings.TryGetValue(goalie, out var rt)) { x.RatingSum += rt; x.Rated++; }
             if (won) x.W++; else if (end == "REG" || g.Playoff) x.L++; else x.Otl++;
             if (shutout) x.So++;

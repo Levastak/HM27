@@ -194,7 +194,7 @@ public static class BioWidgets
     static Control Line(string key, Control value)
     {
         var h = Ui.H(10);
-        h.AddChild(Ui.L(key.ToUpperInvariant(), 10, Ui.Dim, Ui.Bold).Also(l => l.CustomMinimumSize = new Vector2(118, 0)));
+        h.AddChild(Ui.L(key, 12, Ui.Dim).Also(l => l.CustomMinimumSize = new Vector2(118, 0)));
         h.AddChild(Ui.Expand(value));
         return h;
     }

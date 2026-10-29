@@ -90,6 +90,7 @@ public partial class Shell : Control
         ["squad"] = new[] { ("players", "Игроки"), ("stats", "Статистика") },
         ["comp"] = new[] { ("table", "Таблица"), ("stats", "Статистика лиги"), ("playoffs", "Плей-офф") },
         ["club"] = new[] { ("overview", "Обзор"), ("players", "Игроки"), ("schedule", "Расписание") },
+        ["player"] = new[] { ("overview", "Обзор"), ("attrs", "Характеристики"), ("stats", "Статистика"), ("career", "Карьера") },
     };
 
     public Shell(string page, string sub = null, string arg = null) { _cur = new Nav(page, sub, arg); }
@@ -163,7 +164,7 @@ public partial class Shell : Control
             "lines" => Ui.Margin(new LinesView(), 16, 12, 16, 12).Also(m => { m.SizeFlagsHorizontal = m.SizeFlagsVertical = SizeFlags.ExpandFill; }),
             "schedule" => Embedded("calendar"),
             "comp" => Embedded(_cur.Sub == "stats" ? "stats" : _cur.Sub),
-            "player" => new PlayerPage(int.Parse(_cur.Arg)),
+            "player" => new PlayerPage(int.Parse(_cur.Arg), _cur.Sub),
             "club" => _cur.Sub == "schedule" ? Embedded("calendar:" + (_cur.Arg ?? C.UserTeam)) : _cur.Sub == "players" ? new SquadPage(_cur.Arg ?? C.UserTeam) : new ClubPage(_cur.Arg ?? C.UserTeam),
             "medical" => new MedicalPage(),
             _ => new HomePage(),
@@ -351,7 +352,7 @@ public partial class Shell : Control
             "lines" => ("Звенья", rec),
             "schedule" => ("Расписание", rec),
             "comp" => ("Национальная хоккейная лига", "Сезон 2026-27"),
-            "player" => (C.Data.PlayerById[int.Parse(_cur.Arg)].NameRu, rec),
+            "player" => (t.Name, rec),
             "club" => (t.Name, rec),
             "medical" => ("Лазарет", rec),
             _ => (t.Name, rec),
@@ -470,7 +471,7 @@ public partial class Shell : Control
         // вкладки: страницы раздела (как в его выпадающем списке); у чужого клуба — его страницы
         var tabs = new List<(string name, string page, string sub, string arg)>();
         string sec = SectionOf(_cur);
-        if (_cur.Page == "club") tabs.AddRange(Subs["club"].Select(x => (x.name, "club", x.key, _cur.Arg)));
+        if (_cur.Page is "club" or "player") tabs.AddRange(Subs[_cur.Page].Select(x => (x.name, _cur.Page, x.key, _cur.Arg)));
         else if (sec != null && _cur.Page != "player")
             tabs.AddRange(Sections().First(x => x.Key == sec).Items.Where(it => it.Page != null && !it.Soon).Select(it => (it.Name, it.Page, it.Sub, (string)null)));
         _subBar.Visible = tabs.Count > 1;

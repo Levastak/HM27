@@ -151,12 +151,15 @@ public partial class Main : Control
     /// <summary>Экраны карьеры — в FM-оболочке. Старые имена вкладок переводятся в разделы оболочки.</summary>
     public void ShowHub(string tab = "overview", string arg = null)
     {
+        string forced = null;
+        if (tab.Contains(':')) { forced = tab[(tab.IndexOf(':') + 1)..]; tab = tab[..tab.IndexOf(':')]; }
         var (page, sub) = tab switch
         {
             "lines" => ("lines", (string)null), "calendar" => ("schedule", null), "table" => ("comp", "table"), "stats" => ("comp", "stats"),
             "playoffs" => ("comp", "playoffs"), "squad" => ("squad", null), "inbox" => ("inbox", null), "player" => ("player", null), "club" => ("club", null), "medical" => ("medical", null),
             _ => ("home", null),
         };
+        sub = forced ?? sub;
         if (_screen is Shell sh && sh.IsInsideTree()) sh.Go(page, sub, arg);
         else Show(new Shell(page, sub, arg));
     }

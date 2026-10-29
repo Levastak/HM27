@@ -68,7 +68,7 @@ public partial class ClubPage : Control
         var status = (view.Label, view.Note);
         var g = new GridContainer { Columns = 4 };
         g.AddThemeConstantOverride("h_separation", 34); g.AddThemeConstantOverride("v_separation", 10);
-        void F(string k, string v, Color? c = null) => g.AddChild(Ui.V(0, Ui.L(k.ToUpperInvariant(), 10, Ui.Dim, Ui.Bold), Ui.L(v, 14, c ?? Ui.Text, Ui.Semi)));
+        void F(string k, string v, Color? c = null) => g.AddChild(Ui.V(-2, Ui.L(k, 11, Ui.Dim), Ui.L(v, 17, c ?? Ui.Text, Ui.Cond)));
         F("Конференция", $"{t.Conference} · {cplace}-е");
         F("Дивизион", t.Division);
         F("Место в лиге", row.Gp > 0 ? $"{lplace}-е" : "—");
@@ -78,7 +78,7 @@ public partial class ClubPage : Control
         F("Шайбы", $"{row.Gf}–{row.Ga} ({Ui.Signed(row.Gf - row.Ga, "0")})");
         F("Серия", string.IsNullOrEmpty(row.Streak) ? "—" : row.Streak);
         var l = C.Lineups[t.Abbr];
-        void FL(string k, Control val) => g.AddChild(Ui.V(0, Ui.L(k.ToUpperInvariant(), 10, Ui.Dim, Ui.Bold), val));
+        void FL(string k, Control val) => g.AddChild(Ui.V(-2, Ui.L(k, 11, Ui.Dim), val));
         FL("Основной вратарь", Links.Player(C, l.G1, C.Short(l.G1), 14, null, Ui.Semi));
         var best = C.Skaters.Where(kv => C.Data.PlayerById[kv.Key].Team == t.Abbr).OrderByDescending(kv => kv.Value.Pts).FirstOrDefault();
         FL("Лучший бомбардир", best.Key != 0 ? Links.Player(C, best.Key, $"{C.Short(best.Key)} ({best.Value.Pts})", 14, null, Ui.Semi) : Ui.L("—", 14, Ui.Text, Ui.Semi));

@@ -151,7 +151,7 @@ public partial class LinesView : HBoxContainer
 
     static Control Section(string title, params Control[] kids)
     {
-        var v = Ui.V(6, Ui.L(title.ToUpperInvariant(), 11, Ui.Muted, Ui.Bold));
+        var v = Ui.V(6, Ui.L(title, 16, Ui.Text, Ui.Cond));
         foreach (var k in kids) v.AddChild(k);
         return v;
     }
@@ -280,7 +280,7 @@ public partial class LinesView : HBoxContainer
             new() { Title = "Место", Width = 72, Cell = p => Ui.Stars(Fit(p, kind), 11), Sort = p => Fit(p, kind), Tip = "Пригодность к выбранному месту" },
         }, pool, p => Assign(p.Id), p => p.Id == cur, sortCol: 3);
         var v = Ui.V(8);
-        v.AddChild(Ui.L($"КАНДИДАТЫ: {label} · {(kind == "G" ? "вратарь" : unitName)}".ToUpperInvariant(), 11, Ui.Muted, Ui.Bold));
+        v.AddChild(Ui.L($"Кандидаты: {label}, {(kind == "G" ? "вратарь" : unitName)}", 16, Ui.Text, Ui.Cond));
         v.AddChild(Ui.L(kind.StartsWith("P") ? "В спецбригады — только игроки, заявленные на матч." : "Щёлкните игрока, чтобы поставить его на выбранное место.", 11, Ui.Dim).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart));
         v.AddChild(Ui.Expand(Ui.Scroll(grid.Root), true, true));
         var panel = new PanelContainer { CustomMinimumSize = new Vector2(300, 0) };

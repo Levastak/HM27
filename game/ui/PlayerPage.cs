@@ -96,13 +96,17 @@ public partial class FormChart : Control
     }
 }
 
-/// <summary>Карточка игрока в стиле WTCS для FM24.</summary>
+/// <summary>
+/// Карточка игрока: шапка (портрет, имя, факты, способности) и вкладки — Обзор, Характеристики, Статистика, Карьера.
+/// Вкладка — часть адреса в оболочке (назад/вперёд помнят её).
+/// </summary>
 public partial class PlayerPage : Control
 {
     Career C => P.C;
     readonly int _id;
+    readonly string _tab;
     public PlayerPage() { }
-    public PlayerPage(int id) { _id = id; SizeFlagsHorizontal = SizeFlags.ExpandFill; SizeFlagsVertical = SizeFlags.ExpandFill; TooltipText = " "; }
+    public PlayerPage(int id, string tab = null) { _id = id; _tab = tab ?? "overview"; SizeFlagsHorizontal = SizeFlags.ExpandFill; SizeFlagsVertical = SizeFlags.ExpandFill; TooltipText = " "; }
 
     public override void _Ready()
     {
@@ -113,113 +117,137 @@ public partial class PlayerPage : Control
         page.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(page);
         v.AddChild(Hero(p, t));
+        switch (_tab)
+        {
+            case "attrs": BuildAttrs(v, p); break;
+            case "stats": BuildStats(v, p); break;
+            case "career": BuildCareer(v, p); break;
+            default: BuildOverview(v, p); break;
+        }
+    }
 
+    // ---------------------------------------------------------------- вкладки
+    void BuildOverview(VBoxContainer v, PlayerData p)
+    {
+        v.AddChild(PlayerViz.ConditionTiles(C, p));
         var row = Ui.H(12);
-        var left = Ui.V(12); left.CustomMinimumSize = new Vector2(290, 0);
-        left.AddChild(Widget.Make("Позиции", Ui.V(8, new RinkMini(p.Pos), Ui.H(14, Legend("Основная", new Color("43D17A")), p.IsForward ? Legend("Может играть", new Color("E8C25A")) : new Control()))));
-        left.AddChild(Widget.Make("Роли", Roles(p), null, null, 0));
-        if (!p.IsGoalie) left.AddChild(Widget.Make("Особенности", Features(p), null, null, 0));
-        row.AddChild(left);
+        var prof = Widget.Make("Профиль", PlayerViz.Radar(C, p));
+        prof.CustomMinimumSize = new Vector2(420, 0);
+        row.AddChild(prof);
+        var pc = Widget.Make("Сильные и слабые стороны", PlayerViz.ProsCons(C, p));
+        pc.CustomMinimumSize = new Vector2(330, 0);
+        row.AddChild(pc);
+        var season = Ui.V(12, PlayerViz.SeasonNumbers(C, p), Ui.Rule(), Ui.L("Оценки за последние матчи", 13, Ui.Muted), Form(p, false));
+        row.AddChild(Ui.Expand(Widget.Make($"Сезон {BioText.Season(BioText.GameSeason(C.Data))}", season, "Вся статистика", () => Shell.I.Go("player", "stats", _id.ToString()))));
+        v.AddChild(row);
+        var row2 = Ui.H(12);
+        row2.AddChild(Ui.Expand(Widget.Make("Роли", Roles(p), "Характеристики", () => Shell.I.Go("player", "attrs", _id.ToString()), 0)));
+        if (!p.IsGoalie) row2.AddChild(Ui.Expand(Widget.Make("Особенности", Features(p), null, null, 0)));
+        row2.AddChild(Widget.Make("Позиции", Ui.V(8, new RinkMini(p.Pos), Ui.H(14, Legend("Основная", new Color("43D17A")), p.IsForward ? Legend("Может играть", new Color("E8C25A")) : new Control()))));
+        row2.AddChild(Ui.Expand(Widget.Make("Сравнение в составе", Compare(p), null, null, 0)));
+        v.AddChild(row2);
+    }
+
+    void BuildAttrs(VBoxContainer v, PlayerData p)
+    {
+        var row = Ui.H(12);
         row.AddChild(Ui.Expand(Widget.Make("Характеристики", AttrGrid(p))));
         var right = Ui.V(12); right.CustomMinimumSize = new Vector2(330, 0);
-        right.AddChild(Widget.Make("Состояние", Condition(p)));
-        right.AddChild(Widget.Make("Форма (последние 20 матчей)", Form(p)));
-        right.AddChild(Widget.Make("Сравнение в составе", Compare(p), null, null, 0));
+        right.AddChild(Widget.Make("Роли", Roles(p), null, null, 0));
+        if (!p.IsGoalie) right.AddChild(Widget.Make("Особенности", Features(p), null, null, 0));
+        right.AddChild(Widget.Make("Позиции", Ui.V(8, new RinkMini(p.Pos), Ui.H(14, Legend("Основная", new Color("43D17A")), p.IsForward ? Legend("Может играть", new Color("E8C25A")) : new Control()))));
         row.AddChild(right);
         v.AddChild(row);
+    }
 
-        // биография и достижения (страница игрока НХЛ), как вкладка «История» в FM
+    void BuildStats(VBoxContainer v, PlayerData p)
+    {
+        v.AddChild(Stats(p));
+        var row = Ui.H(12);
+        var list = PlayerViz.Percentiles(C, p, out var note);
+        row.AddChild(Ui.Expand(Widget.Make("На фоне лиги", PlayerViz.PercentileList(list, note))));
+        var right = Ui.V(12); right.CustomMinimumSize = new Vector2(520, 0);
+        right.AddChild(Widget.Make("Оценки за последние 20 матчей", Form(p)));
+        var games = Games(p);
+        if (games != null) right.AddChild(games);
+        row.AddChild(right);
+        v.AddChild(row);
+    }
+
+    void BuildCareer(VBoxContainer v, PlayerData p)
+    {
         var bioRow = Ui.H(12);
         bioRow.AddChild(Ui.Expand(Widget.Make("Биография", BioWidgets.Biography(C, p))));
-        var hon = Ui.V(12); hon.CustomMinimumSize = new Vector2(380, 0);
+        var hon = Ui.V(12); hon.CustomMinimumSize = new Vector2(400, 0);
         hon.AddChild(Widget.Make("Достижения", BioWidgets.Honours(p), null, null, 0));
         bioRow.AddChild(hon);
         v.AddChild(bioRow);
-
-        v.AddChild(Stats(p));
         v.AddChild(Widget.Make("Карьера в НХЛ: регулярные чемпионаты", BioWidgets.NhlCareer(C, p), null, null, 0));
-        var games = Games(p);
-        if (games != null) v.AddChild(games);
     }
 
     // ---------------------------------------------------------------- шапка
     Control Hero(PlayerData p, TeamData t)
     {
         var c1 = new Color(t.Colors[0]); var c2 = new Color(t.Colors.Count > 1 ? t.Colors[1] : t.Colors[0]);
-        var row = Ui.H(10);
+        var row = Ui.H(12);
 
         // портрет на фоне огромного номера
-        var portrait = new Control { CustomMinimumSize = new Vector2(250, 190), ClipContents = true };
-        var g = new Gradient(); g.SetColor(0, c1.Lightened(0.08f)); g.SetColor(1, c1.Darkened(0.45f));
+        var portrait = new Control { CustomMinimumSize = new Vector2(220, 176), ClipContents = true };
+        var g = new Gradient(); g.SetColor(0, c1.Lightened(0.06f)); g.SetColor(1, c1.Lerp(Ui.Bg, 0.7f));
         portrait.AddChild(new TextureRect { Texture = new GradientTexture2D { Gradient = g, FillFrom = new Vector2(0, 0), FillTo = new Vector2(1, 1), Width = 64, Height = 64 },
             ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.Scale }.Also(r => r.SetAnchorsPreset(LayoutPreset.FullRect)));
-        var num = Ui.L(p.Num?.ToString() ?? "", 190, new Color(c2.Luminance > 0.8f ? Colors.White : c2, 0.55f), Ui.Black, HorizontalAlignment.Center);
-        num.SetAnchorsPreset(LayoutPreset.FullRect); num.OffsetTop = -40; num.OffsetLeft = -30;
+        var num = Ui.L(p.Num?.ToString() ?? "", 200, new Color(c2.Luminance > 0.8f ? Colors.White : c2, 0.5f), Ui.CondBlack, HorizontalAlignment.Center);
+        num.SetAnchorsPreset(LayoutPreset.FullRect); num.OffsetTop = -40; num.OffsetLeft = -40;
         portrait.AddChild(num);
-        var surname = Ui.L(p.LastRu.ToUpperInvariant(), 13, new Color(1, 1, 1, 0.8f), Ui.Black);
-        surname.Position = new Vector2(12, 8);
-        portrait.AddChild(surname);
-        var photo = new PlayerPhoto(p, 170, new Color(0, 0, 0, 0)) { Position = new Vector2(70, 20) };
+        var photo = new PlayerPhoto(p, 166, new Color(0, 0, 0, 0)) { Position = new Vector2(54, 12) };
         portrait.AddChild(photo);
         row.AddChild(Frame(portrait, 0));
 
-        // плитки: клуб и страна
-        var tiles = Ui.V(10);
-        var clubTile = Frame(Ui.V(2, new TeamBadge(t, 54) { SizeFlagsHorizontal = SizeFlags.ShrinkCenter, MouseFilter = MouseFilterEnum.Ignore }, Ui.L(t.City, 11, Ui.Muted, null, HorizontalAlignment.Center).Also(l => l.MouseFilter = MouseFilterEnum.Ignore)).Also(x => { x.CustomMinimumSize = new Vector2(96, 0); x.MouseFilter = MouseFilterEnum.Ignore; }), 8);
-        clubTile.MouseDefaultCursorShape = CursorShape.PointingHand; clubTile.TooltipText = $"Карточка клуба «{t.City}»";
-        clubTile.GuiInput += e => { if (e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left }) Links.OpenClub(t.Abbr); };
-        tiles.AddChild(clubTile);
-        tiles.AddChild(Frame(Ui.V(0, Ui.L(p.Country ?? "", 22, Ui.Text, Ui.Black, HorizontalAlignment.Center), Ui.L(PlayerCard.Country(p.Country), 11, Ui.Muted, null, HorizontalAlignment.Center)).Also(x => x.CustomMinimumSize = new Vector2(96, 0)), 8));
-        row.AddChild(tiles);
-
-        // факты
+        // имя и факты
         var age = p.Age(C.Today);
-        var facts = Ui.V(4);
-        facts.AddChild(Ui.L(p.NameRu, 24, Ui.Text, Ui.Bold));
-        facts.AddChild(Ui.H(0, Ui.L($"#{p.Num} · {Capital(PlayerCard.PosLong(p.Pos))} · ", 13, Ui.Muted), Links.Club(t, t.Name, 13, Ui.Muted)));
-        facts.AddChild(Ui.Spacer(false, 6));
-        var grid = new GridContainer { Columns = 3 };
-        grid.AddThemeConstantOverride("h_separation", 30); grid.AddThemeConstantOverride("v_separation", 8);
-        void Fact(string k, string val, Color? col = null) => grid.AddChild(Ui.V(0, Ui.L(k.ToUpperInvariant(), 10, Ui.Dim, Ui.Bold), Ui.L(val, 14, col ?? Ui.Text, Ui.Semi)));
-        Fact("Возраст", age.HasValue ? $"{age} {Ui.Plural(age.Value, "год", "года", "лет")}" : "—");
-        Fact("Дата рождения", DateOnly.TryParse(p.Born, out var bd) ? $"{bd.Day:00}.{bd.Month:00}.{bd.Year}" : "—");
-        Fact("Рост / вес", $"{p.Height} см / {p.Weight} кг");
-        var inj = InjuryModel.Active(C, p.Id);
-        Fact("Состояние", inj != null ? $"Травма до {Ui.DateShort(inj.Until)}" : "Здоров", inj != null ? Ui.Loss : Ui.Win);
-        Fact("В составе", P.Role(p.Id, p.Team));
+        var facts = Ui.V(2);
+        facts.AddChild(Ui.L(p.NameRu, 40, Ui.Text, Ui.CondBold));
+        facts.AddChild(Ui.H(6, Ui.L($"#{p.Num} · {Capital(PlayerCard.PosLong(p.Pos))} ·", 14, Ui.Muted), new TeamBadge(t, 18), Links.Club(t, t.Name, 14, Ui.Text)));
+        facts.AddChild(Ui.Spacer(false, 10));
+        var grid = new GridContainer { Columns = 4 };
+        grid.AddThemeConstantOverride("h_separation", 34); grid.AddThemeConstantOverride("v_separation", 8);
+        void Fact(string k, string val, Color? col = null, string tip = null) =>
+            grid.AddChild(Ui.V(-2, Ui.L(k, 11, Ui.Dim), Ui.L(val, 17, col ?? Ui.Text, Ui.Cond)).Also(x => { x.TooltipText = tip ?? ""; x.MouseFilter = MouseFilterEnum.Stop; }));
+        Fact("Возраст", age.HasValue ? $"{age} {Ui.Plural(age.Value, "год", "года", "лет")}" : "—", null,
+            DateOnly.TryParse(p.Born, out var bd) ? $"Родился {bd.Day} {Ui.MonthsGen[bd.Month - 1]} {bd.Year}" : null);
+        Fact("Страна", PlayerCard.Country(p.Country));
+        Fact("Рост и вес", $"{p.Height} см, {p.Weight} кг");
+        var dr = p.Bio?.Draft;
+        Fact("Драфт", dr is { Count: >= 4 } ? $"{dr[0]}, {dr[3]}-й номер" : "не выбран");
         var rank = C.Roster(p.Team).Where(x => x.IsGoalie == p.IsGoalie).OrderByDescending(x => x.Ovr).ToList().IndexOf(p) + 1;
-        Fact("Статус", p.IsGoalie ? (C.Lineups[p.Team].G1 == p.Id || rank == 1 ? "Основной вратарь" : "Сменщик") : rank <= 3 ? "Звезда клуба" : rank <= 9 ? "Ключевой игрок" : rank <= 16 ? "Игрок основы" : "Ротация / резерв");
-        facts.AddChild(grid);
-        row.AddChild(Ui.Expand(Frame(facts, 16)));
-
-        // способности
-        var ab = Ui.V(6);
+        Fact("Статус", p.IsGoalie ? (C.Lineups[p.Team].G1 == p.Id ? "Основной вратарь" : C.Lineups[p.Team].G2 == p.Id ? "Сменщик" : "Третий вратарь") : rank <= 3 ? "Звезда клуба" : rank <= 9 ? "Ключевой игрок" : rank <= 16 ? "Игрок основы" : "Ротация");
+        var best = p.Roles.FirstOrDefault();
+        Fact("Лучшая роль", best?.Name ?? "—");
         var st = PlayerModel.State(C, p.Id);
+        Fact("Личность", st == null || st.Know < 0.5f ? "пока неизвестна" : PlayerModel.Personality(st), st == null || st.Know < 0.5f ? Ui.Muted : null,
+            st == null || st.Know < 0.5f ? "Характер станет известен, когда клуб лучше узнает игрока" :
+                $"{PlayerModel.PersonalityInfo(PlayerModel.Personality(st))}\n\nПрофессионализм: {PlayerModel.Word(st.Prof)}\nАмбиции: {PlayerModel.Word(st.Amb)}\nЛояльность: {PlayerModel.Word(st.Loy)}\n" +
+                $"Лидерство: {PlayerModel.Word(st.Lead)}\nСамообладание: {PlayerModel.Word(st.Temp)}\nАдаптивность: {PlayerModel.Word(st.Adapt)}\nТравмоустойчивость: {PlayerModel.Word(st.Inj)}");
+        facts.AddChild(grid);
+        row.AddChild(Ui.Expand(Frame(facts, 18)));
+
+        // способности: янтарь табло
+        var ab = Ui.V(2);
         double ca = PlayerModel.Visible(C, p, "ca");
         var (pcLo, pcHi) = PlayerModel.PotentialRange(C, p);
         double plo = StarScale.Stars(C, p, pcLo), phi = StarScale.Stars(C, p, pcHi);
-        ab.AddChild(Ui.L("ТЕКУЩИЕ СПОСОБНОСТИ", 10, Ui.Dim, Ui.Bold));
-        ab.AddChild(Ui.Stars(StarScale.StarsV(C, p, ca), 22).Also(x => x.TooltipText = StarScale.Relative
+        ab.AddChild(Ui.L("Способности", 12, Ui.Dim));
+        ab.AddChild(Ui.Stars(StarScale.StarsV(C, p, ca), 24).Also(x => x.TooltipText = StarScale.Relative
             ? $"Текущие способности по оценке штаба — относительно вашего клуба (по шкале лиги: {PlayerModel.Stars(ca):0.#} ★)"
             : "Текущие способности по оценке штаба — по шкале лиги"));
-        ab.AddChild(Ui.L(StarScale.Class(C.Data, p, ca), 13, Ui.Text, Ui.Semi).Also(x => x.TooltipText = "Класс игрока по меркам лиги"));
-        ab.AddChild(Ui.Spacer(false, 4));
-        ab.AddChild(Ui.L("ПОТЕНЦИАЛ", 10, Ui.Dim, Ui.Bold));
-        ab.AddChild(Ui.L($"Потолок: {StarScale.Class(C.Data, p, (pcLo + pcHi) / 2).ToLowerInvariant()}", 12, Ui.Muted));
-        ab.AddChild(Ui.H(6, Ui.Stars((int)Math.Round(phi * 20), 16),
-            Ui.L(plo == phi ? "" : $"{plo:0.#}–{phi:0.#} ★", 11, Ui.Muted)).Also(x => x.TooltipText = "Оценка скаутов: чем лучше клуб знает игрока, тем уже диапазон"));
-        ab.AddChild(Ui.Spacer(false, 4));
-        ab.AddChild(Ui.L("ЛИЧНОСТЬ", 10, Ui.Dim, Ui.Bold));
-        ab.AddChild(Ui.L(st == null || st.Know < 0.5f ? "Нужно больше наблюдений" : PlayerModel.Personality(st), 13, Ui.Text, Ui.Semi)
-            .Also(l => l.TooltipText = st == null || st.Know < 0.5f ? "Характер станет известен, когда клуб лучше узнает игрока" :
-                $"{PlayerModel.PersonalityInfo(PlayerModel.Personality(st))}\n\nПрофессионализм: {PlayerModel.Word(st.Prof)}\nАмбиции: {PlayerModel.Word(st.Amb)}\nЛояльность: {PlayerModel.Word(st.Loy)}\n" +
-                $"Лидерство: {PlayerModel.Word(st.Lead)}\nСамообладание: {PlayerModel.Word(st.Temp)}\nАдаптивность: {PlayerModel.Word(st.Adapt)}\nТравмоустойчивость: {PlayerModel.Word(st.Inj)}"));
-        ab.AddChild(Ui.Spacer(false, 6));
-        ab.AddChild(Ui.L("ЛУЧШАЯ РОЛЬ", 10, Ui.Dim, Ui.Bold));
-        var best = p.Roles.FirstOrDefault();
-        ab.AddChild(Ui.H(8, Ui.L(best?.Name ?? "—", 13, Ui.Text, Ui.Semi), best != null ? Ui.Stars(best.V, 12) : new Control()));
-        ab.CustomMinimumSize = new Vector2(250, 0);
-        row.AddChild(Frame(ab, 16));
+        ab.AddChild(Ui.L(StarScale.Class(C.Data, p, ca), 17, Ui.Text, Ui.Cond).Also(x => x.TooltipText = "Класс игрока по меркам лиги"));
+        ab.AddChild(Ui.Spacer(false, 10));
+        ab.AddChild(Ui.L("Потенциал", 12, Ui.Dim));
+        ab.AddChild(Ui.H(6, Ui.Stars((int)Math.Round(phi * 20), 18),
+            Ui.L(plo == phi ? "" : $"{plo:0.#}–{phi:0.#} ★", 12, Ui.Muted)).Also(x => x.TooltipText = "Оценка скаутов: чем лучше клуб знает игрока, тем уже диапазон"));
+        ab.AddChild(Ui.L($"потолок: {StarScale.Class(C.Data, p, (pcLo + pcHi) / 2).ToLowerInvariant()}", 13, Ui.Muted));
+        ab.CustomMinimumSize = new Vector2(260, 0);
+        row.AddChild(Frame(ab, 18));
         return row;
     }
 
@@ -293,7 +321,7 @@ public partial class PlayerPage : Control
             foreach (var grp in groups)
             {
                 if (grp != groups[0]) col.AddChild(Ui.Spacer(false, 8));
-                col.AddChild(Ui.L(grp.ToUpperInvariant(), 11, Ui.Muted, Ui.Bold));
+                col.AddChild(Ui.L(grp, 16, Ui.Text, Ui.Cond));
                 col.AddChild(Ui.Rule());
                 foreach (var d in defs.Where(d => d.Group == grp))
                 {
@@ -329,24 +357,7 @@ public partial class PlayerPage : Control
     }
 
     // ---------------------------------------------------------------- форма
-    /// <summary>Форма и свежесть словами, с причиной.</summary>
-    Control Condition(PlayerData p)
-    {
-        var v = Ui.V(6);
-        var f = PlayerForm.Of(C, p.Id);
-        v.AddChild(Ui.H(10, Ui.Expand(Ui.L("Форма", 13, Ui.Muted)), Ui.FormLabel(f)));
-        if (f.Games >= 3) v.AddChild(Ui.L($"Средняя оценка за последние матчи {f.Recent:0.00} — {(f.Score >= 0 ? "выше" : "ниже")} его обычного уровня на {Math.Abs(f.Score):0.00}", 11, Ui.Dim).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart));
-        var st = PlayerModel.State(C, p.Id);
-        v.AddChild(Ui.H(10, Ui.Expand(Ui.L("Свежесть", 13, Ui.Muted)), Ui.FreshLabel(st)));
-        if (st != null && st.Fresh < Fatigue.FRESH_OK)
-        {
-            int recent = C.Games.Count(g => g.Played && g.Date >= C.Today.AddDays(-8) && g.Result.HomeDressed.Concat(g.Result.AwayDressed).Contains(p.Id));
-            v.AddChild(Ui.L($"Устал: {recent} {Ui.Plural(recent, "матч", "матча", "матчей")} за 8 дней{(p.IsGoalie ? "" : " и большие минуты")}. Пара дней отдыха вернёт свежесть.", 11, Ui.Otl).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart));
-        }
-        return v;
-    }
-
-    Control Form(PlayerData p)
+    Control Form(PlayerData p, bool avg = true)
     {
         var games = C.Games.Where(g => g.Played && g.Result.Ratings.ContainsKey(p.Id)).OrderBy(g => g.Date).TakeLast(20).ToList();
         var vals = games.Select(g =>
@@ -356,7 +367,7 @@ public partial class PlayerPage : Control
         }).ToList();
         var line = p.IsGoalie ? (C.Goalies.GetValueOrDefault(p.Id)?.AvgRating ?? 0) : (C.Skaters.GetValueOrDefault(p.Id)?.AvgRating ?? 0);
         var v = Ui.V(6, new FormChart(vals));
-        v.AddChild(Ui.H(10, Ui.L("Средняя оценка в сезоне", 12, Ui.Muted), Ui.Spacer(), Ui.L(line > 0 ? $"{line:0.00}" : "—", 15, Ui.Text, Ui.Black)));
+        if (avg) v.AddChild(Ui.H(10, Ui.L("Средняя оценка в сезоне", 12, Ui.Muted), Ui.Spacer(), Ui.L(line > 0 ? $"{line:0.00}" : "—", 15, Ui.Text, Ui.Black)));
         return v;
     }
 
