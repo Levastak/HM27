@@ -196,7 +196,8 @@ public partial class MatchScreen : Control
     List<MatchEvent> Events()
     {
         var r = _g.Result;
-        if (r.Events.Count > 0) return r.Events;
+        // вбрасывания, силовые, отборы и потери — в статистике, в ленте только броски, голы и удаления
+        if (r.Events.Count > 0) return r.Events.Where(e => e.Kind is not ("fo" or "hit" or "tk" or "gv")).ToList();
         // чужой матч без хроники: только голы
         return r.Goals.Where(e => e.Kind != "so").Select(e => new MatchEvent { T = (e.Period - 1) * 1200 + e.Sec, Team = e.Team, Kind = "goal", P1 = e.Scorer, P2 = e.A1, Note = e.Kind }).ToList();
     }
@@ -241,7 +242,7 @@ public partial class MatchScreen : Control
         var g = new GridContainer { Columns = 3 };
         g.AddThemeConstantOverride("h_separation", 10); g.AddThemeConstantOverride("v_separation", 6);
         g.AddChild(new TeamBadge(Away, 22)); g.AddChild(Ui.L("", 12)); g.AddChild(new TeamBadge(Home, 22));
-        foreach (var k in new[] { "Броски в створ", "Попытки бросков", "Заблокировано", "Удаления", "Голы в большинстве", "Сейвы" })
+        foreach (var k in new[] { "Броски в створ", "Попытки бросков", "Заблокировано", "Удаления", "Голы в большинстве", "Сейвы", "Выиграно вбрасываний", "Силовые приёмы", "Отборы", "Потери" })
         {
             var a = Ui.L("0", 15, Ui.Text, Ui.Bold, HorizontalAlignment.Center); var h = Ui.L("0", 15, Ui.Text, Ui.Bold, HorizontalAlignment.Center);
             a.CustomMinimumSize = h.CustomMinimumSize = new Vector2(40, 0);
@@ -257,7 +258,9 @@ public partial class MatchScreen : Control
     {
         if (_stat == null) return;
         var past = _ev.Where(e => e.T <= t).ToList();
+        var pastAll = _g.Result.Events.Where(e => e.T <= t).ToList();   // со вбрасываниями и силовыми
         int Count(string team, Func<MatchEvent, bool> f) => past.Count(e => e.Team == team && f(e));
+        int CountAll(string team, string kind) => pastAll.Count(e => e.Team == team && e.Kind == kind);
         foreach (var (team, idx) in new[] { (_g.Away, 0), (_g.Home, 1) })
         {
             string opp = team == _g.Home ? _g.Away : _g.Home;
@@ -269,6 +272,10 @@ public partial class MatchScreen : Control
                 ["Удаления"] = Count(team, e => e.Kind == "pen").ToString(),
                 ["Голы в большинстве"] = $"{Count(team, e => e.Kind == "goal" && e.Note == "pp")}/{Count(opp, e => e.Kind == "pen")}",
                 ["Сейвы"] = Count(opp, e => e.Kind == "shot").ToString(),
+                ["Выиграно вбрасываний"] = CountAll(team, "fo").ToString(),
+                ["Силовые приёмы"] = CountAll(team, "hit").ToString(),
+                ["Отборы"] = CountAll(team, "tk").ToString(),
+                ["Потери"] = CountAll(team, "gv").ToString(),
             };
             foreach (var (k, v) in vals) (idx == 0 ? _stat[k].a : _stat[k].h).Text = v;
         }

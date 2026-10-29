@@ -35,6 +35,12 @@ public sealed class SkaterLine
     public int Pm { get; set; }
     public int Pim { get; set; }
     public int Ppp { get; set; }
+    public int Fow { get; set; }
+    public int Fol { get; set; }
+    public int Hit { get; set; }
+    public int Tk { get; set; }
+    public int Gv { get; set; }
+    public double FoPct => Fow + Fol == 0 ? 0 : Fow / (double)(Fow + Fol);
     public double RatingSum { get; set; }
     public int Rated { get; set; }
     public double AvgRating => Rated == 0 ? 0 : RatingSum / Rated;
@@ -389,6 +395,7 @@ public sealed class Career
         {
             if (!Data.PlayerById.TryGetValue(id, out var bp) || bp.IsGoalie) continue;
             var s = Get(sk, id); s.Toi += b.Toi; s.S += b.S; s.Att += b.Att; s.Blk += b.Blk; s.Pm += b.Pm; s.Pim += b.Pim;
+            s.Fow += b.Fow; s.Fol += b.Fol; s.Hit += b.Hit; s.Tk += b.Tk; s.Gv += b.Gv;
         }
         // Победный гол: гол, после которого у победителя на 1 больше, чем у проигравшего в итоге
         var winTeam = homeWon ? g.Home : g.Away; int loserGoals = homeWon ? r.AwayGoals : r.HomeGoals; int cnt = 0;

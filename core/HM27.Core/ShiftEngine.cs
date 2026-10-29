@@ -12,6 +12,11 @@ public sealed class PlayerBox
     public int Blk { get; set; }        // заблокированные броски соперника
     public int Pm { get; set; }         // плюс-минус
     public int Pim { get; set; }        // штрафные минуты
+    public int Fow { get; set; }        // вбрасывания: выиграно
+    public int Fol { get; set; }        //              проиграно
+    public int Hit { get; set; }        // силовые приёмы
+    public int Tk { get; set; }         // отборы
+    public int Gv { get; set; }         // потери
     // вратарь
     public int Sa { get; set; }
     public int Ga { get; set; }
@@ -96,7 +101,7 @@ public static class ShiftEngine
     // ───────────── эффект счёта при 5×5 (проигрывающий на 1, 2, 3+): попытки — по НХЛ (53,2 / 54,8 / 55,8% попыток),
     // голы — подбор по доле овертаймов (поправка на то, что отстают чаще слабые)
     public static double[] SE_ATT_TRAIL = { 1.066, 1.10, 1.124 }, SE_ATT_LEAD = { 0.938, 0.91, 0.89 };
-    public static double[] SE_G_TRAIL = { 1.06, 1.08, 1.08 }, SE_G_LEAD = { 0.97, 0.96, 0.96 };
+    public static double[] SE_G_TRAIL = { 1.12, 1.10, 1.08 }, SE_G_LEAD = { 0.94, 0.95, 0.96 };
 
     // ───────────── удаления: 2,83 большинства на команду за матч, 4×4 — 0,9 мин за матч
     public static double PEN_PER_60 = 2.35, COINC_PER_60 = 0.25;
@@ -109,6 +114,19 @@ public static class ShiftEngine
     public const double PULL1 = 120, PULL2 = 125, PULL3 = 220, PULL_SD = 25, EARLY1 = 75, EARLY2 = 90;
     // ───────────── усталость: энергия 0–1; на льду тратится (меньше при высокой выносливости), на скамейке восстанавливается
     public static double DRAIN = 0.0058, REC = 0.0045, FAT_AT = 0.7, FAT_K = 5.0;
+    // ───────────── вбрасывания (НХЛ 2024-26: 56 за матч; у центров 50,5% + 1,45 п.п. на ед. «вбрасывания»).
+    // После вбрасывания 30 с попытки и голы обеих команд — как в протоколах (5×5, относительно среднего за 30 с):
+    // в зоне атаки выигравший 1,84 / 1,30 (попытки / голы), проигравший 0,42 / 0,44; в средней 0,71 / 0,57 и 0,48 / 0,45;
+    // в своей зоне выигравший 0,58 / 0,49, проигравший (он в зоне атаки) 0,74 / 0,72.
+    /// <summary>Отдача попытки в целом: после вбрасываний в зоне атаки много бросков от синей — без поправки попыток на гол на 6–7% больше, чем в НХЛ.</summary>
+    public static double ATT_Q = 1.07;
+    /// <summary>Доля силы атаки (QS_A) и обороны (QS_D) пятёрки, которая меняет качество бросков, а не их число.</summary>
+    public static double QS_A = 0.3, QS_D = 0.5;
+    public const double FO_K = 0.058, FO_WIN = 30, FREEZE = 0.30, STOP_PER_60 = 24.5, STOP_NEUTRAL = 0.33;
+    static readonly double[,] FO_MULT = { { 1.84, 1.30, 0.42, 0.44 }, { 0.71, 0.57, 0.48, 0.45 }, { 0.58, 0.49, 0.74, 0.72 } };
+    // ───────────── силовые, отборы, потери за 60 минут на игрока (база НХЛ): среднее и наклон по характеристике
+    // (средние приведены к числу событий за матч в протоколах: силовых 43,6, отборов 11,9, потерь 23,4 — у игроков в базе свой учёт по аренам)
+    public const double HIT_F = 4.9 * 0.84, HIT_D = 3.3 * 0.84, HIT_K = 0.20, TK_F = 0.95 * 1.27, TK_D = 0.90 * 1.27, TK_K = 0.072, GV_F = 2.9 * 0.77, GV_D = 3.2 * 0.77;
     // ───────────── спецбригады: +/− к силе за ед. характеристики большинства/меньшинства у каждого в звене
     public const double PP_K = 0.015, PK_K = 0.015;
 
@@ -133,7 +151,7 @@ public static class ShiftEngine
     sealed class Sk
     {
         public int Id; public PlayerData P; public bool D;
-        public double Off, Def, FinPart, Phi, Fin, FinE, Lng, W, Pass, A2W, PenW, Drain, Pp, Pk, BlkW, OtVal, So;
+        public double Off, Def, FinPart, Phi, Fin, FinE, Lng, W, Pass, A2W, PenW, Drain, Pp, Pk, BlkW, OtVal, So, Fo, HitR, TkR, GvR;
         public readonly double[] Zone = new double[3];
         public bool Thru, Draw, Tip, Back, Wrap, Slap, NetT, BlkT;
         public double E = 1; public int T0; public bool On;
@@ -159,7 +177,7 @@ public static class ShiftEngine
     /// Поправка интенсивности по составам (подбор по целям НХЛ: HM27.Check engine). Подобрано так, что при уровне лиги
     /// из базы, равном НХЛ 2022-26 (NHL_GPG), движок даёт цели engine_targets.json; при другом уровне все составы масштабируются.
     /// </summary>
-    public static readonly Dictionary<string, double> K_STATE = new() { ["5v5"] = 0.951, ["pp"] = 0.928, ["pk"] = 1.017, ["4v4"] = 0.899, ["3v3"] = 0.945, ["en_against"] = 0.709, ["en_for"] = 1.0 };
+    public static readonly Dictionary<string, double> K_STATE = new() { ["5v5"] = 1.077, ["pp"] = 1.011, ["pk"] = 1.30, ["4v4"] = 1.11, ["3v3"] = 1.084, ["en_against"] = 0.709, ["en_for"] = 1.17 };
 
     static Refs ComputeRefs(GameData d)
     {
@@ -215,7 +233,8 @@ public static class ShiftEngine
         public double EsOff;             // средняя по времени атака пятёрки в равных составах (по звеньям тренера)
         public double Mult;              // хозяева/гости, усталость от второго матча подряд, темп, плей-офф
         // на текущий момент
-        public double Rate, PenRate, Q, Lc, FinBar;
+        public double Rate, PenRate, Q, Lc, FinBar, HitRate, TkRate, GvRate;
+        public int FoUntil = -1; public double FoAtt = 1, FoG = 1;
         public double[] Pi = Array.Empty<double>();
         public int N;                    // полевых по правилам (без снятого вратаря)
     }
@@ -238,7 +257,9 @@ public static class ShiftEngine
         readonly GameData data; readonly Random rng; readonly bool playoff; readonly MatchResult r;
         readonly Team H, A; readonly TeamStrength.Scale sc; readonly double spread, norm; readonly Refs refs;
         public Team Home => H;
-        int T, Per; bool ot3, done; int lastRate = -100; bool dirty = true, recompose = true;
+        int T, Per; bool ot3, done;
+        /// <summary>Вбрасывание на следующей секунде: 1 — в центре, 2 — в зоне атаки хозяев, 3 — гостей.</summary>
+        int foPending; int lastRate = -100; bool dirty = true, recompose = true;
 
         public Sim(GameData d, MatchSide home, MatchSide away, Random rng, bool playoff, MatchResult r, bool refs = true)
         {
@@ -299,6 +320,10 @@ public static class ShiftEngine
                 sk.So = (a("fin") + a("hnd")) / 2;
                 sk.FinE = sk.Fin <= FIN_TOP ? sk.Fin : FIN_TOP + FIN_TOP_K * (sk.Fin - FIN_TOP);
                 sk.Lng = a("lng");
+                sk.Fo = a("fo");
+                sk.HitR = (isD ? HIT_D : HIT_F) * Math.Exp(HIT_K * (a("hit") - 11)) / 3600;
+                sk.TkR = (isD ? TK_D : TK_F) * Math.Exp(TK_K * (a("tka") - 11)) / 3600;
+                sk.GvR = (isD ? GV_D : GV_F) * Math.Exp(0.02 * (a("hnd") - 11)) * (tr.Contains("risk") ? (isD ? 1.17 : 1.27) : 1) / 3600;
                 t.All[id] = sk;
                 return sk;
             }
@@ -392,6 +417,9 @@ public static class ShiftEngine
                 if (!ot) PullCheck(len - s);
                 Rotate();
                 if (recompose) Compose();
+                if (s == 0) foPending = 1;
+                if (foPending != 0) Faceoff();
+                if (T == H.FoUntil || T == A.FoUntil) dirty = true;
                 if (dirty || T - lastRate >= 10) Rates();
                 double u = rng.NextDouble();
                 if ((u -= H.Rate) < 0) Attempt(H);
@@ -399,6 +427,13 @@ public static class ShiftEngine
                 else if ((u -= H.PenRate) < 0) Penalty(H);
                 else if ((u -= A.PenRate) < 0) Penalty(A);
                 else if (!ot3 && (u -= CoincRate()) < 0) Coincidental();
+                else if ((u -= STOP_PER_60 / 3600) < 0) Stoppage();
+                else if ((u -= H.HitRate) < 0) Minor(H, "hit");
+                else if ((u -= A.HitRate) < 0) Minor(A, "hit");
+                else if ((u -= H.TkRate) < 0) Minor(H, "tk");
+                else if ((u -= A.TkRate) < 0) Minor(A, "tk");
+                else if ((u -= H.GvRate) < 0) Minor(H, "gv");
+                else if ((u -= A.GvRate) < 0) Minor(A, "gv");
                 if (ot && H.Goals != A.Goals) done = true;
                 if (Diag != null)
                     foreach (var t in new[] { H, A })
@@ -604,8 +639,13 @@ public static class ShiftEngine
                 if (diff < 0) { int k = Math.Min(3, -diff) - 1; seG = SE_G_TRAIL[k]; seA = SE_ATT_TRAIL[k]; }
                 else if (diff > 0) { int k = Math.Min(3, diff) - 1; seG = SE_G_LEAD[k]; seA = SE_ATT_LEAD[k]; }
             }
-            t.Lc = baseG / 3600 * norm * K_CAL * t.Mult * Math.Exp(att + dfn) * seG;
-            t.Q = seG / seA;
+            double foG = T < t.FoUntil ? t.FoG : 1, foA = T < t.FoUntil ? t.FoAtt : 1;
+            t.Lc = baseG / 3600 * norm * K_CAL * t.Mult * Math.Exp(att + dfn) * seG * foG;
+            // часть силы атаки и обороны — в качестве бросков (реализации), а не в их числе: голы те же, но за сильной обороной
+            // вратарь видит броски похуже, а у сильной атаки выше реализация (зеркальная проверка вратарей: % отражённых устойчив)
+            t.Q = seG / seA * foG / foA * ATT_Q * Math.Exp(QS_A * (att - spread * sc.MA) + QS_D * (dfn - spread * sc.MY));
+            t.HitRate = t.TkRate = t.GvRate = 0;
+            foreach (var sk in t.On) { t.HitRate += sk.HitR; t.TkRate += sk.TkR; t.GvRate += sk.GvR; }
             // ожидаемая отдача попытки при этом составе (без поправки на вратаря и завершение — они в среднем 1)
             t.Pi = new double[n];
             double wsum = 0;
@@ -762,8 +802,9 @@ public static class ShiftEngine
                 Goal(t, o, s, type, rebound ? prev : null); return;
             }
             r.Events.Add(new MatchEvent { T = T, Team = t.Abbr, Kind = "shot", P1 = s.Id, P2 = o.Goalie, Note = type });
+            if (!rebound && rng.NextDouble() < FREEZE) { foPending = t == H ? 2 : 3; return; }   // вратарь накрыл — вбрасывание в зоне атаки бросавших
             // добивание
-            if (!rebound && rng.NextDouble() < REB_P)
+            if (!rebound && rng.NextDouble() < REB_P / (1 - FREEZE))
             {
                 var others = t.On.Where(x => x != s).ToList();
                 var rs = PickSk(others.Count > 0 ? others : t.On, x => (x.NetT ? 2.5 : 1) * (x.D ? 0.4 : 1) * x.Zone[0]);
@@ -822,9 +863,10 @@ public static class ShiftEngine
                     if (pen.Double && pen.End - T > 120) pen.End = T + 120; else o.Pens.Remove(pen);
                 }
             }
-            // после гола — новое вбрасывание, тренеры меняют звенья
+            // после гола — новое вбрасывание в центре, тренеры меняют звенья
             t.FLeft = t.DLeft = o.FLeft = o.DLeft = 0;
             recompose = dirty = true;
+            foPending = 1;
         }
 
         void Penalty(Team t)
@@ -838,6 +880,44 @@ public static class ShiftEngine
             who.Box.Pim += min;
             r.Events.Add(new MatchEvent { T = T, Team = t.Abbr, Kind = "pen", P1 = who.Id, P2 = min, Note = PenNames[rng.Next(PenNames.Length)] });
             recompose = dirty = true;
+            foPending = Opp(t) == H ? 2 : 3;     // в зоне нарушителя
+        }
+
+        /// <summary>Остановка без броска (проброс, вне игры, шайба за бортом): в центре или у ворот того, на кого давят.</summary>
+        void Stoppage()
+        {
+            if (rng.NextDouble() < STOP_NEUTRAL) { foPending = 1; return; }
+            double ph = H.Rate / Math.Max(1e-9, H.Rate + A.Rate);
+            foPending = rng.NextDouble() < ph ? 2 : 3;
+        }
+
+        void Faceoff()
+        {
+            int zone = foPending; foPending = 0;
+            Sk Taker(Team t) => t.On.Where(x => !x.D).OrderByDescending(x => x.P.Pos == "C" ? 1 : 0).ThenByDescending(x => x.Fo).FirstOrDefault() ?? t.On.FirstOrDefault();
+            var ch = Taker(H); var ca = Taker(A);
+            if (ch == null || ca == null) return;
+            bool homeWins = rng.NextDouble() < 1 / (1 + Math.Exp(-FO_K * (ch.Fo - ca.Fo)));
+            var (w, l, wt, lt) = homeWins ? (ch, ca, H, A) : (ca, ch, A, H);
+            w.Box.Fow++; l.Box.Fol++;
+            // зона с точки зрения выигравшего: 0 — атаки, 1 — средняя, 2 — своя
+            int z = zone == 1 ? 1 : (zone == 2) == (wt == H) ? 0 : 2;
+            wt.FoAtt = FO_MULT[z, 0]; wt.FoG = FO_MULT[z, 1]; lt.FoAtt = FO_MULT[z, 2]; lt.FoG = FO_MULT[z, 3];
+            wt.FoUntil = lt.FoUntil = T + (int)FO_WIN;
+            r.Events.Add(new MatchEvent { T = T, Team = wt.Abbr, Kind = "fo", P1 = w.Id, P2 = l.Id, Note = z == 0 ? "O" : z == 1 ? "N" : "D" });
+            Diag?.S(w.Id, "fow"); Diag?.S(l.Id, "fol");
+            dirty = true;
+        }
+
+        void Minor(Team t, string kind)
+        {
+            var who = PickSk(t.On, x => kind == "hit" ? x.HitR : kind == "tk" ? x.TkR : x.GvR);
+            if (who == null) return;
+            int victim = 0;
+            if (kind == "hit") { who.Box.Hit++; victim = PickSk(Opp(t).On, x => 1)?.Id ?? 0; }
+            else if (kind == "tk") who.Box.Tk++;
+            else who.Box.Gv++;
+            r.Events.Add(new MatchEvent { T = T, Team = t.Abbr, Kind = kind, P1 = who.Id, P2 = victim });
         }
 
         void Coincidental()

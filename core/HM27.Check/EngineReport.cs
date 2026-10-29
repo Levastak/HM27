@@ -129,6 +129,9 @@ static class EngineReport
             Console.WriteLine($"  {p.NameRu,-24} {p.Team} {x.g:F0}+{x.a:F0}={x.g + x.a:F0} за {x.gp:F0} м., {x.toi:F1} мин, IPP {(x.g + x.a) / Math.Max(1, ongf):P0}; реально {real}");
         }
         TraitReport(data, all, D, tp);
+        var fo = FaceoffMirror(data, all);
+        Console.WriteLine($"Вбрасывания: {fo.perGame:F1} за матч (НХЛ 56,3); у центров (300+): разброс % {fo.sd:F3} (НХЛ 0,051), r с реальным % {fo.r:F2}, средняя разница {fo.diff:+0.000}");
+        Console.WriteLine($"За матч (игра / НХЛ): силовые {all.Sum(c => c.Skaters.Values.Sum(x => (double)x.Hit)) / games:F1}/43,6, отборы {all.Sum(c => c.Skaters.Values.Sum(x => (double)x.Tk)) / games:F1}/11,9, потери {all.Sum(c => c.Skaters.Values.Sum(x => (double)x.Gv)) / games:F1}/23,4");
         // таблица
         var pts = all.Select(c => c.Table.Values.Select(r => (double)r.Pts).OrderByDescending(x => x).ToList()).ToList();
         Console.WriteLine($"Таблица: лидер {pts.Average(p => p[0]):F0}, последний {pts.Average(p => p[^1]):F0}, разброс {pts.Average(p => Sd(p)):F1} (НХЛ: 112–130, 46–60, 13–18,6)");
@@ -171,6 +174,22 @@ static class EngineReport
             if (n >= 3 && have[1] > 0 && other[1] > 0 && other[0] > 0) res.Add((row.Name, v.GetProperty("ratio").GetDouble(), have[0] / have[1] / (other[0] / other[1]), n));
         }
         return res;
+    }
+
+    /// <summary>Вбрасывания: сколько за матч, разброс процента у центров и совпадение с реальным процентом (база, fo_pct).</summary>
+    public static (double perGame, double sd, double r, double diff) FaceoffMirror(GameData data, List<Career> all)
+    {
+        int games = all.Sum(c => c.Games.Count(g => g.Played && !g.Playoff));
+        double total = all.Sum(c => c.Skaters.Values.Sum(x => (double)x.Fow));
+        var rows = new List<(double sim, double real)>();
+        foreach (var p in data.Players.Where(p => p.Pos == "C" && p.X != null && p.X.GetValueOrDefault("fo_pct") != null))
+        {
+            double w = all.Sum(c => (double)(c.Skaters.GetValueOrDefault(p.Id)?.Fow ?? 0)), n = w + all.Sum(c => (double)(c.Skaters.GetValueOrDefault(p.Id)?.Fol ?? 0));
+            if (n >= 300 * all.Count / 1.0 && p.X.TryGetValue("fo_n", out var fn) && fn >= 300) rows.Add((w / n, p.X["fo_pct"].Value));
+        }
+        double m = rows.Average(x => x.sim), sd = Math.Sqrt(rows.Average(x => (x.sim - m) * (x.sim - m)));
+        double mr = rows.Average(x => x.real), cov = rows.Average(x => (x.sim - m) * (x.real - mr)), sdr = Math.Sqrt(rows.Average(x => (x.real - mr) * (x.real - mr)));
+        return (total / games, sd, cov / (sd * sdr), rows.Average(x => x.sim - x.real));
     }
 
     static void TraitReport(GameData data, List<Career> all, ShiftEngine.Diagnostics D, string tp)

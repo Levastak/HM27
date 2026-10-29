@@ -110,7 +110,8 @@ public static class Chronicle
                     if (r.Box.TryGetValue(id, out var b))
                     {
                         // протокол движка по сменам: +/− на льду вместо разницы шайб команды
-                        v = 6.55 + 0.85 * goals + 0.5 * assists + 0.07 * b.S + 0.06 * b.Blk - 0.075 * b.Pim + (won ? 0.25 : -0.2) + 0.12 * b.Pm;
+                        v = 6.55 + 0.85 * goals + 0.5 * assists + 0.07 * b.S + 0.06 * b.Blk - 0.075 * b.Pim + (won ? 0.25 : -0.2) + 0.12 * b.Pm
+                            + 0.08 * b.Tk - 0.06 * b.Gv + 0.02 * b.Hit + (b.Fow + b.Fol >= 8 ? 0.6 * (b.Fow / (double)(b.Fow + b.Fol) - 0.5) : 0);
                     }
                     else
                     {
