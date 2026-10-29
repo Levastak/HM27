@@ -59,12 +59,14 @@ public partial class Shell : Control
         {
             new Item("Обзор", "landmark", "club", "overview", "Сила, прогноз прессы, лидеры"),
             new Item("Игроки", "users", "club", "players", "Состав клуба"),
+            new Item("Статистика", "chart-column", "club", "stats", "Клуб на фоне лиги: xG, реализация, вратари"),
             new Item("Расписание", "calendar-days", "club", "schedule", "Матчи клуба"),
         }),
         new Section("league", "Лига", new[]
         {
             new Item("Таблица", "trophy", "comp", "table", "Дивизионы, конференции, уайлд-кард"),
             new Item("Статистика", "chart-column", "comp", "stats", "Лидеры лиги: бомбардиры, снайперы, вратари"),
+            new Item("Клубы", "shield", "comp", "teams", "Продвинутая статистика всех 32 клубов"),
             new Item("Плей-офф", "git-fork", "comp", "playoffs", "Сетка Кубка Стэнли"),
         }),
         new Section("career", "Карьера", new[]
@@ -88,8 +90,8 @@ public partial class Shell : Control
     static readonly Dictionary<string, (string key, string name)[]> Subs = new()
     {
         ["squad"] = new[] { ("players", "Игроки"), ("stats", "Статистика") },
-        ["comp"] = new[] { ("table", "Таблица"), ("stats", "Статистика лиги"), ("playoffs", "Плей-офф") },
-        ["club"] = new[] { ("overview", "Обзор"), ("players", "Игроки"), ("schedule", "Расписание") },
+        ["comp"] = new[] { ("table", "Таблица"), ("stats", "Статистика лиги"), ("teams", "Клубы"), ("playoffs", "Плей-офф") },
+        ["club"] = new[] { ("overview", "Обзор"), ("players", "Игроки"), ("stats", "Статистика"), ("schedule", "Расписание") },
         ["player"] = new[] { ("overview", "Обзор"), ("attrs", "Характеристики"), ("stats", "Статистика"), ("career", "Карьера") },
     };
 
@@ -163,9 +165,9 @@ public partial class Shell : Control
             "squad" => _cur.Sub == "stats" ? Embedded("stats-mine") : new SquadPage(C.UserTeam),
             "lines" => Ui.Margin(new LinesView(), 16, 12, 16, 12).Also(m => { m.SizeFlagsHorizontal = m.SizeFlagsVertical = SizeFlags.ExpandFill; }),
             "schedule" => Embedded("calendar"),
-            "comp" => Embedded(_cur.Sub == "stats" ? "stats" : _cur.Sub),
+            "comp" => _cur.Sub == "teams" ? new LeagueTeamsPage() : Embedded(_cur.Sub == "stats" ? "stats" : _cur.Sub),
             "player" => new PlayerPage(int.Parse(_cur.Arg), _cur.Sub),
-            "club" => _cur.Sub == "schedule" ? Embedded("calendar:" + (_cur.Arg ?? C.UserTeam)) : _cur.Sub == "players" ? new SquadPage(_cur.Arg ?? C.UserTeam) : new ClubPage(_cur.Arg ?? C.UserTeam),
+            "club" => _cur.Sub == "schedule" ? Embedded("calendar:" + (_cur.Arg ?? C.UserTeam)) : _cur.Sub == "players" ? new SquadPage(_cur.Arg ?? C.UserTeam) : _cur.Sub == "stats" ? new TeamStatsPage(_cur.Arg ?? C.UserTeam) : new ClubPage(_cur.Arg ?? C.UserTeam),
             "medical" => new MedicalPage(),
             _ => new HomePage(),
         };

@@ -24,6 +24,8 @@ public partial class MatchScreen : Control
     Label _scoreL, _clockL;
     VBoxContainer _feed;
     MomentumChart _chart;
+    XgChart _xg;
+    ShotMap _map;
     Dictionary<string, (Label a, Label h)> _stat;
     VBoxContainer _lineupBox;
 
@@ -71,7 +73,7 @@ public partial class MatchScreen : Control
     Control ScoreBar()
     {
         var bar = new PanelContainer();
-        var sb = new StyleBoxFlat { BgColor = new Color("0B1017"), BorderColor = Ui.Line, BorderWidthBottom = 1 };
+        var sb = new StyleBoxFlat { BgColor = Ui.Side, BorderColor = Ui.Line, BorderWidthBottom = 1 };
         sb.ContentMarginLeft = sb.ContentMarginRight = 14; sb.ContentMarginTop = sb.ContentMarginBottom = 8;
         bar.AddThemeStyleboxOverride("panel", sb);
         var h = Ui.H(12);
@@ -80,11 +82,22 @@ public partial class MatchScreen : Control
         h.AddChild(Ui.L(_g.Playoff ? SeriesTitle() : $"Регулярный чемпионат · {Ui.Date(_g.Date)}", 12, Ui.Muted));
         h.AddChild(Ui.Spacer());
         h.AddChild(TeamPlate(Away, false));
-        var mid = Ui.V(0);
-        mid.CustomMinimumSize = new Vector2(170, 0);
-        _scoreL = Ui.L(_g.Played ? $"{_g.Result.AwayGoals} : {_g.Result.HomeGoals}" : "– : –", 34, Ui.Text, Ui.Black, HorizontalAlignment.Center);
-        _clockL = Ui.L(_g.Played ? EndText(_g.Result) : "до матча", 12, Ui.Gold, Ui.Semi, HorizontalAlignment.Center);
-        mid.AddChild(_scoreL); mid.AddChild(_clockL);
+        var mid = Ui.V(-2);
+        mid.CustomMinimumSize = new Vector2(190, 0);
+        // табло: янтарные цифры в тёмном окне, как знак HM27
+        var board = new PanelContainer();
+        var bsb = new StyleBoxFlat { BgColor = new Color("040A14"), BorderColor = new Color(Ui.Gold, 0.45f) };
+        bsb.SetBorderWidthAll(1); bsb.SetCornerRadiusAll(4);
+        bsb.ContentMarginLeft = bsb.ContentMarginRight = 18; bsb.ContentMarginTop = 0; bsb.ContentMarginBottom = 0;
+        board.AddThemeStyleboxOverride("panel", bsb);
+        _scoreL = Ui.L(_g.Played ? $"{_g.Result.AwayGoals}:{_g.Result.HomeGoals}" : "–:–", 44, Ui.Gold, Ui.CondBlack, HorizontalAlignment.Center);
+        _scoreL.AddThemeColorOverride("font_shadow_color", new Color(Ui.Gold, 0.4f));
+        _scoreL.AddThemeConstantOverride("shadow_outline_size", 6);
+        _scoreL.AddThemeConstantOverride("shadow_offset_x", 0); _scoreL.AddThemeConstantOverride("shadow_offset_y", 0);
+        board.AddChild(_scoreL);
+        board.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
+        _clockL = Ui.L(_g.Played ? EndText(_g.Result) : "до матча", 12, Ui.Muted, Ui.Semi, HorizontalAlignment.Center);
+        mid.AddChild(board); mid.AddChild(_clockL);
         h.AddChild(mid);
         h.AddChild(TeamPlate(Home, true));
         h.AddChild(Ui.Spacer());
@@ -100,7 +113,7 @@ public partial class MatchScreen : Control
         var c1 = new Color(t.Colors[0]); var c2 = new Color(t.Colors.Count > 1 ? t.Colors[1] : t.Colors[0]);
         var kit = Ui.V(0, new ColorRect { Color = c1.Luminance < 0.06f ? c1.Lightened(0.2f) : c1, CustomMinimumSize = new Vector2(8, 22) }, new ColorRect { Color = c2, CustomMinimumSize = new Vector2(8, 10) });
         kit.AddThemeConstantOverride("separation", 0);
-        var name = Ui.V(0, Ui.L(t.City.ToUpperInvariant(), 16, Ui.Text, Ui.Black, home ? HorizontalAlignment.Left : HorizontalAlignment.Right),
+        var name = Ui.V(-4, Ui.L(t.City, 24, Ui.Text, Ui.CondBold, home ? HorizontalAlignment.Left : HorizontalAlignment.Right),
             Ui.L(t.Name.Replace(t.City, "").Trim(), 11, Ui.Muted, null, home ? HorizontalAlignment.Left : HorizontalAlignment.Right));
         name.CustomMinimumSize = new Vector2(170, 0);
         var badge = new TeamBadge(t, 40) { SizeFlagsVertical = SizeFlags.ShrinkCenter };
@@ -207,13 +220,19 @@ public partial class MatchScreen : Control
         _ev = Events();
         _shown = 0;
         var body = Frame();
-        _scoreL.Text = "0 : 0"; _clockL.Text = "1-й период · 00:00";
+        _scoreL.Text = "0:0"; _clockL.Text = "1-й период · 00:00";
         var row = Ui.Expand(Ui.H(12), true, true);
         body.AddChild(row);
         row.AddChild(StatsPanel());
         var center = Ui.Expand(Ui.V(10), true, true);
-        _chart = new MomentumChart(_ev, _g, C) { CustomMinimumSize = new Vector2(0, 120) };
-        center.AddChild(Widget.Make("Давление (попытки бросков)", _chart, null, null, 8));
+        _xg = new XgChart(_g.Result.Events, _g, C) { CustomMinimumSize = new Vector2(0, 140) };
+        if (_xg.HasXg) { _xg.SetClock(0); center.AddChild(Widget.Make("Ожидаемые голы по ходу матча", _xg, null, null, 8)); }
+        else
+        {
+            _xg = null;
+            _chart = new MomentumChart(_ev, _g, C) { CustomMinimumSize = new Vector2(0, 120) };
+            center.AddChild(Widget.Make("Давление (попытки бросков)", _chart, null, null, 8));
+        }
         _feed = Ui.V(0);
         var feedHead = Ui.H(8, Ui.L("Трансляция", 12, Ui.Muted, Ui.Bold), Ui.Spacer());
         var filter = new Segmented(new[] { "Всё", "Ключевые моменты" }, _keyOnly ? 1 : 0, k => { _keyOnly = k == 1; RefillFeed(); });
@@ -230,9 +249,15 @@ public partial class MatchScreen : Control
         center.AddChild(ctl);
         row.AddChild(center);
         _lineupBox = Ui.V(2);
+        var rightCol = Ui.V(12); rightCol.CustomMinimumSize = new Vector2(420, 0);
+        _map = new ShotMap(_g.Result.Events, _g, C) { CustomMinimumSize = new Vector2(0, 220) };
+        _map.SetClock(0);
+        if (!_map.Empty) rightCol.AddChild(Widget.Make("Карта бросков", _map, null, null, 8));
+        else _map = null;
         var right = Widget.Make("Отличились", Ui.Scroll(_lineupBox), null, null, 10);
-        right.CustomMinimumSize = new Vector2(280, 0);
-        row.AddChild(right);
+        right.SizeFlagsVertical = SizeFlags.ExpandFill;
+        rightCol.AddChild(right);
+        row.AddChild(rightCol);
         AddFeed(new MatchEvent { T = 0, Kind = "start" });
     }
 
@@ -242,7 +267,7 @@ public partial class MatchScreen : Control
         var g = new GridContainer { Columns = 3 };
         g.AddThemeConstantOverride("h_separation", 10); g.AddThemeConstantOverride("v_separation", 6);
         g.AddChild(new TeamBadge(Away, 22)); g.AddChild(Ui.L("", 12)); g.AddChild(new TeamBadge(Home, 22));
-        foreach (var k in new[] { "Броски в створ", "Попытки бросков", "Заблокировано", "Удаления", "Голы в большинстве", "Сейвы", "Выиграно вбрасываний", "Силовые приёмы", "Отборы", "Потери" })
+        foreach (var k in new[] { "Броски в створ", "Ожидаемые голы", "Попытки бросков", "Заблокировано", "Удаления", "Голы в большинстве", "Сейвы", "Выиграно вбрасываний", "Силовые приёмы", "Отборы", "Потери" })
         {
             var a = Ui.L("0", 15, Ui.Text, Ui.Bold, HorizontalAlignment.Center); var h = Ui.L("0", 15, Ui.Text, Ui.Bold, HorizontalAlignment.Center);
             a.CustomMinimumSize = h.CustomMinimumSize = new Vector2(40, 0);
@@ -267,6 +292,7 @@ public partial class MatchScreen : Control
             var vals = new Dictionary<string, string>
             {
                 ["Броски в створ"] = Count(team, e => e.Kind == "shot" || (e.Kind == "goal" && e.Note != "en")).ToString(),
+                ["Ожидаемые голы"] = past.Where(e => e.Team == team && e.Kind is "shot" or "goal").Sum(e => e.Xg).ToString("0.0"),
                 ["Попытки бросков"] = Count(team, e => e.Kind is "shot" or "miss" or "block" or "goal").ToString(),
                 ["Заблокировано"] = Count(opp, e => e.Kind == "block").ToString(),
                 ["Удаления"] = Count(team, e => e.Kind == "pen").ToString(),
@@ -288,10 +314,12 @@ public partial class MatchScreen : Control
         _clock += delta * _speed;
         while (_shown < _ev.Count && _ev[_shown].T <= _clock) AddFeed(_ev[_shown++]);
         int hg = _ev.Take(_shown).Count(e => e.Kind == "goal" && e.Team == _g.Home), ag = _ev.Take(_shown).Count(e => e.Kind == "goal" && e.Team == _g.Away);
-        _scoreL.Text = $"{ag} : {hg}";
+        _scoreL.Text = $"{ag}:{hg}";
         int t = (int)Math.Min(_clock, 3600);
         _clockL.Text = _clock < 3600 ? $"{t / 1200 + 1}-й период · {(t % 1200) / 60:00}:{t % 60:00}" : r.End == "REG" ? "Конец матча" : r.End == "OT" ? "Овертайм" : "Буллиты";
         _chart?.SetClock(_clock);
+        _xg?.SetClock(_clock);
+        _map?.SetClock(_clock);
         UpdateStats(_clock);
         double end = Math.Max(3600, _ev.Count > 0 ? _ev[^1].T : 3600) + (r.End == "SO" ? 120 : 0);
         if (_clock >= end + 30) { _clock = -1; ShowResult(); }
@@ -405,9 +433,18 @@ public partial class MatchScreen : Control
         row.AddChild(Ui.Scroll(left).Also(s => s.CustomMinimumSize = new Vector2(310, 0)));
 
         var center = Ui.Expand(Ui.V(10), true, true);
-        var chart = new MomentumChart(_ev, _g, C) { CustomMinimumSize = new Vector2(0, 120) };
-        chart.SetClock(1e9);
-        center.AddChild(Widget.Make("Давление (попытки бросков)", chart, null, null, 8));
+        var xg = new XgChart(r.Events, _g, C);
+        if (xg.HasXg)
+        {
+            center.AddChild(Widget.Make("Ожидаемые голы по ходу матча", xg, null, null, 8));
+            center.AddChild(Widget.Make("Карта бросков", new ShotMap(r.Events, _g, C) { CustomMinimumSize = new Vector2(0, 250) }, null, null, 8));
+        }
+        else
+        {
+            var chart = new MomentumChart(_ev, _g, C) { CustomMinimumSize = new Vector2(0, 120) };
+            chart.SetClock(1e9);
+            center.AddChild(Widget.Make("Давление (попытки бросков)", chart, null, null, 8));
+        }
         var goals = Ui.V(6);
         foreach (var e in r.Goals) goals.AddChild(GoalRow(e));
         if (r.Goals.Count == 0) goals.AddChild(Ui.L("Голов не было", 13, Ui.Muted));

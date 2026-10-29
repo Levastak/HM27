@@ -330,3 +330,20 @@ public partial class RadarChart : Control
     public override string _GetTooltip(Vector2 at) =>
         _axes == null ? "" : string.Join("\n", _axes.Select(a => $"{a.name}: {a.v:0.0} (средний {a.avg:0.0})"));
 }
+
+/// <summary>Полоса «наши — их»: доля слева синим, остальное — приглушённо.</summary>
+public partial class SplitBar : Control
+{
+    readonly double _p;
+    readonly Color _a, _b;
+    public SplitBar() { }
+    public SplitBar(double p, Color a, Color b, int h = 8) { _p = p; _a = a; _b = b; CustomMinimumSize = new Vector2(60, h + 6); MouseFilter = MouseFilterEnum.Ignore; }
+
+    public override void _Draw()
+    {
+        float h = CustomMinimumSize.Y - 6, y = (Size.Y - h) / 2, w = Size.X;
+        float x = (float)(w * Math.Clamp(_p, 0, 1));
+        DrawRect(new Rect2(0, y, x - 1, h), _a);
+        DrawRect(new Rect2(x + 1, y, w - x - 1, h), _b);
+    }
+}

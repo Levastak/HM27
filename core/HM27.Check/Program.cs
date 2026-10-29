@@ -11,6 +11,24 @@ void Check(string name, bool ok, string detail)
     if (!ok) fails.Add(name);
 }
 
+if (args.Length > 1 && args[1] == "news")
+{
+    // все письма карьеры за N дней: проверка текстов новостей глазами
+    var nc = Career.New(data, args.Length > 2 ? args[2] : "MIN", 27);
+    int days = args.Length > 3 ? int.Parse(args[3]) : 60;
+    for (int i = 0; i < days && nc.Phase != Phase.Finished; i++) nc.SimDay();
+    foreach (var m in nc.Messages)
+    {
+        Console.WriteLine($"=== #{m.Id} {m.Date} [{m.Tag}] {m.From} · вес {m.Weight}\n# {m.Subject}\n> {m.Lead}");
+        if (m.Facts != null) Console.WriteLine("  " + string.Join(" | ", m.Facts.Select(f => $"{f.Label}: {f.Value} ({f.Sub})")));
+        Console.WriteLine(m.Body);
+        if (m.Quote != null) Console.WriteLine($"«{m.Quote}» — {m.QuoteBy}");
+        Console.WriteLine();
+    }
+    var ts = News.TeamStats(nc);
+    Console.WriteLine($"Сумма сейвов сверх ожидаемых по лиге: {nc.Goalies.Values.Sum(g => g.Gsax):0.0} при {nc.Goalies.Values.Sum(g => g.Ga)} пропущенных; xG полевых {nc.Skaters.Values.Sum(s => s.Ixg):0} при {nc.Skaters.Values.Sum(s => s.G)} голах");
+    return 0;
+}
 if (args.Length > 1 && args[1] == "engine") { EngineReport.Run(data, args.Length > 2 ? int.Parse(args[2]) : 1); return 0; }
 Console.WriteLine($"База: {data.Teams.Count} клубов, {data.Players.Count} игроков, данные на {data.DataDate}; голов за матч на команду {data.League.GoalsPerGame:F3}");
 

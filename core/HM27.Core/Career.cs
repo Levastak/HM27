@@ -311,7 +311,7 @@ public sealed class Career
         if (!mine) { r.Events = new(); r.Box = new(); }   // хронику и протокол храним только для своих матчей — сохранение не раздувается
         foreach (var (side, abbr) in new[] { (h, g.Home), (a, g.Away) })
             GoalieStreak[abbr] = side.Goalie == Lineups[abbr].G1 ? GoalieStreak.GetValueOrDefault(abbr) + 1 : 0;
-        if (g.Home == UserTeam || g.Away == UserTeam) InboxWriter.AfterUserGame(this, g);
+        if (g.Home == UserTeam || g.Away == UserTeam) News.MatchReport(this, g);
         return r;
     }
 
@@ -349,6 +349,7 @@ public sealed class Career
         if (Today.DayOfWeek == DayOfWeek.Monday) Development.Week(this);   // развитие, форма, знание — раз в неделю
         if (Phase == Phase.Playoffs) SchedulePlayoffDay();
         InboxWriter.Periodic(this);
+        News.NewDay(this);
     }
 
     /// <summary>Симулировать до ближайшего матча клуба игрока (сам матч не играется).</summary>
@@ -537,7 +538,7 @@ public sealed class Career
     }
 
     // ------------------------------------------------------------------ удобства для интерфейса
-    public int Unread => Messages.Count(m => !m.Read);
+    public int Unread => Messages.Count(m => !m.Read && !m.IsNews);
 
     public string Short(int id) => id != 0 && Data.PlayerById.TryGetValue(id, out var p) ? p.LastRu : "—";
     public TeamData Team(string abbr) => Data.TeamByAbbr[abbr];

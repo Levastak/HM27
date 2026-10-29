@@ -11,6 +11,34 @@ public sealed class Message
     public bool Read { get; set; }
     /// <summary>Ссылка на объект: id матча, id игрока, «table» и т. п.</summary>
     public string Link { get; set; }
+    // ---- письмо-статья (журнальная вёрстка); у старых писем пусто — показываются как раньше
+    /// <summary>Рубрика: «Матч», «Вечер в НХЛ», «Неделя в НХЛ», «Цифры», «Пресса», «Лазарет», «Клуб», «Лига».</summary>
+    public string Tag { get; set; }
+    /// <summary>Подводка под заголовком.</summary>
+    public string Lead { get; set; }
+    /// <summary>Плашка цифр под подводкой.</summary>
+    public List<MsgFact> Facts { get; set; }
+    /// <summary>Герои материала (карточки игроков).</summary>
+    public List<int> Players { get; set; }
+    /// <summary>Клуб, в цветах которого шапка письма.</summary>
+    public string Team { get; set; }
+    public string Quote { get; set; }
+    public string QuoteBy { get; set; }
+    /// <summary>Вес для портала: 0 — рутина, 3 — главная новость дня.</summary>
+    public int Weight { get; set; }
+    /// <summary>Новость лиги или прессы (лента портала), а не письмо тренеру: не входит в счётчик непрочитанных.</summary>
+    [System.Text.Json.Serialization.JsonIgnore] public bool IsNews => Kind == "league" || Tag is "Вечер в НХЛ" or "Пресса" || (Tag == "Клуб" && From == "Пресса");
+}
+
+public sealed class MsgFact
+{
+    public string Label { get; set; }
+    public string Value { get; set; }
+    public string Sub { get; set; }
+    /// <summary>good | bad | null — цвет цифры.</summary>
+    public string Tone { get; set; }
+    public MsgFact() { }
+    public MsgFact(string label, string value, string sub = null, string tone = null) { Label = label; Value = value; Sub = sub; Tone = tone; }
 }
 
 /// <summary>
@@ -19,10 +47,13 @@ public sealed class Message
 /// </summary>
 public static class InboxWriter
 {
-    public static void Add(Career c, string from, string subject, string body, string kind, string link = null)
+    public static Message Add(Career c, string from, string subject, string body, string kind, string link = null)
     {
         int id = c.Messages.Count == 0 ? 1 : c.Messages.Max(m => m.Id) + 1;
-        c.Messages.Add(new Message { Id = id, Date = c.Today, From = from, Subject = subject, Body = body, Kind = kind, Link = link });
+        var m = new Message { Id = id, Date = c.Today, From = from, Subject = subject, Body = body, Kind = kind, Link = link,
+            Tag = kind switch { "medical" => "Лазарет", "board" => "Клуб", "match" => "Матч", "week" => "Неделя", "league" => "Лига", _ => null } };
+        c.Messages.Add(m);
+        return m;
     }
 
     public static void Welcome(Career c)
@@ -74,22 +105,6 @@ public static class InboxWriter
     public static void Periodic(Career c)
     {
         if (c.Phase != Phase.Regular) return;
-        if (c.Today.DayOfWeek == DayOfWeek.Monday && c.Table[c.UserTeam].Gp > 0)
-        {
-            var t = c.Team(c.UserTeam);
-            var div = c.Sorted(x => x.Division == t.Division);
-            int place = div.FindIndex(x => x.Team == c.UserTeam) + 1;
-            var conf = c.Sorted(x => x.Conference == t.Conference);
-            int cplace = conf.FindIndex(x => x.Team == c.UserTeam) + 1;
-            var week = c.TeamGames(c.UserTeam).Where(g => g.Played && g.Date >= c.Today.AddDays(-7)).ToList();
-            int w = week.Count(g => (g.Home == c.UserTeam) == (g.Result.HomeGoals > g.Result.AwayGoals));
-            var lead = c.Skaters.Where(kv => c.Data.PlayerById[kv.Key].Team == c.UserTeam).OrderByDescending(kv => kv.Value.Pts).FirstOrDefault();
-            Add(c, "Аналитический отдел", $"Итоги недели: {w} {Plural(w, "победа", "победы", "побед")} в {week.Count} {Plural(week.Count, "матче", "матчах", "матчах")}",
-                $"Место в дивизионе: {place}-е, в конференции: {cplace}-е.\n" +
-                (cplace <= 8 ? "Сейчас мы в зоне плей-офф." : $"До зоны плей-офф: {conf[7].Pts - c.Table[c.UserTeam].Pts} {Plural(conf[7].Pts - c.Table[c.UserTeam].Pts, "очко", "очка", "очков")} (с поправкой на игры в запасе смотрите таблицу «Уайлд-кард»).") +
-                (lead.Key != 0 ? $"\nЛучший бомбардир клуба: {c.Data.PlayerById[lead.Key].NameRu}, {lead.Value.G}+{lead.Value.A}." : ""),
-                "week", "table");
-        }
         if (c.Today.Day == 1 && c.Today.Month != 10)
         {
             var from = c.Today.AddMonths(-1);
@@ -103,9 +118,13 @@ public static class InboxWriter
                 var best = pts.OrderByDescending(kv => kv.Value).First();
                 var p = c.Data.PlayerById[best.Key];
                 string[] months = { "январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь" };
-                Add(c, "Лига", $"Игрок месяца ({months[from.Month - 1]}): {p.NameRu}",
-                    $"{p.NameRu} («{c.Team(p.Team).City}») набрал {best.Value} {Plural(best.Value, "очко", "очка", "очков")} за месяц.",
+                var top3 = pts.OrderByDescending(kv => kv.Value).Skip(1).Take(2).Select(kv => $"{c.Data.PlayerById[kv.Key].NameRu} ({kv.Value})").ToList();
+                var m = Add(c, "Лига", $"Игрок месяца: {p.NameRu}",
+                    $"Лучший бомбардир месяца по подсчёту лиги: очки в регулярном чемпионате за {months[from.Month - 1]}.\n\n" +
+                    (top3.Count > 0 ? $"Следом — {string.Join(" и ", top3)}." : ""),
                     "league", $"player:{p.Id}");
+                m.Tag = "Лига"; m.Team = p.Team; m.Weight = 2; m.Players = new List<int> { p.Id };
+                m.Lead = $"{p.NameRu} («{c.Team(p.Team).City}») набрал {best.Value} {Plural(best.Value, "очко", "очка", "очков")} за {months[from.Month - 1]}.";
             }
         }
     }

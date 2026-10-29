@@ -739,6 +739,7 @@ public static class ShiftEngine
             Shot(t, o, s, z, rebound: false, null);
         }
 
+        int curZ = -1; double curXg = 0;   // бросок, ставший голом: зона и xG для события «гол»
         void Shot(Team t, Team o, Sk s, int z, bool rebound, Sk prev)
         {
             int nt = Skaters(t), nop = Skaters(o);
@@ -763,13 +764,13 @@ public static class ShiftEngine
                     if (blocker != null) blocker.Box.Blk++;
                     Diag?.S(s.Id, "blkd");
                     if (Diag != null) Diag.Add(Diag.Blk, lb);
-                    r.Events.Add(new MatchEvent { T = T, Team = t.Abbr, Kind = "block", P1 = s.Id, P2 = blocker?.Id ?? 0 });
+                    r.Events.Add(new MatchEvent { T = T, Team = t.Abbr, Kind = "block", P1 = s.Id, P2 = blocker?.Id ?? 0, Z = z });
                     return;
                 }
                 if (Diag != null) { Diag.S(s.Id, "unb"); Diag.S(s.Id, z == 0 ? "close" : z == 2 ? "far" : "mid"); if (z < 2) Diag.S(s.Id, "near40"); if (lb == "5v5") Diag.S(s.Id, (z == 0 ? "close" : z == 2 ? "far" : "mid") + "_n5"); }
                 if (rng.NextDouble() < MISS[d][z] * mm)
                 {
-                    r.Events.Add(new MatchEvent { T = T, Team = t.Abbr, Kind = "miss", P1 = s.Id, Note = rng.NextDouble() < 0.1 ? "в штангу" : "мимо" });
+                    r.Events.Add(new MatchEvent { T = T, Team = t.Abbr, Kind = "miss", P1 = s.Id, Note = rng.NextDouble() < 0.1 ? "в штангу" : "мимо", Z = z });
                     if (Diag != null) Diag.Add(Diag.Miss, lb);
                     return;
                 }
@@ -777,7 +778,7 @@ public static class ShiftEngine
             else if (Diag != null) { Diag.S(s.Id, "unb"); Diag.S(s.Id, "close"); Diag.S(s.Id, "near40"); Diag.S(s.Id, "reb"); if (lb == "5v5") Diag.S(s.Id, "close_n5"); }
             if (rebound && rng.NextDouble() > REB_ON)
             {
-                r.Events.Add(new MatchEvent { T = T, Team = t.Abbr, Kind = "miss", P1 = s.Id, Note = "добивание мимо" });
+                r.Events.Add(new MatchEvent { T = T, Team = t.Abbr, Kind = "miss", P1 = s.Id, Note = "добивание мимо", Z = 0 });
                 return;
             }
             // в створ
@@ -805,9 +806,10 @@ public static class ShiftEngine
             if (rng.NextDouble() < p)
             {
                 if (Diag != null) { Diag.Add(Diag.Goals, lb); if (rebound) Diag.RebGoals++; if (lb == "5v5") Diag.S(s.Id, (z == 0 || rebound ? "close" : z == 2 ? "far" : "mid") + "_g5"); }
-                Goal(t, o, s, type, rebound ? prev : null); return;
+                curZ = rebound ? 0 : z; curXg = Math.Min(0.95, xg);
+                Goal(t, o, s, type, rebound ? prev : null); curZ = -1; curXg = 0; return;
             }
-            r.Events.Add(new MatchEvent { T = T, Team = t.Abbr, Kind = "shot", P1 = s.Id, P2 = o.Goalie, Note = type });
+            r.Events.Add(new MatchEvent { T = T, Team = t.Abbr, Kind = "shot", P1 = s.Id, P2 = o.Goalie, Note = type, Z = rebound ? 0 : z, Xg = Math.Min(0.95, xg) });
             if (!rebound && rng.NextDouble() < FREEZE) { foPending = t == H ? 2 : 3; return; }   // вратарь накрыл — вбрасывание в зоне атаки бросавших
             // добивание
             if (!rebound && rng.NextDouble() < REB_P / (1 - FREEZE))
@@ -854,7 +856,7 @@ public static class ShiftEngine
                 if (ge.A1 != 0) Diag.Add(Diag.RoleShare, "a1_" + (t.All[ge.A1].D ? "D" : "F"));
                 if (ge.A2 != 0) Diag.Add(Diag.RoleShare, "a2_" + (t.All[ge.A2].D ? "D" : "F"));
             }
-            r.Events.Add(new MatchEvent { T = T, Team = t.Abbr, Kind = "goal", P1 = s.Id, P2 = ge.A1, Note = kind });
+            r.Events.Add(new MatchEvent { T = T, Team = t.Abbr, Kind = "goal", P1 = s.Id, P2 = ge.A1, Note = kind, Z = curZ, Xg = curXg });
             if (kind != "pp")
             {
                 foreach (var x in t.On) x.Box.Pm++;

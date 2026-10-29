@@ -84,7 +84,7 @@ public partial class ClubPage : Control
         FL("Лучший бомбардир", best.Key != 0 ? Links.Player(C, best.Key, $"{C.Short(best.Key)} ({best.Value.Pts})", 14, null, Ui.Semi) : Ui.L("—", 14, Ui.Text, Ui.Semi));
         F("В лазарете", $"{C.Injured.Count(id => C.Data.PlayerById[id].Team == t.Abbr)}");
         F("Темп игры", l.Tempo switch { -1 => "Закрытый", 1 => "Открытый", _ => "Обычный" });
-        var v2 = Ui.V(10, Ui.L(t.Name, 26, Ui.Text, Ui.Bold), g);
+        var v2 = Ui.V(10, Ui.L(t.Name, 34, Ui.Text, Ui.CondBold), g);
         if (t.Abbr != C.UserTeam)
         {
             var next = C.TeamGames(C.UserTeam).Where(x => !x.Played && (x.Home == t.Abbr || x.Away == t.Abbr)).OrderBy(x => x.Date).FirstOrDefault();
@@ -110,7 +110,7 @@ public partial class ClubPage : Control
         ArenaBuilder.Build(world, new Color(t.Colors[0]), new Color(t.Colors.Count > 1 ? t.Colors[1] : t.Colors[0]), new Color("888888"));
         var cam = new OrbitCam { Fov = 46, Current = true };
         world.AddChild(cam);
-        var cap = Ui.V(0, Ui.L("ДОМАШНЯЯ АРЕНА", 10, new Color(1, 1, 1, 0.75f), Ui.Bold), Ui.L(t.Hist != null ? $"{t.Hist.Arena} · {t.City}" : $"{t.City} · 3Д-движок HM27", 13, Colors.White, Ui.Semi));
+        var cap = Ui.V(0, Ui.L("Домашняя арена", 11, new Color(1, 1, 1, 0.75f)), Ui.L(t.Hist != null ? $"{t.Hist.Arena} · {t.City}" : $"{t.City} · 3Д-движок HM27", 13, Colors.White, Ui.Semi));
         var shade = new ColorRect { Color = new Color(0, 0, 0, 0.45f), MouseFilter = MouseFilterEnum.Ignore };
         shade.SetAnchorsPreset(LayoutPreset.BottomWide); shade.OffsetTop = -44;
         holder.AddChild(shade);

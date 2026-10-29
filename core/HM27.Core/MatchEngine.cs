@@ -67,6 +67,10 @@ public sealed class MatchEvent
     public int P1 { get; set; }             // бросающий / нарушитель / автор
     public int P2 { get; set; }             // вратарь / заблокировавший
     public string Note { get; set; }        // тип броска или нарушения
+    /// <summary>Бросок (движок по сменам): зона 0 — у ворот, 1 — средняя, 2 — издали; −1 — не бросок.</summary>
+    public int Z { get; set; } = -1;
+    /// <summary>Ожидаемый гол броска в створ (без вратаря); у блоков и промахов — 0.</summary>
+    public double Xg { get; set; }
 }
 
 /// <summary>Шансы до матча.</summary>

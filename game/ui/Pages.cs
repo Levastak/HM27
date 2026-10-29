@@ -72,7 +72,7 @@ public static class P
 }
 
 // =====================================================================================================
-/// <summary>Главная: виджеты, как на домашнем экране FM.</summary>
+/// <summary>Портал: главная новость, следующий матч, лента лиги, письма, форма, таблица дивизиона и лидеры клуба.</summary>
 public partial class HomePage : Control
 {
     Career C => P.C;
@@ -80,25 +80,117 @@ public partial class HomePage : Control
 
     public override void _Ready()
     {
-        var cols = Ui.H(12);
-        cols.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        var a = Ui.Expand(Ui.V(12)); a.SizeFlagsStretchRatio = 1.35f;
-        var b = Ui.Expand(Ui.V(12));
-        var c = Ui.Expand(Ui.V(12));
-        cols.AddChild(a); cols.AddChild(b); cols.AddChild(c);
-        var page = P.Page(cols);
+        var v = Ui.V(12);
+        var page = P.Page(v);
         page.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(page);
 
         if (C.Phase == Phase.Finished && C.Champion != null)
-            a.AddChild(Widget.Make("Кубок Стэнли 2027", Ui.H(14, new TeamBadge(C.Team(C.Champion), 56), Ui.V(2, Links.Club(C.Team(C.Champion), C.Team(C.Champion).Name, 20, Ui.Text, Ui.Black),
+            v.AddChild(Widget.Make("Кубок Стэнли 2027", Ui.H(14, new TeamBadge(C.Team(C.Champion), 56), Ui.V(2, Links.Club(C.Team(C.Champion), C.Team(C.Champion).Name, 24, Ui.Text, Ui.CondBold),
                 Ui.L(C.Champion == C.UserTeam ? "Это ваш клуб!" : "Многосезонная карьера — в следующих версиях.", 13, Ui.Muted)))));
-        a.AddChild(NextMatch());
-        a.AddChild(Upcoming());
-        b.AddChild(InboxWidget());
+        var top = Ui.H(12);
+        var lead = Lead();
+        if (lead != null) { lead.SizeFlagsStretchRatio = 1.55f; top.AddChild(Ui.Expand(lead)); }
+        top.AddChild(Ui.Expand(NextMatch()));
+        v.AddChild(top);
+
+        var cols = Ui.H(12);
+        var a = Ui.Expand(Ui.V(12)); a.SizeFlagsStretchRatio = 1.2f;
+        var b = Ui.Expand(Ui.V(12));
+        var c = Ui.Expand(Ui.V(12));
+        cols.AddChild(a); cols.AddChild(b); cols.AddChild(c);
+        v.AddChild(cols);
+        a.AddChild(Feed());
+        b.AddChild(Mail());
         b.AddChild(Results());
         c.AddChild(Division());
         c.AddChild(Leaders());
+    }
+
+    /// <summary>Главная новость: самый весомый свежий материал (за 3 дня).</summary>
+    Control Lead()
+    {
+        var m = C.Messages.Where(x => x.Lead != null && C.Today.DayNumber - x.Date.DayNumber <= 3)
+            .OrderByDescending(x => x.Weight * 10 + (x.Read ? 0 : 3) - (C.Today.DayNumber - x.Date.DayNumber) * 2).ThenByDescending(x => x.Id).FirstOrDefault();
+        if (m == null) return null;
+        var card = new PanelContainer { MouseDefaultCursorShape = CursorShape.PointingHand, MouseFilter = MouseFilterEnum.Stop };
+        var sb = Ui.Box(Ui.Panel, 4, null, 22);
+        sb.ContentMarginTop = 18; sb.ContentMarginBottom = 18;
+        Color stripe = Ui.Blue;
+        if (m.Team != null && C.Data.TeamByAbbr.TryGetValue(m.Team, out var t)) stripe = new Color(t.Colors[0]).Luminance < 0.08f && t.Colors.Count > 1 ? new Color(t.Colors[1]) : new Color(t.Colors[0]);
+        sb.BorderColor = stripe; sb.BorderWidthLeft = 5;
+        card.AddThemeStyleboxOverride("panel", sb);
+        var v = Ui.V(8);
+        var head = Ui.H(10, Article.Tag(m.Tag, 15), Ui.L($"{m.From} · {Ui.Date(m.Date, false)}", 12, Ui.Dim));
+        v.AddChild(head);
+        v.AddChild(Ui.L(m.Subject, 34, Ui.Text, Ui.CondBold).Also(l => { l.AutowrapMode = TextServer.AutowrapMode.WordSmart; l.SizeFlagsHorizontal = SizeFlags.ExpandFill; }));
+        v.AddChild(Ui.L(m.Lead, 15, new Color(Ui.Text, 0.85f)).Also(l => { l.AutowrapMode = TextServer.AutowrapMode.WordSmart; l.SizeFlagsHorizontal = SizeFlags.ExpandFill; }));
+        if (m.Facts is { Count: > 0 })
+        {
+            var f = Ui.H(26);
+            foreach (var x in m.Facts.Take(4))
+            {
+                var col = x.Tone == "good" ? Ui.Win : x.Tone == "bad" ? Ui.Loss : Ui.Text;
+                f.AddChild(Ui.V(-3, Ui.L(x.Value, 24, col, Ui.CondBold), Ui.L(x.Label, 11, Ui.Muted)));
+            }
+            v.AddChild(Ui.Spacer(false, 2));
+            v.AddChild(f);
+        }
+        else if (m.Players is { Count: > 0 })
+        {
+            var ps = Ui.H(8);
+            foreach (var pid in m.Players.Take(2))
+                if (C.Data.PlayerById.TryGetValue(pid, out var pl)) ps.AddChild(Article.PlayerChip(C, pl));
+            v.AddChild(Ui.Spacer(false, 2));
+            v.AddChild(ps);
+        }
+        v.AddChild(Ui.Spacer(false, 2));
+        v.AddChild(Ui.L("Читать полностью", 13, Ui.Blue, Ui.Semi));
+        v.MouseFilter = MouseFilterEnum.Ignore;
+        SetIgnore(v);
+        card.AddChild(v);
+        int id = m.Id;
+        card.GuiInput += e => { if (e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left }) Shell.I.Go("inbox", null, id.ToString()); };
+        return card;
+    }
+
+    static void SetIgnore(Control c)
+    {
+        foreach (var ch in c.GetChildren()) if (ch is Control cc) { cc.MouseFilter = MouseFilterEnum.Ignore; SetIgnore(cc); }
+    }
+
+    Control MsgRow(Message m, bool showFrom)
+    {
+        var row = new PanelContainer { MouseDefaultCursorShape = CursorShape.PointingHand };
+        var sb = Ui.Box(new Color(0, 0, 0, 0), 0, null, 14); sb.ContentMarginTop = sb.ContentMarginBottom = 8; sb.BorderColor = Ui.Line; sb.BorderWidthBottom = 1;
+        row.AddThemeStyleboxOverride("panel", sb);
+        var title = Ui.L(m.Subject, 14, m.Read ? Ui.Muted : Ui.Text, m.Read ? Ui.Medium : Ui.Semi);
+        title.ClipText = true; title.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
+        var v = Ui.V(1, Ui.H(8, Article.Tag(m.Tag ?? "Письмо", 12), Ui.Expand(Ui.L(showFrom ? m.From : "", 11, Ui.Dim)), Ui.L(Ui.DateShort(m.Date), 11, Ui.Dim)), title);
+        v.MouseFilter = MouseFilterEnum.Ignore;
+        SetIgnore(v);
+        row.AddChild(v);
+        int id = m.Id;
+        row.MouseEntered += () => sb.BgColor = new Color(1, 1, 1, 0.04f);
+        row.MouseExited += () => sb.BgColor = new Color(0, 0, 0, 0);
+        row.GuiInput += e => { if (e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left }) Shell.I.Go("inbox", null, id.ToString()); };
+        return row;
+    }
+
+    Control Feed()
+    {
+        var v = Ui.V(0);
+        foreach (var m in C.Messages.Where(x => x.IsNews || x.Tag is "Неделя в НХЛ" or "Цифры").OrderByDescending(x => x.Id).Take(8)) v.AddChild(MsgRow(m, false));
+        if (v.GetChildCount() == 0) v.AddChild(Ui.Margin(Ui.L("Сезон только начинается — новости появятся после первых матчей", 13, Ui.Muted).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart), 14, 12, 14, 12));
+        return Widget.Make("Лента НХЛ", v, "Все новости", () => Shell.I.Go("inbox"), 0);
+    }
+
+    Control Mail()
+    {
+        var v = Ui.V(0);
+        foreach (var m in C.Messages.Where(x => !x.IsNews).OrderBy(x => x.Read).ThenByDescending(x => x.Id).Take(5)) v.AddChild(MsgRow(m, true));
+        string t = C.Unread > 0 ? $"Письма · {C.Unread} {Ui.Plural(C.Unread, "новое", "новых", "новых")}" : "Письма";
+        return Widget.Make(t, v, "Входящие", () => Shell.I.Go("inbox"), 0);
     }
 
     Control NextMatch()
@@ -110,21 +202,24 @@ public partial class HomePage : Control
         var o = C.Preview(g);
         double p = home ? o.PHome : 1 - o.PHome;
         var oppRow = C.Table[opp.Abbr];
-        var v = Ui.V(10);
-        var h = Ui.H(16);
-        h.AddChild(new TeamBadge(C.Team(C.UserTeam), 64));
-        h.AddChild(Ui.V(2, Ui.L(home ? "ДОМА" : "В ГОСТЯХ", 11, Ui.Muted, Ui.Bold, HorizontalAlignment.Center), Ui.L("vs", 18, Ui.Dim, Ui.Bold, HorizontalAlignment.Center)));
-        h.AddChild(new TeamBadge(opp, 64));
-        var info = Ui.Expand(Ui.V(3));
-        info.AddChild(Links.Club(opp, opp.Name, 18, Ui.Text, Ui.Bold));
-        info.AddChild(Ui.L($"{Ui.Date(g.Date)}{(g.Playoff ? " · плей-офф" : "")} · {oppRow.W}-{oppRow.L}-{oppRow.Otl}, {C.Sorted(t => t.Conference == opp.Conference).FindIndex(r => r.Team == opp.Abbr) + 1}-е в конференции", 12, Ui.Muted));
-        info.AddChild(Ui.H(8, Ui.L("Форма соперника", 12, Ui.Muted), P.Form(opp.Abbr, 5, 18)));
-        h.AddChild(info);
+        var v = Ui.V(12);
+        int dd = g.Date.DayNumber - C.Today.DayNumber;
+        v.AddChild(Ui.L($"{(dd == 0 ? "Сегодня" : dd == 1 ? "Завтра" : Ui.Date(g.Date))}{(dd <= 1 ? ", " + Ui.Date(g.Date, false) : "")} · {(home ? "дома" : "в гостях")}{(g.Playoff ? " · плей-офф" : "")}", 13, Ui.Muted));
+        var h = Ui.H(14);
+        h.Alignment = BoxContainer.AlignmentMode.Center;
+        var my = C.Team(C.UserTeam);
+        h.AddChild(Ui.V(4, new TeamBadge(home ? my : opp, 72) { SizeFlagsHorizontal = SizeFlags.ShrinkCenter }, Ui.L((home ? my : opp).City, 14, Ui.Text, Ui.Cond, HorizontalAlignment.Center)));
+        h.AddChild(Ui.V(0, Ui.L("—", 30, Ui.Dim, Ui.CondBold, HorizontalAlignment.Center)).Also(x => x.Alignment = BoxContainer.AlignmentMode.Center));
+        h.AddChild(Ui.V(4, new TeamBadge(home ? opp : my, 72) { SizeFlagsHorizontal = SizeFlags.ShrinkCenter }, Ui.L((home ? opp : my).City, 14, Ui.Text, Ui.Cond, HorizontalAlignment.Center)));
         v.AddChild(h);
-        v.AddChild(Ui.H(6, Ui.Icon("mail-open", 14, Ui.Muted), Ui.L(Pundits.Forecast(C.Data, g, C.Preview(g)), 13, Ui.Muted)));
+        // шансы — полоса
+        v.AddChild(Ui.H(8, Ui.L($"{Math.Round(p * 100)}%", 18, Ui.Text, Ui.CondBold), Ui.Expand(new SplitBar(p, Ui.Blue, Ui.Line)), Ui.L($"{Math.Round((1 - p) * 100)}%", 18, Ui.Muted, Ui.CondBold)).Also(x => x.TooltipText = "Шансы на победу по оценке аналитиков (с овертаймом и буллитами)"));
+        int conf = C.Sorted(t => t.Conference == opp.Conference).FindIndex(r => r.Team == opp.Abbr) + 1;
+        v.AddChild(Ui.H(8, Ui.L($"Соперник: {oppRow.W}-{oppRow.L}-{oppRow.Otl}, {conf}-е в конференции", 12, Ui.Muted), Ui.Spacer(), P.Form(opp.Abbr, 5, 16)));
+        v.AddChild(Ui.L(Pundits.Forecast(C.Data, g, o), 13, Ui.Text).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart));
         bool b2b = C.PlayedYesterday(C.UserTeam, g.Date), ob2b = C.PlayedYesterday(opp.Abbr, g.Date);
         if (b2b || ob2b) v.AddChild(Ui.L(b2b && ob2b ? "Обе команды играли накануне" : b2b ? "У нас второй матч за два дня — подумайте о запасном вратаре" : "Соперник играл накануне — он устал", 12, Ui.Otl));
-        return Widget.Make("Следующий матч", v, "Звенья →", () => Shell.I.Go("lines"));
+        return Widget.Make("Следующий матч", v, "Звенья", () => Shell.I.Go("lines"));
     }
 
     Control Upcoming()
@@ -137,27 +232,6 @@ public partial class HomePage : Control
             new() { Title = "Соперник", Width = 0, Align = HorizontalAlignment.Left, Cell = g => P.Team(g.Home == C.UserTeam ? g.Away : g.Home) },
         }, games, g => P.OpenLink($"club:{(g.Home == C.UserTeam ? g.Away : g.Home)}"));
         return Widget.Make("Ближайшие матчи", grid.Root, "Расписание →", () => Shell.I.Go("schedule"), 0);
-    }
-
-    Control InboxWidget()
-    {
-        var v = Ui.V(0);
-        foreach (var m in C.Messages.OrderByDescending(m => m.Id).Take(6))
-        {
-            var row = new PanelContainer { MouseDefaultCursorShape = CursorShape.PointingHand };
-            var sb = Ui.Box(new Color(0, 0, 0, 0), 0, null, 12); sb.ContentMarginTop = sb.ContentMarginBottom = 7; sb.BorderColor = Ui.Line; sb.BorderWidthBottom = 1;
-            row.AddThemeStyleboxOverride("panel", sb);
-            var h = Ui.H(10, Ui.Icon(m.Read ? "mail-open" : "mail", 16, m.Read ? Ui.Dim : Ui.AccentBright),
-                Ui.Expand(Ui.V(1, Ui.L(m.Subject, 13, m.Read ? Ui.Muted : Ui.Text, m.Read ? null : Ui.Semi).Also(l => { l.ClipText = true; l.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis; }),
-                    Ui.L($"{m.From} · {Ui.DateShort(m.Date)}", 11, Ui.Dim))));
-            h.MouseFilter = MouseFilterEnum.Ignore;
-            row.AddChild(h);
-            int id = m.Id;
-            row.GuiInput += e => { if (e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left }) Shell.I.Go("inbox", null, id.ToString()); };
-            v.AddChild(row);
-        }
-        string t = C.Unread > 0 ? $"Входящие · {C.Unread} {Ui.Plural(C.Unread, "новое", "новых", "новых")}" : "Входящие";
-        return Widget.Make(t, v, "Все →", () => Shell.I.Go("inbox"), 0);
     }
 
     Control Results()
@@ -309,76 +383,100 @@ public partial class SquadPage : Control
 }
 
 // =====================================================================================================
-/// <summary>Входящие: список писем слева, письмо справа.</summary>
+/// <summary>Входящие: письма тренеру и лента новостей слева, статья справа.</summary>
 public partial class InboxPage : Control
 {
     Career C => P.C;
     int _sel;
+    static int _filter;   // 0 — письма, 1 — новости, 2 — всё
     VBoxContainer _list, _view;
+    Control _head;
     public InboxPage() { }
     public InboxPage(string arg) { _sel = int.TryParse(arg, out var i) ? i : 0; SizeFlagsHorizontal = SizeFlags.ExpandFill; SizeFlagsVertical = SizeFlags.ExpandFill; }
 
     public override void _Ready()
     {
-        if (_sel == 0) _sel = C.Messages.Where(m => !m.Read).OrderBy(m => m.Id).Select(m => m.Id).FirstOrDefault();
-        if (_sel == 0) _sel = C.Messages.Select(m => m.Id).DefaultIfEmpty(0).Max();
+        if (_sel != 0 && C.Messages.FirstOrDefault(m => m.Id == _sel) is { } sm) _filter = sm.IsNews ? (_filter == 2 ? 2 : 1) : (_filter == 2 ? 2 : 0);
+        if (_sel == 0) _sel = Visible().Where(m => !m.Read).OrderBy(m => m.Id).Select(m => m.Id).FirstOrDefault();
+        if (_sel == 0) _sel = Visible().Select(m => m.Id).DefaultIfEmpty(0).Max();
         var h = Ui.H(12);
         var m = Ui.Margin(h, 16, 14, 16, 14);
         m.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(m);
+        var left = Ui.V(8);
+        left.CustomMinimumSize = new Vector2(420, 0);
+        left.SizeFlagsVertical = SizeFlags.ExpandFill;
+        _head = new Control();
+        left.AddChild(_head);
         _list = Ui.V(0);
-        var lp = new PanelContainer { CustomMinimumSize = new Vector2(400, 0) };
+        var lp = new PanelContainer();
         lp.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 4, null, 0).Also(s => s.ContentMarginTop = s.ContentMarginBottom = 0));
         lp.SizeFlagsVertical = SizeFlags.ExpandFill;
         lp.AddChild(Ui.Scroll(_list));
-        h.AddChild(lp);
+        left.AddChild(lp);
+        h.AddChild(left);
         _view = Ui.V(12);
         var vp = new PanelContainer();
-        vp.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 4, null, 24));
+        vp.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 4, null, 28).Also(s => { s.ContentMarginTop = 22; s.ContentMarginBottom = 28; }));
         vp.SizeFlagsHorizontal = vp.SizeFlagsVertical = SizeFlags.ExpandFill;
         vp.AddChild(Ui.Scroll(_view));
         h.AddChild(vp);
         Build();
     }
 
-    static string IconOf(string kind) => kind switch { "board" => "landmark", "match" => "activity", "week" => "chart-column", "league" => "trophy", _ => "mail" };
+    IEnumerable<Message> Visible() => C.Messages.Where(m => _filter == 2 || (_filter == 1) == m.IsNews);
 
     void Build()
     {
         var msg = C.Messages.FirstOrDefault(x => x.Id == _sel);
         if (msg != null && !msg.Read) { msg.Read = true; Main.I.Save(); Callable.From(() => Shell.I?.RefreshSide()).CallDeferred(); }
+        var parent = _head.GetParent();
+        int idx = _head.GetIndex();
+        int unreadMail = C.Messages.Count(x => !x.Read && !x.IsNews), unreadNews = C.Messages.Count(x => !x.Read && x.IsNews);
+        var seg = new Segmented(new[] { unreadMail > 0 ? $"Письма · {unreadMail}" : "Письма", unreadNews > 0 ? $"Новости · {unreadNews}" : "Новости", "Всё" }, _filter, k =>
+        {
+            _filter = k;
+            _sel = Visible().Where(m => !m.Read).OrderBy(m => m.Id).Select(m => m.Id).FirstOrDefault();
+            if (_sel == 0) _sel = Visible().Select(m => m.Id).DefaultIfEmpty(0).Max();
+            Build();
+        });
+        var head = Ui.H(8, seg, Ui.Spacer());
+        if (Visible().Any(x => !x.Read))
+            head.AddChild(Ui.B("Прочитать все", () => { foreach (var x in Visible()) x.Read = true; Main.I.Save(); Build(); Shell.I?.RefreshSide(); }, false, 12));
+        parent.RemoveChild(_head); _head.QueueFree();
+        _head = head;
+        parent.AddChild(_head); parent.MoveChild(_head, idx);
+
         Ui.Clear(_list);
-        foreach (var x in C.Messages.OrderByDescending(x => x.Id))
+        foreach (var x in Visible().OrderByDescending(x => x.Id))
         {
             bool on = x.Id == _sel;
             var row = new PanelContainer { MouseDefaultCursorShape = CursorShape.PointingHand };
-            var sb = Ui.Box(on ? new Color(Ui.AccentBright, 0.16f) : new Color(0, 0, 0, 0), 0, null, 14);
+            var sb = Ui.Box(on ? new Color(Ui.Blue, 0.14f) : new Color(0, 0, 0, 0), 0, null, 14);
             sb.ContentMarginTop = sb.ContentMarginBottom = 9; sb.BorderColor = Ui.Line; sb.BorderWidthBottom = 1;
-            if (on) { sb.BorderColor = Ui.AccentBright; sb.BorderWidthLeft = 3; }
+            if (on) { sb.BorderColor = Ui.Blue; sb.BorderWidthLeft = 3; }
             row.AddThemeStyleboxOverride("panel", sb);
-            var h = Ui.H(10, Ui.Icon(IconOf(x.Kind), 18, x.Read ? Ui.Dim : Ui.AccentBright),
-                Ui.Expand(Ui.V(2,
-                    Ui.H(6, Ui.Expand(Ui.L(x.From, 11, Ui.Muted)), Ui.L(Ui.DateShort(x.Date), 11, Ui.Dim)),
-                    Ui.L(x.Subject, 13, x.Read ? Ui.Muted : Ui.Text, x.Read ? null : Ui.Bold).Also(l => { l.ClipText = true; l.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis; }))));
-            h.MouseFilter = MouseFilterEnum.Ignore;
-            foreach (var ch in h.GetChildren()) if (ch is Control cc) cc.MouseFilter = MouseFilterEnum.Ignore;
-            row.AddChild(h);
+            var title = Ui.L(x.Subject, 14, x.Read ? Ui.Muted : Ui.Text, x.Read ? Ui.Medium : Ui.Semi);
+            title.ClipText = true; title.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
+            var v = Ui.V(2,
+                Ui.H(8, Article.Tag(x.Tag ?? "Письмо", 13), Ui.Expand(Ui.L(x.From, 11, Ui.Dim)), Ui.L(Ui.DateShort(x.Date), 11, Ui.Dim)),
+                Ui.H(6, x.Read ? new Control() : new ColorRect { Color = Ui.Blue, CustomMinimumSize = new Vector2(6, 6), SizeFlagsVertical = SizeFlags.ShrinkCenter }, Ui.Expand(title)));
+            v.MouseFilter = MouseFilterEnum.Ignore;
+            SetIgnore(v);
+            row.AddChild(v);
             int id = x.Id;
             row.GuiInput += e => { if (e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left }) { _sel = id; Build(); Shell.I?.RefreshSide(); } };
             _list.AddChild(row);
         }
+        if (_list.GetChildCount() == 0) _list.AddChild(Ui.Margin(Ui.L(_filter == 1 ? "Новостей пока нет" : "Писем пока нет", 13, Ui.Muted), 14, 12, 14, 12));
         Ui.Clear(_view);
-        if (msg == null) { _view.AddChild(Ui.L("Писем нет", 14, Ui.Muted)); return; }
-        _view.AddChild(Ui.H(10, Ui.Icon(IconOf(msg.Kind), 22, Ui.AccentBright), Ui.L(msg.From, 13, Ui.Muted), Ui.Spacer(), Ui.L(Ui.Date(msg.Date), 13, Ui.Dim)));
-        _view.AddChild(Ui.L(msg.Subject, 22, Ui.Text, Ui.Bold).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart));
-        _view.AddChild(Ui.Rule());
-        _view.AddChild(Ui.L(msg.Body, 14, Ui.Text).Also(l => { l.AutowrapMode = TextServer.AutowrapMode.WordSmart; l.SizeFlagsHorizontal = SizeFlags.ExpandFill; }));
-        if (!string.IsNullOrEmpty(msg.Link))
-        {
-            string text = msg.Link.Split(':')[0] switch { "game" => "Открыть матч", "player" => "Профиль игрока", "table" => "Открыть таблицу", "playoffs" => "Сетка плей-офф", "club" => "Открыть клуб", _ => "Открыть" };
-            var link = msg.Link;
-            _view.AddChild(Ui.H(0, Ui.B(text, () => P.OpenLink(link), true, 13)));
-        }
+        if (msg == null) { _view.AddChild(Ui.L("Выберите письмо слева", 14, Ui.Muted)); return; }
+        _view.AddChild(Article.Make(C, msg));
+    }
+
+    static void SetIgnore(Control c)
+    {
+        foreach (var ch in c.GetChildren()) if (ch is Control cc) { cc.MouseFilter = MouseFilterEnum.Ignore; SetIgnore(cc); }
     }
 }
 
