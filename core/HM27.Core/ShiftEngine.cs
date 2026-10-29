@@ -72,6 +72,15 @@ public static class ShiftEngine
     /// (средняя сила клуба та же). НХЛ 2024-26, 5×5 на льду: первые три нападающих по минутам — 2,88 гола за 60, четвёртая тройка — 2,17.
     /// </summary>
     public static double LINE_K = 1.5;
+    /// <summary>
+    /// Сыгранность (дизайн, ТЗ «Тренер»): средняя сыгранность пар на льду (тройка — между собой, пара защиты — между собой)
+    /// сдвигает атаку пятёрки и оборону против неё на FAM_MAX × (f − FAM_REF) / FAM_REF: новое звено (f ≈ 0,2) — около −2%,
+    /// сыгранное весь сезон (f ≈ 1) — +0,8%. FAM_REF — сыгранность звеньев на старте (как в последних матчах клуба), поэтому
+    /// составы по умолчанию дают прежнюю силу; лига в целом не меняется (плюс одних — минус против них).
+    /// </summary>
+    public static double FAM_MAX = 0.025, FAM_REF = 0.75;
+    public static double FamE(double f) => Math.Log(1 + Math.Clamp(FAM_MAX * (f - FAM_REF) / FAM_REF, -FAM_MAX, FAM_MAX));
+    public static long PairKey(int a, int b) => a < b ? ((long)a << 32) | (uint)b : ((long)b << 32) | (uint)a;
     /// <summary>Вес защитника в выборе бросающего (доля попыток защитников при 5×5 — 34,8%).</summary>
     public const double D_SHOT_W = 0.80;
     /// <summary>Кто бросает: e^(SHOOT_K × (бросковые характеристики − 11)), «бросает при любой возможности» × SHOOT_TRAIT
@@ -234,6 +243,8 @@ public static class ShiftEngine
         public List<Sk> On = new();
         public int Goals, Sog;
         public double EsOff;             // средняя по времени атака пятёрки в равных составах (по звеньям тренера)
+        public double Fam = FAM_REF;     // сыгранность пятёрки на льду (см. FAM_MAX)
+        public int OnSince;
         public double Mult;              // хозяева/гости, усталость от второго матча подряд, темп, плей-офф
         // на текущий момент
         public double Rate, PenRate, Q, Lc, FinBar, HitRate, TkRate, GvRate;
@@ -460,6 +471,7 @@ public static class ShiftEngine
             T = Math.Min(start + len, T + 1);
             foreach (var t in new[] { H, A })
             {
+                Flush(t);
                 foreach (var sk in t.All.Values) sk.Set(T, false);
                 if (t.Goalie != 0) t.GBox.Toi += T - start;
             }
@@ -566,8 +578,39 @@ public static class ShiftEngine
                 if (t.Pulled) Fill(t, list, list.Count + 1, boxed, attack: true);
                 foreach (var sk in t.On) if (!list.Contains(sk)) sk.Set(T, false);
                 foreach (var sk in list) sk.Set(T, true);
+                Flush(t);
                 t.On = list;
+                t.Fam = UnitFam(t, list);
             }
+        }
+
+        /// <summary>Секунды вместе для пар текущей пятёрки — в протокол сыгранности.</summary>
+        void Flush(Team t)
+        {
+            if (t.S.Fam != null && T > t.OnSince && t.On.Count > 1)
+            {
+                r.PairSec ??= new();
+                int dt = T - t.OnSince;
+                for (int i = 0; i < t.On.Count; i++)
+                    for (int j = i + 1; j < t.On.Count; j++)
+                        if (t.On[i].D == t.On[j].D)
+                        {
+                            long k = PairKey(t.On[i].Id, t.On[j].Id);
+                            r.PairSec[k] = r.PairSec.GetValueOrDefault(k) + dt;
+                        }
+            }
+            t.OnSince = T;
+        }
+
+        static double UnitFam(Team t, List<Sk> on)
+        {
+            // без вратаря (6 на 5) — сборная пятёрка-шестёрка: сыгранность не учитываем
+            if (t.S.Fam == null || t.Pulled) return FAM_REF;
+            double sum = 0; int n = 0;
+            for (int i = 0; i < on.Count; i++)
+                for (int j = i + 1; j < on.Count; j++)
+                    if (on[i].D == on[j].D) { sum += t.S.Fam(on[i].Id, on[j].Id); n++; }
+            return n == 0 ? FAM_REF : sum / n;
         }
 
         static int Next(List<Sk[]> units, double[] target, double[] toi, int cur, IEnumerable<Sk> all, HashSet<int> boxed)
@@ -633,6 +676,7 @@ public static class ShiftEngine
             double x = 5.0 / n * sOff - offRef;
             double att = spread * (sc.A0 + sc.A1 * (t.EsOff + LINE_K * (x - t.EsOff)));
             double dfn = spread * (sc.D0 + sc.D2 * sc.G0 + sc.D1 * (5.0 / no * sDef - defRef));
+            att += FamE(t.Fam); dfn -= FamE(o.Fam);   // сыгранность своей пятёрки и пятёрки соперника
             if (mt == "pp") att += PP_K * (t.On.Sum(x => x.Pp - 11) * 5.0 / n - refs.PpAttr);
             if (mo == "pk") dfn -= PK_K * (o.On.Sum(x => x.Pk - 11) * 5.0 / no - refs.PkAttr);
             baseG *= K_STATE.GetValueOrDefault(Label(t), 1);

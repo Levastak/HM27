@@ -98,6 +98,7 @@ public partial class LinesView : HBoxContainer
         var center = Ui.Expand(Ui.V(10), true, true);
         AddChild(center);
         center.AddChild(new Segmented(Units.Select(u => u.name).ToArray(), Array.FindIndex(Units, u => u.key == _unit), k => { _unit = Units[k].key; _slot = 0; CallDeferred(nameof(Rebuild)); }));
+        center.AddChild(FamStrip());
         center.AddChild(RinkBoard());
         center.AddChild(Ui.Expand(Overview(), true, true));
         AddChild(Candidates());
@@ -157,6 +158,45 @@ public partial class LinesView : HBoxContainer
     }
 
     static Label Note(string t) => Ui.L(t, 11, Ui.Dim).Also(l => { l.AutowrapMode = TextServer.AutowrapMode.WordSmart; l.CustomMinimumSize = new Vector2(210, 0); });
+
+    // ------------------------------------------------------------------ сыгранность
+    public static Color FamColor(double f) => f >= 0.8 ? Ui.Win : f >= 0.6 ? Ui.Text : f >= 0.4 ? Ui.Otl : Ui.Loss;
+
+    /// <summary>Мини-полоса сыгранности: 0–100% и цвет.</summary>
+    static Control FamBar(double f, int w = 56)
+    {
+        var bar = new PctBar(f) { CustomMinimumSize = new Vector2(w, 18) };
+        var h = Ui.H(6, bar, Ui.L($"{f * 100:0}%", 12, FamColor(f), Ui.Cond).Also(l => l.CustomMinimumSize = new Vector2(32, 0)));
+        h.TooltipText = FamTip;
+        h.MouseFilter = MouseFilterEnum.Stop;
+        return h;
+    }
+
+    const string FamTip = "Сыгранность: растёт от минут вместе на льду (тройка — между собой, пара защиты — между собой). " +
+                          "Новое звено теряет до 2% голов в атаке и обороне, сыгранное весь сезон — прибавляет около 1%. Звенья на старте сезона сыграны на 75%.";
+
+    /// <summary>Сыгранность выбранного звена над площадкой.</summary>
+    Control FamStrip()
+    {
+        var h = Ui.H(18);
+        if (_unit.StartsWith("F"))
+        {
+            int i = _unit[1] - '0';
+            h.AddChild(Ui.H(8, Ui.L("Сыгранность тройки", 13, Ui.Muted), FamBar(C.UnitFam(L.F[i]), 90)));
+            if (i < L.D.Count) h.AddChild(Ui.H(8, Ui.L("пары защиты", 13, Ui.Muted), FamBar(C.UnitFam(L.D[i]), 90)));
+        }
+        else
+        {
+            var u = _unit switch { "PP0" => L.Pp1, "PP1" => L.Pp2, "PK0" => L.Pk1, _ => L.Pk2 };
+            var f = u.Where(id => id != 0 && C.Data.PlayerById.TryGetValue(id, out var p) && !p.IsDefense).ToArray();
+            var d = u.Where(id => id != 0 && C.Data.PlayerById.TryGetValue(id, out var p) && p.IsDefense).ToArray();
+            if (f.Length > 1) h.AddChild(Ui.H(8, Ui.L("Сыгранность нападающих", 13, Ui.Muted), FamBar(C.UnitFam(f), 90)));
+            if (d.Length > 1) h.AddChild(Ui.H(8, Ui.L("защитников", 13, Ui.Muted), FamBar(C.UnitFam(d), 90)));
+        }
+        h.AddChild(Ui.Spacer());
+        h.AddChild(Ui.L("Новые сочетания сыгрываются за 10–20 матчей", 11, Ui.Dim));
+        return h;
+    }
 
     // ------------------------------------------------------------------ площадка
     Control RinkBoard()
@@ -236,7 +276,7 @@ public partial class LinesView : HBoxContainer
     Control Overview()
     {
         var v = Ui.V(0);
-        void Row(string key, string name, string mins, IEnumerable<int> ids)
+        void Row(string key, string name, string mins, IEnumerable<int> ids, double fam = -1)
         {
             bool on = key == _unit;
             var p = new PanelContainer { MouseDefaultCursorShape = CursorShape.PointingHand, MouseFilter = MouseFilterEnum.Stop };
@@ -251,11 +291,18 @@ public partial class LinesView : HBoxContainer
             }
             h.MouseFilter = MouseFilterEnum.Ignore;
             foreach (var c in h.GetChildren().OfType<Control>()) c.MouseFilter = MouseFilterEnum.Ignore;
+            if (fam >= 0) h.AddChild(FamBar(fam));
+            else h.AddChild(new Control { CustomMinimumSize = new Vector2(94, 0) });
             p.AddChild(h);
             p.GuiInput += e => { if (e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left }) { _unit = key == "G" ? "F0" : key; _slot = key == "G" ? 5 : 0; CallDeferred(nameof(Rebuild)); } };
             v.AddChild(p);
         }
-        for (int i = 0; i < L.F.Count; i++) Row($"F{i}", $"{i + 1}-е звено", $"{L.FMin[i]:0} мин", L.F[i].Concat(i < L.D.Count ? L.D[i] : Array.Empty<int>()));
+        for (int i = 0; i < L.F.Count; i++)
+        {
+            double f = C.UnitFam(L.F[i]);
+            if (i < L.D.Count) f = (3 * f + C.UnitFam(L.D[i])) / 4;
+            Row($"F{i}", $"{i + 1}-е звено", $"{L.FMin[i]:0} мин", L.F[i].Concat(i < L.D.Count ? L.D[i] : Array.Empty<int>()), f);
+        }
         Row("PP0", "Большинство 1", "", L.Pp1); Row("PP1", "Большинство 2", "", L.Pp2);
         Row("PK0", "Меньшинство 1", "", L.Pk1); Row("PK1", "Меньшинство 2", "", L.Pk2);
         Row("G", "Вратари", "", new[] { L.G1, L.G2 });
@@ -278,15 +325,29 @@ public partial class LinesView : HBoxContainer
             new() { Title = "Поз", Width = 28, Cell = p => Ui.L(Ui.PosRu(p.Pos), 11, Ui.Muted) },
             new() { Title = "Сейчас", Width = 64, Align = HorizontalAlignment.Left, Cell = p => Ui.L(P.Role(p.Id, C.UserTeam), 11, C.Injured.Contains(p.Id) ? Ui.Loss : Ui.Dim) },
             new() { Title = "Место", Width = 72, Cell = p => Ui.Stars(Fit(p, kind), 11), Sort = p => Fit(p, kind), Tip = "Пригодность к выбранному месту" },
+            new() { Title = "Сыгр.", Width = 46, Tip = "Сыгранность с партнёрами по этому звену (тройка или пара)", Cell = p => { var f = MateFam(p.Id, kind); return f < 0 ? Ui.L("", 11) : Ui.L($"{f * 100:0}%", 12, FamColor(f), Ui.Cond); }, Sort = p => MateFam(p.Id, kind) },
         }, pool, p => Assign(p.Id), p => p.Id == cur, sortCol: 3);
         var v = Ui.V(8);
         v.AddChild(Ui.L($"Кандидаты: {label}, {(kind == "G" ? "вратарь" : unitName)}", 16, Ui.Text, Ui.Cond));
         v.AddChild(Ui.L(kind.StartsWith("P") ? "В спецбригады — только игроки, заявленные на матч." : "Щёлкните игрока, чтобы поставить его на выбранное место.", 11, Ui.Dim).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart));
         v.AddChild(Ui.Expand(Ui.Scroll(grid.Root), true, true));
-        var panel = new PanelContainer { CustomMinimumSize = new Vector2(300, 0) };
+        var panel = new PanelContainer { CustomMinimumSize = new Vector2(350, 0) };
         panel.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 4, null, 10));
         panel.AddChild(v);
         return panel;
+    }
+
+    /// <summary>Сыгранность кандидата с партнёрами по выбранному звену (без того, кого он заменит).</summary>
+    double MateFam(int id, string kind)
+    {
+        if (!_unit.StartsWith("F") || kind == "G") return -1;
+        int i = _unit[1] - '0';
+        var mates = kind == "D" ? (i < L.D.Count ? L.D[i] : Array.Empty<int>()) : L.F[i];
+        var slots = Slots(_unit);
+        int cur = slots[_slot].id;
+        var others = mates.Where(m => m != 0 && m != cur && m != id).ToList();
+        if (others.Count == 0) return -1;
+        return others.Average(m => C.Fam(id, m));
     }
 
     void Assign(int id)
@@ -356,6 +417,6 @@ public partial class RinkBoardBg : Control
             DrawArc(new Vector2(s.X * fx, s.Y * fy), s.Y * 0.17f, 0, Mathf.Tau, 48, red, 2);
             DrawCircle(new Vector2(s.X * fx, s.Y * fy), 4, red);
         }
-        DrawString(Ui.Semi, new Vector2(s.X * 0.86f, 24), "АТАКА →", HorizontalAlignment.Left, -1, 11, new Color(0, 0, 0, 0.35f));
+        DrawString(Ui.Semi, new Vector2(s.X * 0.86f, 24), "атака →", HorizontalAlignment.Left, -1, 11, new Color(0, 0, 0, 0.35f));
     }
 }

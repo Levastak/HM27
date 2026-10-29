@@ -127,7 +127,12 @@ public static class PlayerViz
         h.AddChild(Tile("heart-pulse", "Здоровье", inj != null ? "Травма" : "Здоров", inj != null ? Ui.Loss : Ui.Win,
             inj != null ? $"до {Ui.DateShort(inj.Until)}" : "готов играть"));
         // место в составе
-        h.AddChild(Tile("shirt", "В составе", P.Role(p.Id, p.Team), Ui.Text, p.IsGoalie ? "вратарь" : p.IsDefense ? "защита" : "нападение"));
+        string unitSub = p.IsGoalie ? "вратарь" : p.IsDefense ? "защита" : "нападение";
+        var lu = c.Lineups[p.Team];
+        var unit = lu.F.Concat(lu.D).FirstOrDefault(u => u.Contains(p.Id));
+        if (unit != null && !p.IsGoalie) unitSub = $"сыгранность звена {c.UnitFam(unit) * 100:0}%";
+        h.AddChild(Tile("shirt", "В составе", P.Role(p.Id, p.Team), Ui.Text, unitSub,
+            "Сыгранность: растёт от минут вместе на льду. Новое звено теряет до 2% голов, сыгранное весь сезон прибавляет около 1%"));
         if (p.IsGoalie)
         {
             var g = c.Goalies.GetValueOrDefault(p.Id);

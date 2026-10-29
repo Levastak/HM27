@@ -17,6 +17,8 @@ public sealed class MatchSide
     public double? Att, Dfn;
     /// <summary>Характеристика игрока на матч (истинная + форма); null — оценка из данных. Нужна движку по сменам.</summary>
     public Func<PlayerData, string, double> Attr;
+    /// <summary>Сыгранность пары партнёров 0–1 (движок по сменам); null — без сыгранности (нейтрально).</summary>
+    public Func<int, int, double> Fam;
 }
 
 public sealed class GoalEvent
@@ -57,6 +59,9 @@ public sealed class MatchResult
     public Dictionary<int, PlayerBox> Box { get; set; } = new();
     /// <summary>Вратарь снят раньше обычного (стиль игры), и это что-то изменило.</summary>
     public string PullNote { get; set; }
+    /// <summary>Секунды вместе на льду для пар партнёров (нападающие с нападающими, защитники с защитниками) — для сыгранности.
+    /// Не сохраняется: карьера забирает сразу после матча.</summary>
+    [System.Text.Json.Serialization.JsonIgnore] public Dictionary<long, int> PairSec { get; set; }
 }
 
 public sealed class MatchEvent

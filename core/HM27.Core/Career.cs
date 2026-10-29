@@ -241,6 +241,52 @@ public sealed class Career
     public ScheduledGame LastGame(string t) => Games.Where(g => g.Played && (g.Home == t || g.Away == t)).OrderByDescending(g => g.Date).FirstOrDefault();
     public bool PlayedYesterday(string t, DateOnly d) => Games.Any(g => g.Date == d.AddDays(-1) && (g.Home == t || g.Away == t));
 
+    // ------------------------------------------------------------------ сыгранность
+    /// <summary>Минуты вместе на льду для пар партнёров (тройки — между собой, пары защиты — между собой); ключ — ShiftEngine.PairKey.</summary>
+    public Dictionary<long, float> Chem { get; set; }
+    /// <summary>Сыгранность 0–1 = 1 − e^(−(база + минуты вместе) / FAM_M0). База — общие тренировки и матчи одного клуба;
+    /// звенья на старте (как в последних матчах клуба) — FAM_START минут, это ровно ShiftEngine.FAM_REF.</summary>
+    public const double FAM_M0 = 200, FAM_BASE = 40;
+    public static readonly double FAM_START = -FAM_M0 * Math.Log(1 - ShiftEngine.FAM_REF) - FAM_BASE;
+
+    public double Fam(int a, int b)
+    {
+        EnsureChem();
+        return 1 - Math.Exp(-(FAM_BASE + Chem.GetValueOrDefault(ShiftEngine.PairKey(a, b))) / FAM_M0);
+    }
+
+    /// <summary>Сыгранность звена (тройки или пары): средняя по парам.</summary>
+    public double UnitFam(IReadOnlyList<int> ids)
+    {
+        double s = 0; int n = 0;
+        for (int i = 0; i < ids.Count; i++)
+            for (int j = i + 1; j < ids.Count; j++)
+                if (ids[i] != 0 && ids[j] != 0) { s += Fam(ids[i], ids[j]); n++; }
+        return n == 0 ? 0 : s / n;
+    }
+
+    void EnsureChem()
+    {
+        if (Chem != null) return;
+        Chem = new();
+        foreach (var l in Lineups.Values)
+        {
+            // звенья, пары и спецбригады — как в последних матчах клуба: сыграны на старте
+            foreach (var unit in l.F.Concat(l.D).Concat(new[] { l.Pp1, l.Pp2, l.Pk1, l.Pk2 }).Where(u => u != null))
+                for (int i = 0; i < unit.Length; i++)
+                    for (int j = i + 1; j < unit.Length; j++)
+                        if (unit[i] != 0 && unit[j] != 0) Chem[ShiftEngine.PairKey(unit[i], unit[j])] = (float)FAM_START;
+        }
+    }
+
+    void AddChem(MatchResult r)
+    {
+        if (r.PairSec == null) return;
+        EnsureChem();
+        foreach (var (k, sec) in r.PairSec) Chem[k] = Chem.GetValueOrDefault(k) + sec / 60f;
+        r.PairSec = null;
+    }
+
     public MatchSide Side(string abbr, DateOnly d, bool forPreview = false, bool playoff = false)
     {
         var l = Lineups[abbr];
@@ -267,7 +313,7 @@ public sealed class Career
             var (att, dfn) = TeamStrength.Live(this, l, goalie, dl);
             return new MatchSide
             {
-                Team = Data.TeamByAbbr[abbr], Lineup = l, Goalie = goalie, B2B = b2b, Dl = dl, Att = att, Dfn = dfn, Attr = TeamStrength.Attr(this, dl),
+                Team = Data.TeamByAbbr[abbr], Lineup = l, Goalie = goalie, B2B = b2b, Dl = dl, Att = att, Dfn = dfn, Attr = TeamStrength.Attr(this, dl), Fam = Fam,
                 BaseOff = MatchEngine.OffIndex(Data, l, dl), BaseDef = MatchEngine.DefIndex(Data, l, dl), BaseGsax = MatchEngine.GsaxOf(Data, goalie, dl),
             };
         }
@@ -303,6 +349,7 @@ public sealed class Career
         // новые карьеры — движок по сменам; старые сохранения (сила модели) — движок «матч целиком»
         var r = BottomUp && ShiftEngine.Enabled ? ShiftEngine.Play(Data, h, a, RngFor(g), g.Playoff) : MatchEngine.Play(Data, h, a, RngFor(g), g.Playoff);
         g.Result = r;
+        AddChem(r);
         bool mine = g.Home == UserTeam || g.Away == UserTeam;
         Chronicle.Build(Data, g, h, a, r, new Random(unchecked(Seed * 7919 + g.Id * 31 + 1)));
         Record(g);

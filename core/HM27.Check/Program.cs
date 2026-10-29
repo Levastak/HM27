@@ -26,6 +26,9 @@ if (args.Length > 1 && args[1] == "news")
         Console.WriteLine();
     }
     var ts = News.TeamStats(nc);
+    var ml = nc.Lineups[nc.UserTeam];
+    Console.WriteLine("Сыгранность звеньев: " + string.Join(", ", ml.F.Select(u => $"{nc.UnitFam(u):0.00}")) + " | пары: " + string.Join(", ", ml.D.Select(u => $"{nc.UnitFam(u):0.00}")));
+    Console.WriteLine($"Пар в сыгранности: {nc.Chem?.Count}; эффект нового звена {ShiftEngine.FamE(1 - Math.Exp(-Career.FAM_BASE / Career.FAM_M0)):+0.000;-0.000}, полного {ShiftEngine.FamE(1):+0.000}");
     Console.WriteLine($"Сумма сейвов сверх ожидаемых по лиге: {nc.Goalies.Values.Sum(g => g.Gsax):0.0} при {nc.Goalies.Values.Sum(g => g.Ga)} пропущенных; xG полевых {nc.Skaters.Values.Sum(s => s.Ixg):0} при {nc.Skaters.Values.Sum(s => s.G)} голах");
     return 0;
 }
@@ -161,11 +164,13 @@ Check("Таблица как в НХЛ", lgLead.Average() is >= 112 and <= 130 &
     double rP = Pearson(gameP, realP), rG = Pearson(gameG, realG);
     double realTop = data.Players.Where(p => p.Real != null && p.Real["gp"] >= 60).Select(p => (p.Real["g"] + p.Real["a"]) * 82.0 / p.Real["gp"]).OrderByDescending(x => x).Take(10).Average();
     double gameTop = top10.Average();
-    // среди 10 лучших снайперов сезона — нет игроков с реальным временем меньше 14 минут за матч
-    var fringe = topSnipers.Where(id => data.PlayerById[id].Toi < 14).Select(id => data.PlayerById[id].Name).Distinct().ToList();
-    Check("Сверка с реальностью: игроки", rP >= 0.8 && rG >= 0.8 && Math.Abs(gameTop / realTop - 1) <= 0.10 && fringe.Count == 0,
+    // среди 10 лучших снайперов сезона — почти нет игроков с реальным временем меньше 14 минут за матч
+    // (не больше одного случая на 10 сезонов: прорыв игрока, которого повысили из-за травм, в НХЛ бывает — Донато, 31 гол в 2024-25)
+    var fringeIds = topSnipers.Where(id => data.PlayerById[id].Toi < 14).ToList();
+    var fringe = fringeIds.Select(id => data.PlayerById[id].Name).Distinct().ToList();
+    Check("Сверка с реальностью: игроки", rP >= 0.8 && rG >= 0.8 && Math.Abs(gameTop / realTop - 1) <= 0.10 && fringeIds.Count <= Math.Max(1, seasons / 10),
         $"корреляция с сезоном 2025-26 ({real.Count} игроков): очки r = {rP:F2}, голы r = {rG:F2}; средние на 82: очки {gameP.Average():F1}/{realP.Average():F1}; " +
-        $"топ-10 бомбардиров {gameTop:F0}/{realTop:F0} очков на 82 ({(gameTop / realTop - 1) * 100:+0;-0}%); игроки с малым временем в топ-10 снайперов: {(fringe.Count == 0 ? "нет" : string.Join(", ", fringe.Take(4)))}");
+        $"топ-10 бомбардиров {gameTop:F0}/{realTop:F0} очков на 82 ({(gameTop / realTop - 1) * 100:+0;-0}%); игроки с малым временем в топ-10 снайперов: {(fringe.Count == 0 ? "нет" : $"{string.Join(", ", fringe.Take(4))} ({fringeIds.Count} из {topSnipers.Count})")}");
 }
 {
     // «клатч»: очки за матч в плей-офф сверх своего темпа регулярки; половинки — чётные и нечётные матчи игрока.
@@ -305,6 +310,27 @@ Check("Плей-офф", playoffsOk, $"15 серий и чемпион в каж
     var cl = Career.New(data, "MIN", 1); var gfBase = cl.LineupEffect("MIN"); cl.Lineups["MIN"].FMin = new double[] { 23, 19, 12, 6 }; var gfTop = cl.LineupEffect("MIN");
     double effTop = (gfTop.gf - gfTop.ga) - (gfBase.gf - gfBase.ga);
     Check("Чувствительность: звенья", effTop > 0.01 && ptsTop > ptsBase - 40, $"больше времени первым звеньям: разница голов за матч {effTop:+0.000}, очки {ptsBase / 10:F1} → {ptsTop / 10:F1} (травм у лидеров больше)");
+}
+
+// ---------------------------------------------------------------- 4а. Сыгранность звеньев: эффект в заданных пределах
+{
+    var cf = Career.New(data, "MIN", 77);
+    var opps = data.Teams.Where(t => t.Abbr != "MIN").Select(t => t.Abbr).ToList();
+    double d0 = 0, d1 = 0; int ng = 3000;
+    for (int i = 0; i < ng; i++)
+    {
+        string op = opps[i % opps.Count];
+        foreach (var (fam, k) in new[] { (0.2, 0), (1.0, 1) })
+        {
+            var h = cf.Side("MIN", cf.Today); h.Fam = (x, y) => fam;
+            var a = cf.Side(op, cf.Today); a.Fam = (x, y) => ShiftEngine.FAM_REF;
+            var r = ShiftEngine.Play(data, h, a, new Random(5000 + i), false);
+            if (k == 0) d0 += r.HomeGoals - r.AwayGoals; else d1 += r.HomeGoals - r.AwayGoals;
+        }
+    }
+    double eff = (d0 - d1) / ng;
+    double expect = 3.15 * 2 * (ShiftEngine.FamE(0.2) - ShiftEngine.FamE(1.0));
+    Check("Сыгранность", eff is <= -0.04 and >= -0.4, $"все звенья новые (0,2) против сыгранных весь сезон (1,0): разница голов за матч {eff:+0.000;-0.000} (верхняя граница по формуле ≈ {expect:+0.00;-0.00}), {ng} матчей");
 }
 
 // ---------------------------------------------------------------- 4б. Новые механики: травмы, оценки, темп, снятие вратаря
