@@ -339,7 +339,7 @@ public partial class MatchScreen : Control
         _feed.MoveChild(row, 0);   // свежее — сверху
     }
 
-    (string, Color, FontFile, string) Describe(MatchEvent e)
+    (string, Color, Font, string) Describe(MatchEvent e)
     {
         string N(int id) => id != 0 && C.Data.PlayerById.TryGetValue(id, out var p) ? p.NameRu : "—";
         string S(int id) => C.Short(id);

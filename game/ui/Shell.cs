@@ -7,8 +7,8 @@ using HM27.Core;
 namespace HM27.UI;
 
 /// <summary>
-/// Оболочка карьеры в духе FM24: шапка в цветах клуба (назад/вперёд, эмблема, заголовок, поиск, дата, «Продолжить»),
-/// меню слева с иконками, вкладки раздела, страница. История переходов — как в браузере.
+/// Оболочка карьеры: верхняя полоса с разделами (выпадающие списки страниц), поиском, датой и «Продолжить»;
+/// под ней — полоса клуба в его цветах с заголовком страницы; вкладки раздела; страница. История переходов — как в браузере.
 /// </summary>
 public partial class Shell : Control
 {
@@ -18,13 +18,71 @@ public partial class Shell : Control
     public readonly record struct Nav(string Page, string Sub, string Arg);
     readonly Stack<Nav> _back = new(), _fwd = new();
     Nav _cur;
-    Control _header, _sideBox, _subBar;
+    Control _top, _band, _subBar;
+    ColorRect _stripe;
     MarginContainer _page;
 
-    static readonly (string key, string icon, string name)[] Menu =
+    /// <summary>Страница раздела: куда ведёт (page/sub) или действие; «скоро» — появится на следующих этапах.</summary>
+    sealed record Item(string Name, string Icon, string Page, string Sub, string Hint, Action Act = null, bool Soon = false);
+    sealed record Section(string Key, string Name, Item[] Items);
+
+    Section[] _sections;
+
+    Section[] Sections() => _sections ??= new[]
     {
-        ("home", "house", "Главная"), ("inbox", "inbox", "Входящие"), ("squad", "users", "Состав"), ("lines", "list-ordered", "Звенья"),
-        ("schedule", "calendar-days", "Расписание"), ("comp", "trophy", "Соревнования"), ("club", "landmark", "Клуб"), ("medical", "cross", "Лазарет"),
+        new Section("portal", "Портал", new[]
+        {
+            new Item("Обзор", "house", "home", null, "Главное за день: следующий матч, таблица, форма"),
+            new Item("Входящие", "inbox", "inbox", null, "Письма, новости и отчёты"),
+        }),
+        new Section("squad", "Состав", new[]
+        {
+            new Item("Игроки", "users", "squad", "players", "Весь состав: форма, свежесть, способности"),
+            new Item("Звенья", "list-ordered", "lines", null, "Тройки, пары, спецбригады, вратарь"),
+            new Item("Статистика", "chart-column", "squad", "stats", "Очки, броски, время на льду"),
+            new Item("Лазарет", "cross", "medical", null, "Травмы и сроки возвращения"),
+            new Item("Тактика", "swords", null, null, "Этап «Тренер»", Soon: true),
+            new Item("Тренировки", "dumbbell", null, null, "Этап «Тренер»", Soon: true),
+        }),
+        new Section("scout", "Скаутинг", new[]
+        {
+            new Item("Поиск игроков", "search", null, null, "Этап «Ширина»", Soon: true),
+            new Item("Драфт", "graduation-cap", null, null, "Этап «Ширина»", Soon: true),
+            new Item("Обмены", "repeat", null, null, "Этап «Ширина»", Soon: true),
+        }),
+        new Section("match", "Матчи", new[]
+        {
+            new Item("Календарь", "calendar-days", "schedule", null, "Все матчи клуба, результаты и соперники"),
+            new Item("Последний матч", "clock", null, null, "Протокол, статистика и оценки", () => { var g = C.LastGame(C.UserTeam); if (g != null) Main.I.ShowMatch(g); }),
+        }),
+        new Section("club", "Клуб", new[]
+        {
+            new Item("Обзор", "landmark", "club", "overview", "Сила, прогноз прессы, лидеры"),
+            new Item("Игроки", "users", "club", "players", "Состав клуба"),
+            new Item("Расписание", "calendar-days", "club", "schedule", "Матчи клуба"),
+        }),
+        new Section("league", "Лига", new[]
+        {
+            new Item("Таблица", "trophy", "comp", "table", "Дивизионы, конференции, уайлд-кард"),
+            new Item("Статистика", "chart-column", "comp", "stats", "Лидеры лиги: бомбардиры, снайперы, вратари"),
+            new Item("Плей-офф", "git-fork", "comp", "playoffs", "Сетка Кубка Стэнли"),
+        }),
+        new Section("career", "Карьера", new[]
+        {
+            new Item("Сохранить", "save", null, null, "Карьера сохраняется и сама после каждого дня", () => Main.I.Save()),
+            new Item("Главное меню", "log-out", null, null, "Сохранить и выйти в меню", () => { Main.I.Save(); Main.I.ShowMenu(); }),
+        }),
+    };
+
+    string SectionOf(Nav n) => n.Page switch
+    {
+        "home" or "inbox" => "portal",
+        "squad" or "lines" or "medical" => "squad",
+        "schedule" => "match",
+        "club" => n.Arg == null || n.Arg == C.UserTeam ? "club" : null,
+        "comp" => "league",
+        "player" => C.Data.PlayerById[int.Parse(n.Arg)].Team == C.UserTeam ? "squad" : null,
+        _ => null,
     };
 
     static readonly Dictionary<string, (string key, string name)[]> Subs = new()
@@ -44,21 +102,16 @@ public partial class Shell : Control
         root.AddThemeConstantOverride("separation", 0);
         root.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(root);
-        _header = new PanelContainer();
-        root.AddChild(_header);
-        var body = Ui.Expand(Ui.H(0), true, true);
-        root.AddChild(body);
-        var side = new PanelContainer { CustomMinimumSize = new Vector2(214, 0) };
-        side.AddThemeStyleboxOverride("panel", new StyleBoxFlat { BgColor = Ui.Side });
-        _sideBox = Ui.V(2);
-        side.AddChild(Ui.Margin(_sideBox, 8, 10, 8, 10));
-        body.AddChild(side);
-        var right = Ui.Expand(Ui.V(0), true, true);
-        body.AddChild(right);
+        _top = new PanelContainer();
+        root.AddChild(_top);
+        _band = new PanelContainer();
+        root.AddChild(_band);
+        _stripe = new ColorRect { CustomMinimumSize = new Vector2(0, 3), MouseFilter = MouseFilterEnum.Ignore };
+        root.AddChild(_stripe);
         _subBar = new PanelContainer();
-        right.AddChild(_subBar);
+        root.AddChild(_subBar);
         _page = Ui.Expand(new MarginContainer(), true, true);
-        right.AddChild(_page);
+        root.AddChild(_page);
         Render();
     }
 
@@ -77,7 +130,7 @@ public partial class Shell : Control
     void Back() { if (_back.Count == 0) return; _fwd.Push(_cur); _cur = _back.Pop(); Render(); }
     void Fwd() { if (_fwd.Count == 0) return; _back.Push(_cur); _cur = _fwd.Pop(); Render(); }
     public void Refresh() => Render();
-    public void RefreshSide() => BuildSide();
+    public void RefreshSide() => BuildTop();
 
     static string DefaultSub(string page) => Subs.TryGetValue(page, out var s) ? s[0].key : null;
 
@@ -99,8 +152,8 @@ public partial class Shell : Control
     void Render()
     {
         if (_cur.Sub == null && Subs.ContainsKey(_cur.Page)) _cur = _cur with { Sub = DefaultSub(_cur.Page) };
-        BuildHeader();
-        BuildSide();
+        BuildTop();
+        BuildBand();
         BuildSubs();
         Ui.Clear(_page);
         Control view = _cur.Page switch
@@ -120,32 +173,162 @@ public partial class Shell : Control
 
     static Control Embedded(string tab) => new HubScreen(tab, embedded: true);
 
-    // ------------------------------------------------------------------ шапка
-    void BuildHeader()
+    // ------------------------------------------------------------------ верхняя полоса
+    void BuildTop()
+    {
+        var sb = new StyleBoxFlat { BgColor = Ui.Side, BorderColor = Ui.Line, BorderWidthBottom = 1 };
+        sb.ContentMarginLeft = 18; sb.ContentMarginRight = 10; sb.ContentMarginTop = 6; sb.ContentMarginBottom = 6;
+        _top.AddThemeStyleboxOverride("panel", sb);
+        Ui.Clear(_top);
+        var h = Ui.H(4);
+        _top.AddChild(h);
+        var logo = Logo.Make(24);
+        logo.MouseFilter = MouseFilterEnum.Stop;
+        logo.MouseDefaultCursorShape = CursorShape.PointingHand;
+        logo.TooltipText = "Портал";
+        logo.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+        logo.GuiInput += e => { if (e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left }) Go("home"); };
+        h.AddChild(logo);
+        h.AddChild(Ui.Spacer(false, 14));
+        string active = SectionOf(_cur);
+        foreach (var sec in Sections()) h.AddChild(SectionButton(sec, sec.Key == active));
+        h.AddChild(Ui.Spacer());
+        h.AddChild(SearchBox());
+        h.AddChild(Ui.Spacer(false, 10));
+        string phase = C.Phase switch { Phase.Regular => "регулярный чемпионат", Phase.Playoffs => "плей-офф", _ => "сезон завершён" };
+        var date = Ui.V(-4, Ui.L(Ui.Date(C.Today, false), 19, Ui.Text, Ui.CondBold, HorizontalAlignment.Right),
+            Ui.L($"{Ui.DowLong(C.Today)}, {phase}", 11, Ui.Muted, null, HorizontalAlignment.Right));
+        date.Alignment = BoxContainer.AlignmentMode.Center;
+        h.AddChild(date);
+        h.AddChild(Ui.Spacer(false, 10));
+        h.AddChild(ContinueButton());
+    }
+
+    Control SectionButton(Section sec, bool on)
+    {
+        var b = new Button { FocusMode = FocusModeEnum.None, MouseDefaultCursorShape = CursorShape.PointingHand, CustomMinimumSize = new Vector2(0, 44) };
+        var st = new StyleBoxFlat { BgColor = new Color(0, 0, 0, 0), BorderColor = on ? Ui.Blue : new Color(0, 0, 0, 0), BorderWidthBottom = 3 };
+        st.ContentMarginLeft = st.ContentMarginRight = 12;
+        var hov = (StyleBoxFlat)st.Duplicate(); hov.BgColor = new Color(1, 1, 1, 0.05f);
+        b.AddThemeStyleboxOverride("normal", st); b.AddThemeStyleboxOverride("hover", hov); b.AddThemeStyleboxOverride("pressed", hov);
+        var h = Ui.H(5, Ui.L(sec.Name, 18, on ? Ui.Text : Ui.Muted, Ui.Cond));
+        int badge = sec.Key switch
+        {
+            "portal" => C.Unread,
+            "squad" => C.Injured.Count(id => C.Data.PlayerById[id].Team == C.UserTeam),
+            _ => 0,
+        };
+        if (badge > 0) h.AddChild(Badge(badge, sec.Key == "squad" ? Ui.Red : Ui.Blue));
+        h.AddChild(Ui.Icon("chevron-down", 13, on ? Ui.Muted : Ui.Dim));
+        h.MouseFilter = MouseFilterEnum.Ignore;
+        foreach (var ch in h.GetChildren()) if (ch is Control cc) cc.MouseFilter = MouseFilterEnum.Ignore;
+        var m = Ui.Margin(h, 10, 0, 10, 0);
+        m.MouseFilter = MouseFilterEnum.Ignore;
+        m.SetAnchorsPreset(LayoutPreset.FullRect);
+        b.AddChild(m);
+        b.CustomMinimumSize = new Vector2(h.GetCombinedMinimumSize().X + 20, 44);
+        b.Pressed += () => OpenSection(sec, b);
+        return b;
+    }
+
+    static Control Badge(int n, Color c)
+    {
+        var p = new PanelContainer { MouseFilter = MouseFilterEnum.Ignore };
+        var sb = Ui.Box(c, 4, null, 5); sb.ContentMarginTop = sb.ContentMarginBottom = 0;
+        sb.SetCornerRadiusAll(8);
+        p.AddThemeStyleboxOverride("panel", sb);
+        p.AddChild(Ui.L(n.ToString(), 11, Colors.White, Ui.Bold, HorizontalAlignment.Center));
+        p.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+        return p;
+    }
+
+    /// <summary>Для снимков экрана: открыть выпадающий список раздела.</summary>
+    public void DebugOpen(string key)
+    {
+        int i = Array.FindIndex(Sections(), x => x.Key == key);
+        if (i < 0) return;
+        var hb = (HBoxContainer)_top.GetChild(0);
+        var btn = hb.GetChildren().OfType<Button>().ElementAtOrDefault(i);
+        if (btn != null) OpenSection(Sections()[i], btn);
+    }
+
+    void OpenSection(Section sec, Control anchor)
+    {
+        var pop = new PopupPanel();
+        var sb = Ui.Box(Ui.Side, 3, Ui.Line, 6);
+        sb.BorderColor = Ui.Line; sb.BorderWidthTop = 2; sb.BorderColor = Ui.Blue;
+        sb.BorderWidthLeft = sb.BorderWidthRight = sb.BorderWidthBottom = 0;
+        pop.AddThemeStyleboxOverride("panel", sb);
+        var v = Ui.V(0);
+        pop.AddChild(v);
+        foreach (var it in sec.Items)
+        {
+            var row = new Button { FocusMode = FocusModeEnum.None, CustomMinimumSize = new Vector2(300, 50), Disabled = it.Soon,
+                MouseDefaultCursorShape = it.Soon ? CursorShape.Arrow : CursorShape.PointingHand };
+            bool cur = it.Page != null && it.Page == _cur.Page && (it.Sub == null || it.Sub == _cur.Sub);
+            var nst = Ui.Box(cur ? new Color(Ui.Blue, 0.14f) : new Color(0, 0, 0, 0), 3, null, 10);
+            row.AddThemeStyleboxOverride("normal", nst);
+            row.AddThemeStyleboxOverride("disabled", Ui.Box(new Color(0, 0, 0, 0), 3, null, 10));
+            row.AddThemeStyleboxOverride("hover", Ui.Box(Ui.Panel2, 3, null, 10));
+            row.AddThemeStyleboxOverride("pressed", Ui.Box(Ui.Panel2, 3, null, 10));
+            var name = Ui.H(6, Ui.L(it.Name, 14, it.Soon ? Ui.Dim : Ui.Text, Ui.Semi));
+            if (it.Soon) name.AddChild(Ui.L("скоро", 11, Ui.Gold.Darkened(0.2f), Ui.Semi));
+            if (it.Page == "inbox" && C.Unread > 0) name.AddChild(Badge(C.Unread, Ui.Blue));
+            var h = Ui.H(12, Ui.Icon(it.Icon, 18, it.Soon ? Ui.Dim : cur ? Ui.Blue : Ui.Muted), Ui.V(0, name, Ui.L(it.Hint, 11, Ui.Dim)));
+            h.MouseFilter = MouseFilterEnum.Ignore;
+            SetIgnore(h);
+            h.SetAnchorsPreset(LayoutPreset.FullRect); h.OffsetLeft = 12; h.OffsetRight = -10;
+            row.AddChild(h);
+            var item = it;
+            row.Pressed += () =>
+            {
+                pop.Hide();
+                if (item.Act != null) item.Act();
+                else Go(item.Page, item.Sub, item.Page == "club" ? C.UserTeam : null);
+            };
+            v.AddChild(row);
+        }
+        AddChild(pop);
+        pop.PopupHide += () => pop.QueueFree();
+        var gp = anchor.GetScreenPosition();
+        pop.Popup(new Rect2I((int)gp.X, (int)(gp.Y + anchor.Size.Y + 2), 320, 10));
+    }
+
+    static void SetIgnore(Control c)
+    {
+        foreach (var ch in c.GetChildren()) if (ch is Control cc) { cc.MouseFilter = MouseFilterEnum.Ignore; SetIgnore(cc); }
+    }
+
+    // ------------------------------------------------------------------ полоса клуба
+    void BuildBand()
     {
         var t = C.Team(_cur.Page == "club" ? (_cur.Arg ?? C.UserTeam) : _cur.Page == "player" ? C.Data.PlayerById[int.Parse(_cur.Arg)].Team : C.UserTeam);
         var c1 = new Color(t.Colors[0]);
-        if (c1.Luminance < 0.05f) c1 = c1.Lightened(0.12f);
         var c2 = new Color(t.Colors.Count > 1 ? t.Colors[1] : t.Colors[0]);
-        var sb = new StyleBoxFlat { BgColor = c1, BorderColor = c2, BorderWidthBottom = 3 };
-        sb.ContentMarginLeft = 12; sb.ContentMarginRight = 14; sb.ContentMarginTop = 8; sb.ContentMarginBottom = 8;
-        _header.AddThemeStyleboxOverride("panel", sb);
-        Ui.Clear(_header);
-        var fg = Ui.ReadableOn(c1);
+        if (c1.Luminance < 0.04f) c1 = c1.Lightened(0.10f);
+        // цвет клуба уходит в лёд вправо: шапка остаётся клубной, но не спорит с данными
+        var grad = new Gradient();
+        grad.SetColor(0, c1.Lerp(Ui.Bg, 0.12f)); grad.SetColor(1, c1.Lerp(Ui.Bg, 0.82f));
+        grad.SetOffset(0, 0.0f); grad.SetOffset(1, 0.78f);
+        var tex = new StyleBoxTexture { Texture = new GradientTexture2D { Gradient = grad, Width = 256, Height = 4 } };
+        tex.ContentMarginLeft = 12; tex.ContentMarginRight = 18; tex.ContentMarginTop = 8; tex.ContentMarginBottom = 8;
+        _band.AddThemeStyleboxOverride("panel", tex);
+        Ui.Clear(_band);
+        var fg = Ui.ReadableOn(c1.Lerp(Ui.Bg, 0.12f));
+        var v = Ui.V(0);
+        _band.AddChild(v);
         var h = Ui.H(10);
-        _header.AddChild(h);
+        v.AddChild(h);
         h.AddChild(IconButton("chevron-left", Back, fg, _back.Count > 0));
         h.AddChild(IconButton("chevron-right", Fwd, fg, _fwd.Count > 0));
         h.AddChild(Ui.Spacer(false, 4));
-        h.AddChild(new TeamBadge(t, 46));
+        h.AddChild(new TeamBadge(t, 50));
         var (title, sub) = Titles(t);
-        h.AddChild(Ui.V(0, Ui.L(title, 20, fg, Ui.Bold), Ui.L(sub, 12, new Color(fg, 0.75f))));
-        h.AddChild(Ui.Spacer());
-        h.AddChild(SearchBox(fg, c1));
-        h.AddChild(Ui.Spacer(false, 6));
-        string phase = C.Phase switch { Phase.Regular => "Регулярный чемпионат", Phase.Playoffs => "Плей-офф", _ => "Сезон завершён" };
-        h.AddChild(Ui.V(0, Ui.L(Ui.Date(C.Today), 15, fg, Ui.Semi, HorizontalAlignment.Right), Ui.L(phase, 11, new Color(fg, 0.7f), null, HorizontalAlignment.Right)));
-        h.AddChild(ContinueButton());
+        var tv = Ui.V(-2, Ui.L(title, 30, fg, Ui.CondBold), Ui.L(sub, 13, new Color(fg, 0.78f)));
+        tv.Alignment = BoxContainer.AlignmentMode.Center;
+        h.AddChild(Ui.Expand(tv));
+        // вторая краска клуба — тонкая полоса снизу, как кант на свитере
+        _stripe.Color = c2;
     }
 
     (string, string) Titles(TeamData t)
@@ -167,11 +350,11 @@ public partial class Shell : Control
             "squad" => ("Состав", rec),
             "lines" => ("Звенья", rec),
             "schedule" => ("Расписание", rec),
-            "comp" => ("Соревнования", "НХЛ · сезон 2026-27"),
+            "comp" => ("Национальная хоккейная лига", "Сезон 2026-27"),
             "player" => (C.Data.PlayerById[int.Parse(_cur.Arg)].NameRu, rec),
             "club" => (t.Name, rec),
-            "medical" => ("Медицинский центр", rec),
-            _ => ("Главная", rec),
+            "medical" => ("Лазарет", rec),
+            _ => (t.Name, rec),
         };
     }
 
@@ -187,16 +370,16 @@ public partial class Shell : Control
         return b;
     }
 
-    Control SearchBox(Color fg, Color bg)
+    Control SearchBox()
     {
-        var box = new LineEdit { PlaceholderText = "Поиск игрока или клуба", CustomMinimumSize = new Vector2(250, 32), ClearButtonEnabled = true };
-        var sb = Ui.Box(new Color(0, 0, 0, 0.22f), 4, null, 10);
+        var box = new LineEdit { PlaceholderText = "Игрок или клуб", CustomMinimumSize = new Vector2(210, 34), ClearButtonEnabled = true };
+        box.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+        var sb = Ui.Box(Ui.Panel, 3, Ui.Line, 10);
         sb.ContentMarginLeft = 32;
         box.AddThemeStyleboxOverride("normal", sb);
-        box.AddThemeStyleboxOverride("focus", Ui.Box(new Color(0, 0, 0, 0.32f), 4, new Color(fg, 0.5f), 10).Also(s => s.ContentMarginLeft = 32));
-        box.AddThemeColorOverride("font_color", fg);
-        box.AddThemeColorOverride("font_placeholder_color", new Color(fg, 0.55f));
-        box.AddChild(Ui.Icon("search", 16, new Color(fg, 0.7f)).Also(i => i.Position = new Vector2(10, 8)));
+        box.AddThemeStyleboxOverride("focus", Ui.Box(Ui.Panel, 3, Ui.Blue, 10).Also(s => s.ContentMarginLeft = 32));
+        box.AddThemeColorOverride("font_placeholder_color", Ui.Dim);
+        box.AddChild(Ui.Icon("search", 16, Ui.Muted).Also(i => i.Position = new Vector2(10, 9)));
         var popup = new PopupPanel();
         popup.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 4, Ui.Line, 6));
         var list = Ui.V(2);
@@ -244,16 +427,20 @@ public partial class Shell : Control
             label = "Продолжить";
             sub = next != null ? $"следующий матч {Ui.DateShort(next.Date)}" : "следующий день";
         }
-        var b = new Button { FocusMode = FocusModeEnum.None, CustomMinimumSize = new Vector2(210, 48), Disabled = !enabled, MouseDefaultCursorShape = CursorShape.PointingHand };
-        var bg = new Color("2F9E5B");
-        b.AddThemeStyleboxOverride("normal", Ui.Box(bg, 4, null, 12));
-        b.AddThemeStyleboxOverride("hover", Ui.Box(bg.Lightened(0.1f), 4, null, 12));
-        b.AddThemeStyleboxOverride("pressed", Ui.Box(bg.Darkened(0.15f), 4, null, 12));
-        b.AddThemeStyleboxOverride("disabled", Ui.Box(new Color(0, 0, 0, 0.25f), 4, null, 12));
-        var v = Ui.V(0, Ui.H(6, Ui.L(label, 15, Colors.White, Ui.Bold), Ui.Spacer(), Ui.Icon("arrow-right", 18, Colors.White)), Ui.L(sub, 11, new Color(1, 1, 1, 0.8f)));
+        var b = new Button { FocusMode = FocusModeEnum.None, CustomMinimumSize = new Vector2(196, 46), Disabled = !enabled, MouseDefaultCursorShape = CursorShape.PointingHand };
+        // день матча — янтарь табло, обычный день — синяя линия
+        var bg = g != null ? Ui.Gold : Ui.Blue;
+        var fg = Ui.ReadableOn(bg);
+        b.AddThemeStyleboxOverride("normal", Ui.Box(bg, 3, null, 12));
+        b.AddThemeStyleboxOverride("hover", Ui.Box(bg.Lightened(0.1f), 3, null, 12));
+        b.AddThemeStyleboxOverride("pressed", Ui.Box(bg.Darkened(0.15f), 3, null, 12));
+        b.AddThemeStyleboxOverride("disabled", Ui.Box(Ui.Panel, 3, Ui.Line, 12));
+        if (!enabled) fg = Ui.Muted;
+        var v = Ui.V(-4, Ui.H(6, Ui.L(label, 19, fg, Ui.CondBold), Ui.Spacer(), Ui.Icon(enabled ? "chevrons-right" : "trophy", 18, fg)), Ui.L(sub, 11, new Color(fg, 0.8f)));
+        v.Alignment = BoxContainer.AlignmentMode.Center;
         v.MouseFilter = MouseFilterEnum.Ignore;
-        foreach (var ch in v.GetChildren()) if (ch is Control cc) cc.MouseFilter = MouseFilterEnum.Ignore;
-        v.SetAnchorsPreset(LayoutPreset.FullRect); v.OffsetLeft = 12; v.OffsetRight = -12; v.OffsetTop = 5; v.OffsetBottom = -5;
+        SetIgnore(v);
+        v.SetAnchorsPreset(LayoutPreset.FullRect); v.OffsetLeft = 12; v.OffsetRight = -10; v.OffsetTop = 3; v.OffsetBottom = -3;
         b.AddChild(v);
         b.Pressed += OnContinue;
         return b;
@@ -273,60 +460,35 @@ public partial class Shell : Control
         else Render();
     }
 
-    // ------------------------------------------------------------------ меню и вкладки
-    void BuildSide()
-    {
-        Ui.Clear(_sideBox);
-        foreach (var (key, icon, name) in Menu)
-        {
-            bool on = _cur.Page == key && (key != "club" || _cur.Arg == null || _cur.Arg == C.UserTeam);
-            var b = new Button { FocusMode = FocusModeEnum.None, CustomMinimumSize = new Vector2(0, 38), Flat = true, MouseDefaultCursorShape = CursorShape.PointingHand };
-            var st = Ui.Box(on ? new Color(1, 1, 1, 0.07f) : new Color(0, 0, 0, 0), 4, null, 10);
-            if (on) { st.BorderColor = Ui.AccentBright; st.BorderWidthLeft = 3; }
-            b.AddThemeStyleboxOverride("normal", st);
-            b.AddThemeStyleboxOverride("hover", Ui.Box(new Color(1, 1, 1, 0.05f), 4, null, 10));
-            b.AddThemeStyleboxOverride("pressed", st);
-            var h = Ui.H(12, Ui.Icon(icon, 18, on ? Ui.Text : Ui.Muted), Ui.Expand(Ui.L(name, 14, on ? Ui.Text : Ui.Muted, on ? Ui.Semi : Ui.Medium)));
-            if (key == "inbox" && C.Unread > 0)
-                h.AddChild(Ui.Card(Ui.L(C.Unread.ToString(), 11, Colors.White, Ui.Bold), new Color("D9534F"), 6));
-            int injN = key == "medical" ? C.Injured.Count(id => C.Data.PlayerById[id].Team == C.UserTeam) : 0;
-            if (injN > 0) h.AddChild(Ui.Card(Ui.L(injN.ToString(), 11, Colors.White, Ui.Bold), new Color("7A3B3B"), 6));
-            h.MouseFilter = MouseFilterEnum.Ignore;
-            foreach (var ch in h.GetChildren()) if (ch is Control cc) cc.MouseFilter = MouseFilterEnum.Ignore;
-            h.SetAnchorsPreset(LayoutPreset.FullRect); h.OffsetLeft = 12; h.OffsetRight = -8;
-            b.AddChild(h);
-            b.Pressed += () => Go(key, null, key == "club" ? C.UserTeam : null);
-            _sideBox.AddChild(b);
-        }
-        _sideBox.AddChild(Ui.Spacer());
-        _sideBox.AddChild(Ui.L($"HM27 {Main.Version} · данные на {Ui.DateShort(DateOnly.Parse(C.Data.DataDate))}", 11, Ui.Dim));
-        _sideBox.AddChild(Ui.L("Пробел — продолжить · Alt+← назад", 11, Ui.Dim));
-        var menu = Ui.B("Главное меню", () => { Main.I.Save(); Main.I.ShowMenu(); });
-        menu.AddThemeFontSizeOverride("font_size", 13);
-        _sideBox.AddChild(menu);
-    }
-
+    // ------------------------------------------------------------------ вкладки раздела
     void BuildSubs()
     {
         Ui.Clear(_subBar);
-        var sb = new StyleBoxFlat { BgColor = new Color("20242B"), BorderColor = Ui.Line, BorderWidthBottom = 1 };
+        var sb = new StyleBoxFlat { BgColor = new Color(Ui.Side, 0.6f), BorderColor = Ui.Line, BorderWidthBottom = 1 };
         sb.ContentMarginLeft = 18; sb.ContentMarginRight = 18;
         _subBar.AddThemeStyleboxOverride("panel", sb);
-        _subBar.Visible = Subs.ContainsKey(_cur.Page);
+        // вкладки: страницы раздела (как в его выпадающем списке); у чужого клуба — его страницы
+        var tabs = new List<(string name, string page, string sub, string arg)>();
+        string sec = SectionOf(_cur);
+        if (_cur.Page == "club") tabs.AddRange(Subs["club"].Select(x => (x.name, "club", x.key, _cur.Arg)));
+        else if (sec != null && _cur.Page != "player")
+            tabs.AddRange(Sections().First(x => x.Key == sec).Items.Where(it => it.Page != null && !it.Soon).Select(it => (it.Name, it.Page, it.Sub, (string)null)));
+        _subBar.Visible = tabs.Count > 1;
         if (!_subBar.Visible) return;
         var h = Ui.H(4);
         _subBar.AddChild(h);
-        foreach (var (key, name) in Subs[_cur.Page])
+        foreach (var (name, page, key, arg) in tabs)
         {
-            bool on = _cur.Sub == key;
-            var b = new Button { Text = name, FocusMode = FocusModeEnum.None, Flat = true, CustomMinimumSize = new Vector2(0, 40), MouseDefaultCursorShape = CursorShape.PointingHand };
-            var st = new StyleBoxFlat { BgColor = new Color(0, 0, 0, 0), BorderColor = on ? Ui.AccentBright : new Color(0, 0, 0, 0), BorderWidthBottom = 3 };
+            bool on = _cur.Page == page && (key == null || _cur.Sub == key);
+            var b = new Button { Text = name, FocusMode = FocusModeEnum.None, CustomMinimumSize = new Vector2(0, 40), MouseDefaultCursorShape = CursorShape.PointingHand };
+            var st = new StyleBoxFlat { BgColor = new Color(0, 0, 0, 0), BorderColor = on ? Ui.Blue : new Color(0, 0, 0, 0), BorderWidthBottom = 2 };
             st.ContentMarginLeft = st.ContentMarginRight = 12;
             b.AddThemeStyleboxOverride("normal", st); b.AddThemeStyleboxOverride("hover", st); b.AddThemeStyleboxOverride("pressed", st);
             b.AddThemeColorOverride("font_color", on ? Ui.Text : Ui.Muted);
             b.AddThemeColorOverride("font_hover_color", Ui.Text);
-            b.AddThemeFontSizeOverride("font_size", 14);
-            b.Pressed += () => Go(_cur.Page, key, _cur.Arg);
+            b.AddThemeFontSizeOverride("font_size", 13);
+            b.AddThemeFontOverride("font", on ? Ui.Semi : Ui.Medium);
+            b.Pressed += () => Go(page, key, arg);
             h.AddChild(b);
         }
     }

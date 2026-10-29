@@ -9,7 +9,7 @@ namespace HM27.UI;
 /// <summary>Корень игры: база, карьера, переключение экранов, сохранение.</summary>
 public partial class Main : Control
 {
-    public const string Version = "0.3.0";
+    public const string Version = "0.4.0";
     const string SavePath = "user://career.json";
 
     public static Main I { get; private set; }
@@ -26,9 +26,9 @@ public partial class Main : Control
         Theme = Ui.MakeTheme();
         SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(new LogoCache());
-        // фон: мягкий диагональный градиент, как у скинов FM
+        // фон: лёд под светом арены — чуть светлее сверху слева
         var grad = new Gradient();
-        grad.SetColor(0, new Color("1A2433")); grad.SetColor(1, new Color("0D1219"));
+        grad.SetColor(0, new Color("10203A")); grad.SetColor(1, new Color("07101D"));
         var bg = new TextureRect { Texture = new GradientTexture2D { Gradient = grad, Width = 256, Height = 256, FillFrom = new Vector2(0, 0), FillTo = new Vector2(1, 1) },
             ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.Scale, MouseFilter = MouseFilterEnum.Ignore };
         bg.SetAnchorsPreset(LayoutPreset.FullRect);
@@ -121,6 +121,8 @@ public partial class Main : Control
                 ShowHub(args.GetValueOrDefault("tab", "overview"), args.GetValueOrDefault("arg"));
                 break;
         }
+        if (args.TryGetValue("open", out var open))
+            GetTree().CreateTimer(0.3).Timeout += () => (_screen as Shell)?.DebugOpen(open);
         if (args.TryGetValue("shot", out var shot)) Shooter.Arm(this, shot, int.Parse(args.GetValueOrDefault("frames", "12")));
     }
 
@@ -140,7 +142,7 @@ public partial class Main : Control
         // слишком тёмный основной цвет (чёрный, тёмно-синий) — берём второй
         if (c.Luminance < 0.12f && t.Colors.Count > 1 && new Color(t.Colors[1]).Luminance > 0.12f) c = new Color(t.Colors[1]);
         if (c.Luminance < 0.12f) c = c.Lightened(0.35f);
-        Ui.Accent = c;
+        Ui.Club = c;
         Theme = Ui.MakeTheme();
     }
 
@@ -177,6 +179,19 @@ public partial class Main : Control
     }
 
     public bool HasSave => FileAccess.FileExists(SavePath);
+
+    /// <summary>Клуб и дата сохранённой карьеры — для главного меню, без разбора всего файла.</summary>
+    public (string team, DateOnly? date) SaveInfo()
+    {
+        try
+        {
+            var head = FileAccess.GetFileAsString(SavePath);
+            var t = System.Text.RegularExpressions.Regex.Match(head, "\"UserTeam\"\\s*:\\s*\"(\\w+)\"");
+            var d = System.Text.RegularExpressions.Regex.Match(head, "\"Today\"\\s*:\\s*\"([0-9-]+)\"");
+            return (t.Success ? t.Groups[1].Value : null, d.Success ? DateOnly.Parse(d.Groups[1].Value) : null);
+        }
+        catch { return (null, null); }
+    }
 
     public void LoadCareer()
     {

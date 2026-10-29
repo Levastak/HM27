@@ -10,7 +10,7 @@ namespace HM27.UI;
 /// <summary>Гиперссылки на игроков и клубы: подсветка при наведении, щелчок — карточка.</summary>
 public static class Links
 {
-    public static Label Link(string text, Action onClick, int size = 15, Color? color = null, FontFile font = null, HorizontalAlignment align = HorizontalAlignment.Left)
+    public static Label Link(string text, Action onClick, int size = 15, Color? color = null, Font font = null, HorizontalAlignment align = HorizontalAlignment.Left)
     {
         var l = Ui.L(text, size, color ?? Ui.Text, font, align);
         var baseCol = color ?? Ui.Text;
@@ -43,17 +43,17 @@ public static class Links
         else Main.I?.ShowHub("club", abbr);
     }
 
-    public static Label Player(PlayerData p, string text = null, int size = 14, Color? color = null, FontFile font = null)
+    public static Label Player(PlayerData p, string text = null, int size = 14, Color? color = null, Font font = null)
     {
         Label l = null;
         l = Link(text ?? p.NameRu, () => OpenPlayer(l, p), size, color, font);
         return l;
     }
 
-    public static Label Player(Career c, int id, string text = null, int size = 14, Color? color = null, FontFile font = null) =>
+    public static Label Player(Career c, int id, string text = null, int size = 14, Color? color = null, Font font = null) =>
         c.Data.PlayerById.TryGetValue(id, out var p) ? Player(p, text, size, color, font) : Ui.L(text ?? "—", size, color ?? Ui.Muted, font);
 
-    public static Label Club(TeamData t, string text = null, int size = 14, Color? color = null, FontFile font = null) =>
+    public static Label Club(TeamData t, string text = null, int size = 14, Color? color = null, Font font = null) =>
         Link(text ?? t.Name, () => OpenClub(t.Abbr), size, color, font);
 
     /// <summary>Строка из ссылок через разделитель (звенья, авторы гола).</summary>
@@ -75,6 +75,11 @@ public static class BioText
 {
     public static string Season(long s) => $"{s / 10000}-{(s % 10000) % 100:00}";
     public static int EndYear(long s) => (int)(s % 10000);
+    /// <summary>Сезон игры (20262027): с него начинается альтернативная история.</summary>
+    public static long GameSeason(GameData d) => (long)d.Season * 10000 + d.Season + 1;
+    /// <summary>Реальные сезоны НХЛ до старта игры; текущий реальный сезон не показываем — в игре он свой.</summary>
+    public static List<List<System.Text.Json.JsonElement>> Past(GameData d, PlayerBio b) =>
+        b == null ? new() : b.Nhl.Where(r => r[0].GetInt64() < GameSeason(d)).ToList();
 
     public static (string name, string note) Trophy(string en) => en switch
     {
@@ -222,15 +227,16 @@ public static class BioWidgets
             v.AddChild(Line("До НХЛ", Text(string.Join(" → ", pre.Select(x => $"{x.club} ({BioText.League(x.league)}, {(x.from == x.to - 1 ? $"{x.from}-{x.to % 100:00}" : $"{x.from}–{x.to}")})")))));
 
         // НХЛ в цифрах
-        if (b.Nhl.Count > 0)
+        var nhl = BioText.Past(c.Data, b);
+        if (nhl.Count > 0)
         {
             bool g = p.IsGoalie;
-            int gp = b.Nhl.Sum(r => r[2].GetInt32());
+            int gp = nhl.Sum(r => r[2].GetInt32());
             var clubs = new List<string>();
-            foreach (var r in b.Nhl) { var t = BioText.NhlTeam(c.Data, r[1].GetString()); if (clubs.Count == 0 || clubs[^1] != t) clubs.Add(t); }
-            string first = BioText.Season(b.Nhl[0][0].GetInt64());
-            string tot = g ? $"{gp} {Ui.Plural(gp, "матч", "матча", "матчей")}, {b.Nhl.Sum(r => r[3].GetInt32())} побед, на ноль — {b.Nhl.Sum(r => r[6].GetInt32())}"
-                           : $"{gp} {Ui.Plural(gp, "матч", "матча", "матчей")}, {b.Nhl.Sum(r => r[5].GetInt32())} очков ({b.Nhl.Sum(r => r[3].GetInt32())} + {b.Nhl.Sum(r => r[4].GetInt32())})";
+            foreach (var r in nhl) { var t = BioText.NhlTeam(c.Data, r[1].GetString()); if (clubs.Count == 0 || clubs[^1] != t) clubs.Add(t); }
+            string first = BioText.Season(nhl[0][0].GetInt64());
+            string tot = g ? $"{gp} {Ui.Plural(gp, "матч", "матча", "матчей")}, {nhl.Sum(r => r[3].GetInt32())} побед, на ноль — {nhl.Sum(r => r[6].GetInt32())}"
+                           : $"{gp} {Ui.Plural(gp, "матч", "матча", "матчей")}, {nhl.Sum(r => r[5].GetInt32())} очков ({nhl.Sum(r => r[3].GetInt32())} + {nhl.Sum(r => r[4].GetInt32())})";
             v.AddChild(Line("В НХЛ", Text($"с сезона {first} · {tot}")));
             v.AddChild(Line("Клубы НХЛ", Text(string.Join(" → ", clubs))));
             if (b.Po is { Count: 4 } && b.Po[0] > 0)
@@ -297,39 +303,58 @@ public static class BioWidgets
     /// <summary>Сезоны в НХЛ (регулярка), как таблица «Карьера» в FM.</summary>
     public static Control NhlCareer(Career c, PlayerData p)
     {
-        var b = p.Bio;
-        if (b == null || b.Nhl.Count == 0) return Ui.Margin(Ui.L("В НХЛ ещё не играл", 13, Ui.Muted), 12, 8, 12, 8);
+        var nhl = BioText.Past(c.Data, p.Bio);
         bool g = p.IsGoalie;
-        Control Num(string s, bool bold = false) => Ui.L(s, 12, bold ? Ui.Text : Ui.Muted, bold ? Ui.Semi : null, HorizontalAlignment.Right).Also(l => l.CustomMinimumSize = new Vector2(38, 0));
+        bool playedNow = g ? c.Goalies.ContainsKey(p.Id) : c.Skaters.ContainsKey(p.Id);
+        if (nhl.Count == 0 && !playedNow) return Ui.Margin(Ui.L("В НХЛ ещё не играл", 13, Ui.Muted), 12, 8, 12, 8);
+        Control Num(string s, bool bold = false, Color? col = null) => Ui.L(s, 13, col ?? (bold ? Ui.Text : Ui.Muted), bold ? Ui.Semi : null, HorizontalAlignment.Right).Also(l => l.CustomMinimumSize = new Vector2(40, 0));
         var v = Ui.V(0);
-        var head = Ui.H(6, Ui.L("СЕЗОН", 10, Ui.Dim, Ui.Bold).Also(l => l.CustomMinimumSize = new Vector2(64, 0)), Ui.Expand(Ui.L("КЛУБ", 10, Ui.Dim, Ui.Bold)));
-        foreach (var t in g ? new[] { "И", "В", "КН", "%ОБ", "НОЛЬ" } : new[] { "И", "Г", "П", "О", "ШТР", "+/−" })
-            head.AddChild(Ui.L(t, 10, Ui.Dim, Ui.Bold, HorizontalAlignment.Right).Also(l => l.CustomMinimumSize = new Vector2(38, 0)));
+        var head = Ui.H(6, Ui.L("Сезон", 13, Ui.Muted, Ui.Cond).Also(l => l.CustomMinimumSize = new Vector2(64, 0)), Ui.Expand(Ui.L("Клуб", 13, Ui.Muted, Ui.Cond)));
+        foreach (var t in g ? new[] { "И", "В", "КН", "%ОБ", "Сух" } : new[] { "И", "Г", "П", "О", "Штр", "+/−" })
+            head.AddChild(Ui.L(t, 13, Ui.Muted, Ui.Cond, HorizontalAlignment.Right).Also(l => l.CustomMinimumSize = new Vector2(40, 0)));
         v.AddChild(Ui.Margin(head, 12, 6, 12, 6));
-        foreach (var r in b.Nhl.AsEnumerable().Reverse())
+
+        void Row(string season, Control club, Control[] nums, bool game)
         {
             var h = Ui.H(6);
-            h.AddChild(Ui.L(BioText.Season(r[0].GetInt64()), 12, Ui.Muted).Also(l => l.CustomMinimumSize = new Vector2(64, 0)));
-            string team = r[1].GetString();
-            Control cell = team != null && c.Data.TeamByAbbr.TryGetValue(team, out var tt)
-                ? Ui.H(6, new TeamBadge(tt, 16), Links.Club(tt, tt.City, 12)) : Ui.L(BioText.NhlTeam(c.Data, team), 12, Ui.Text);
-            h.AddChild(Ui.Expand(cell));
-            if (g)
-            {
-                h.AddChild(Num($"{r[2].GetInt32()}")); h.AddChild(Num($"{r[3].GetInt32()}", true)); h.AddChild(Num($"{r[4].GetDouble():0.00}"));
-                h.AddChild(Num($"{r[5].GetDouble():.000}", true)); h.AddChild(Num($"{r[6].GetInt32()}"));
-            }
-            else
-            {
-                h.AddChild(Num($"{r[2].GetInt32()}")); h.AddChild(Num($"{r[3].GetInt32()}")); h.AddChild(Num($"{r[4].GetInt32()}"));
-                h.AddChild(Num($"{r[5].GetInt32()}", true)); h.AddChild(Num($"{r[6].GetInt32()}")); h.AddChild(Num(Ui.Signed(r[7].GetInt32(), "0")));
-            }
+            h.AddChild(Ui.L(season, 13, game ? Ui.Gold : Ui.Muted, game ? Ui.Semi : null).Also(l => l.CustomMinimumSize = new Vector2(64, 0)));
+            h.AddChild(Ui.Expand(club));
+            foreach (var n in nums) h.AddChild(n);
             var row = new PanelContainer();
-            var sb = Ui.Box(new Color(0, 0, 0, 0), 0, null, 12);
+            var sb = Ui.Box(game ? new Color(Ui.Gold, 0.07f) : new Color(0, 0, 0, 0), 0, null, 12);
             sb.ContentMarginTop = sb.ContentMarginBottom = 4; sb.BorderColor = Ui.Line; sb.BorderWidthTop = 1;
             row.AddThemeStyleboxOverride("panel", sb);
             row.AddChild(h);
+            if (game) row.TooltipText = "Сезон в HM27: альтернативная история с начала сезона 2026-27";
             v.AddChild(row);
+        }
+
+        // сезон в игре — первым: дальше история идёт своим путём
+        if (playedNow)
+        {
+            var tt = c.Team(p.Team);
+            var club = Ui.H(6, new TeamBadge(tt, 16), Links.Club(tt, tt.City, 13));
+            string sea = BioText.Season(BioText.GameSeason(c.Data));
+            if (g)
+            {
+                var s = c.Goalies[p.Id];
+                Row(sea, club, new[] { Num($"{s.Gp}"), Num($"{s.W}", true), Num($"{s.Gaa:0.00}"), Num(s.Sa > 0 ? $"{s.SvPct:.000}" : "—", true), Num($"{s.So}") }, true);
+            }
+            else
+            {
+                var s = c.Skaters[p.Id];
+                Row(sea, club, new[] { Num($"{s.Gp}"), Num($"{s.G}"), Num($"{s.A}"), Num($"{s.Pts}", true), Num($"{s.Pim}"), Num(Ui.Signed(s.Pm, "0")) }, true);
+            }
+        }
+        foreach (var r in nhl.AsEnumerable().Reverse())
+        {
+            string team = r[1].GetString();
+            Control cell = team != null && c.Data.TeamByAbbr.TryGetValue(team, out var tt)
+                ? Ui.H(6, new TeamBadge(tt, 16), Links.Club(tt, tt.City, 13)) : Ui.L(BioText.NhlTeam(c.Data, team), 13, Ui.Text);
+            Control[] nums = g
+                ? new[] { Num($"{r[2].GetInt32()}"), Num($"{r[3].GetInt32()}", true), Num($"{r[4].GetDouble():0.00}"), Num($"{r[5].GetDouble():.000}", true), Num($"{r[6].GetInt32()}") }
+                : new[] { Num($"{r[2].GetInt32()}"), Num($"{r[3].GetInt32()}"), Num($"{r[4].GetInt32()}"), Num($"{r[5].GetInt32()}", true), Num($"{r[6].GetInt32()}"), Num(Ui.Signed(r[7].GetInt32(), "0")) };
+            Row(BioText.Season(r[0].GetInt64()), cell, nums, false);
         }
         return v;
     }

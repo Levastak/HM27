@@ -6,24 +6,30 @@ using HM27.Core;
 namespace HM27.UI;
 
 /// <summary>
-/// Визуальный стиль HM27 в духе FM24: тёмно-серые панели, плотные таблицы, шапка в цветах клуба.
-/// Шрифт Inter (OFL), иконки Lucide (ISC).
+/// Визуальный стиль HM27 «каток и табло»: глубокий тёмно-синий лёд вместо чёрного, синяя линия — всё, на что можно нажать,
+/// красный свет за воротами — только голы, поражения и тревоги, янтарь табло — звёзды и главное на экране, цвета клуба — в шапке.
+/// Шрифты: Fira Sans Extra Condensed (заголовки и числа, как на табло) и Inter (текст), оба — SIL OFL; цифры моноширинные (tnum).
+/// Иконки Lucide (ISC).
 /// </summary>
 public static class Ui
 {
-    public static readonly Color Bg = new("141B25");       // фон страниц (сине-серый, как у WTCS)
-    public static readonly Color Side = new("0E131A");     // левое меню
-    public static readonly Color Panel = new("1D2633");    // панели-виджеты
-    public static readonly Color Panel2 = new("263142");   // шапки панелей, кнопки
-    public static readonly Color Line = new("2F3B4D");
-    public static readonly Color Text = new("ECEFF4");
-    public static readonly Color Muted = new("A0A8B5");
-    public static readonly Color Dim = new("6E7785");
-    public static readonly Color Gold = new("F2C14E");
-    public static readonly Color Win = new("3FB97A");
-    public static readonly Color Loss = new("E25B5B");
-    public static readonly Color Otl = new("E2A93B");
-    public static Color Accent = new("4C8DFF");
+    public static readonly Color Bg = new("0B1626");       // лёд под светом арены: глубокий тёмно-синий
+    public static readonly Color Side = new("081120");     // верхняя полоса навигации
+    public static readonly Color Panel = new("12223A");    // панели-виджеты
+    public static readonly Color Panel2 = new("1A2D4A");   // кнопки, шапки таблиц
+    public static readonly Color Line = new("233A5C");     // разделители
+    public static readonly Color Text = new("EAF1FA");     // белый лёд
+    public static readonly Color Muted = new("97A9C3");
+    public static readonly Color Dim = new("5F7494");
+    public static readonly Color Blue = new("3D8BFF");     // синяя линия: всё интерактивное
+    public static readonly Color Gold = new("FFB627");     // янтарь табло: звёзды, главное
+    public static readonly Color Red = new("FF4A4A");      // свет за воротами: голы и тревоги
+    public static readonly Color Win = new("35C985");
+    public static readonly Color Loss = new("FF5A5A");
+    public static readonly Color Otl = new("F09A3E");
+    public static Color Accent = Blue;
+    /// <summary>Основной цвет своего клуба (шапка, эмблемы, подсветка своего).</summary>
+    public static Color Club = new("154734");
     /// <summary>Акцент, достаточно светлый для полос и подсветки на тёмном фоне.</summary>
     public static Color AccentBright
     {
@@ -35,20 +41,26 @@ public static class Ui
         }
     }
 
-    static FontFile _regular, _medium, _semi, _bold, _black;
-    public static FontFile Regular => _regular ??= Load("Inter-Regular");
-    public static FontFile Medium => _medium ??= Load("Inter-Medium");
-    public static FontFile Semi => _semi ??= Load("Inter-SemiBold");
-    public static FontFile Bold => _bold ??= Load("Inter-Bold");
-    public static FontFile Black => _black ??= Load("InterDisplay-Black");
+    static Font _regular, _medium, _semi, _bold, _black, _cond, _condBold, _condBlack;
+    public static Font Regular => _regular ??= Load("Inter-Regular");
+    public static Font Medium => _medium ??= Load("Inter-Medium");
+    public static Font Semi => _semi ??= Load("Inter-SemiBold");
+    public static Font Bold => _bold ??= Load("Inter-Bold");
+    public static Font Black => _black ??= Load("InterDisplay-Black");
+    /// <summary>Узкий шрифт табло: заголовки, счёт, числа.</summary>
+    public static Font Cond => _cond ??= Load("FiraSansExtraCondensed-SemiBold");
+    public static Font CondBold => _condBold ??= Load("FiraSansExtraCondensed-Bold");
+    public static Font CondBlack => _condBlack ??= Load("FiraSansExtraCondensed-ExtraBold");
 
-    static FontFile Load(string name)
+    static Font Load(string name)
     {
         var f = GD.Load<FontFile>($"res://ui/fonts/{name}.ttf");
         f.Antialiasing = TextServer.FontAntialiasing.Gray;
         f.SubpixelPositioning = TextServer.SubpixelPositioning.Auto;
         f.Hinting = TextServer.Hinting.Light;
-        return f;
+        // моноширинные цифры: столбцы таблиц и счёт не прыгают
+        var ts = TextServerManager.GetPrimaryInterface();
+        return new FontVariation { BaseFont = f, OpentypeFeatures = new Godot.Collections.Dictionary { { ts.NameToTag("tnum"), 1 } } };
     }
 
     public static Theme MakeTheme()
@@ -60,13 +72,22 @@ public static class Ui
         t.SetColor("font_pressed_color", "Button", Colors.White);
         t.SetColor("font_disabled_color", "Button", Dim);
         t.SetFont("font", "Button", Semi);
-        t.SetStylebox("normal", "Button", Box(Panel2, 6, Line));
-        t.SetStylebox("hover", "Button", Box(Panel2.Lightened(0.08f), 6, Accent.Darkened(0.2f)));
-        t.SetStylebox("pressed", "Button", Box(Accent.Darkened(0.35f), 6, Accent));
-        t.SetStylebox("disabled", "Button", Box(Panel, 6, Line));
+        t.SetStylebox("normal", "Button", Box(Panel2, 3, Line));
+        t.SetStylebox("hover", "Button", Box(Panel2.Lightened(0.06f), 3, Blue));
+        t.SetStylebox("pressed", "Button", Box(Blue.Darkened(0.45f), 3, Blue));
+        t.SetStylebox("disabled", "Button", Box(Panel, 3, Line));
         t.SetStylebox("focus", "Button", new StyleBoxEmpty());
-        t.SetStylebox("panel", "PanelContainer", Box(Panel, 10));
-        t.SetStylebox("panel", "TooltipPanel", Box(Panel2, 6, Line));
+        t.SetStylebox("panel", "PanelContainer", Box(Panel, 4));
+        t.SetStylebox("panel", "TooltipPanel", Box(Side, 3, Line));
+        t.SetStylebox("panel", "PopupPanel", Box(Side, 3, Line, 6));
+        t.SetStylebox("panel", "PopupMenu", Box(Side, 3, Line, 6));
+        t.SetColor("font_color", "PopupMenu", Text);
+        t.SetColor("font_hover_color", "PopupMenu", Colors.White);
+        t.SetStylebox("hover", "PopupMenu", Box(Panel2, 3, null, 6));
+        t.SetStylebox("normal", "LineEdit", Box(Panel, 3, Line, 10));
+        t.SetStylebox("focus", "LineEdit", Box(Panel, 3, Blue, 10));
+        t.SetColor("caret_color", "LineEdit", Blue);
+        t.SetColor("selection_color", "LineEdit", new Color(Blue, 0.4f));
         t.SetStylebox("grabber", "VScrollBar", Box(Line, 3, null, 0).Also(b => b.ContentMarginTop = b.ContentMarginBottom = 0));
         t.SetStylebox("grabber_highlight", "VScrollBar", Box(Dim, 3, null, 0).Also(b => b.ContentMarginTop = b.ContentMarginBottom = 0));
         t.SetStylebox("grabber_pressed", "VScrollBar", Box(Muted, 3, null, 0).Also(b => b.ContentMarginTop = b.ContentMarginBottom = 0));
@@ -81,7 +102,7 @@ public static class Ui
     public static StyleBoxFlat Box(Color bg, int radius = 8, Color? border = null, int pad = 12)
     {
         var s = new StyleBoxFlat { BgColor = bg };
-        s.SetCornerRadiusAll(Math.Min(radius, 4));   // FM: почти прямые углы
+        s.SetCornerRadiusAll(Math.Min(radius, 4));   // почти прямые углы, как борта
         if (border.HasValue) { s.BorderColor = border.Value; s.SetBorderWidthAll(1); }
         s.ContentMarginLeft = s.ContentMarginRight = pad;
         s.ContentMarginTop = s.ContentMarginBottom = Math.Max(4, pad - 4);
@@ -89,7 +110,7 @@ public static class Ui
     }
 
     // ---------------------------------------------------------------- фабрики
-    public static Label L(string text, int size = 15, Color? color = null, FontFile font = null, HorizontalAlignment align = HorizontalAlignment.Left)
+    public static Label L(string text, int size = 15, Color? color = null, Font font = null, HorizontalAlignment align = HorizontalAlignment.Left)
     {
         var l = new Label { Text = text, HorizontalAlignment = align, VerticalAlignment = VerticalAlignment.Center };
         if (size != 15) l.AddThemeFontSizeOverride("font_size", size);
@@ -251,6 +272,8 @@ public static class Ui
     static readonly string[] MonthsShort = { "янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек" };
     static readonly string[] Dow = { "вс", "пн", "вт", "ср", "чт", "пт", "сб" };
     public static string Date(DateOnly d, bool dow = true) => $"{d.Day} {MonthsGen[d.Month - 1]}{(dow ? ", " + Dow[(int)d.DayOfWeek] : "")}";
+    static readonly string[] DowFull = { "воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота" };
+    public static string DowLong(DateOnly d) => DowFull[(int)d.DayOfWeek];
     public static string DateShort(DateOnly d) => $"{d.Day} {MonthsShort[d.Month - 1]}";
 
     public static string Plural(int n, string one, string few, string many)

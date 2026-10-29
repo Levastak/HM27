@@ -31,4 +31,4 @@ theme/default_font_multichannel_signed_distance_field=false
 
 textures/vram_compression/import_etc2_astc=true
 anti_aliasing/quality/msaa_3d=2
-environment/defaults/default_clear_color=Color(0.043, 0.059, 0.078, 1)
+environment/defaults/default_clear_color=Color(0.043, 0.086, 0.149, 1)

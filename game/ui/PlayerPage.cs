@@ -137,7 +137,7 @@ public partial class PlayerPage : Control
         v.AddChild(bioRow);
 
         v.AddChild(Stats(p));
-        v.AddChild(Widget.Make("Карьера в НХЛ (регулярные чемпионаты)", BioWidgets.NhlCareer(C, p), null, null, 0));
+        v.AddChild(Widget.Make("Карьера в НХЛ: регулярные чемпионаты", BioWidgets.NhlCareer(C, p), null, null, 0));
         var games = Games(p);
         if (games != null) v.AddChild(games);
     }
@@ -378,42 +378,52 @@ public partial class PlayerPage : Control
     // ---------------------------------------------------------------- статистика
     Control Stats(PlayerData p)
     {
-        var real = p.Stats;
-        string realName = "НХЛ 2026-27 (реальность, на " + Ui.DateShort(DateOnly.Parse(C.Data.DataDate)) + ")";
+        // только сезон в игре: с первого дня карьеры это своя история, реальная статистика 2026-27 сюда не попадает
+        string title = $"Сезон {BioText.Season(BioText.GameSeason(C.Data))}";
         if (p.IsGoalie)
         {
-            var rows = new List<(string name, GoalieLine s, bool real)>();
-            if (real.Count > 0) rows.Add((realName, new GoalieLine { Gp = (int)real.GetValueOrDefault("gp"), W = (int)real.GetValueOrDefault("w"), L = (int)real.GetValueOrDefault("l"), Otl = (int)real.GetValueOrDefault("otl") }, true));
-            if (C.Goalies.TryGetValue(p.Id, out var s1)) rows.Add(("HM27 · регулярный чемпионат", s1, false));
-            if (C.PoGoalies.TryGetValue(p.Id, out var s2)) rows.Add(("HM27 · плей-офф", s2, false));
-            var g = new Grid<(string name, GoalieLine s, bool real)>(new List<Col<(string name, GoalieLine s, bool real)>>
+            var rows = new List<(string name, GoalieLine s)>();
+            if (C.Goalies.TryGetValue(p.Id, out var s1)) rows.Add(("Регулярный чемпионат", s1));
+            if (C.PoGoalies.TryGetValue(p.Id, out var s2)) rows.Add(("Плей-офф", s2));
+            if (rows.Count == 0) return Widget.Make(title, Ui.L("В этом сезоне ещё не играл", 13, Ui.Muted));
+            var g = new Grid<(string name, GoalieLine s)>(new List<Col<(string name, GoalieLine s)>>
             {
                 new() { Title = "Турнир", Width = 0, Align = HorizontalAlignment.Left, Cell = x => Ui.L(x.name, 13) },
                 new() { Title = "И", Width = 40, Cell = x => Ui.L($"{x.s.Gp}", 13) },
                 new() { Title = "В-П-ПО", Width = 80, Cell = x => Ui.L($"{x.s.W}-{x.s.L}-{x.s.Otl}", 13) },
-                new() { Title = "%ОБ", Width = 60, Cell = x => Ui.L(x.real ? (real.ContainsKey("sv") ? $"{real["sv"]:.000}" : "—") : x.s.Sa > 0 ? $"{x.s.SvPct:.000}" : "—", 13, Ui.Text, Ui.Bold) },
-                new() { Title = "КН", Width = 50, Cell = x => Ui.L(x.real ? (real.ContainsKey("gaa") ? $"{real["gaa"]:0.00}" : "—") : $"{x.s.Gaa:0.00}", 13) },
-                new() { Title = "Сух", Width = 40, Cell = x => Ui.L(x.real ? "—" : $"{x.s.So}", 13) },
-                new() { Title = "Ср. оц.", Width = 60, Cell = x => Ui.L(x.real || x.s.Rated == 0 ? "—" : $"{x.s.AvgRating:0.00}", 13) },
+                new() { Title = "Бр", Width = 50, Tip = "Броски в створ", Cell = x => Ui.L($"{x.s.Sa}", 13, Ui.Muted) },
+                new() { Title = "%ОБ", Width = 60, Cell = x => Ui.L(x.s.Sa > 0 ? $"{x.s.SvPct:.000}" : "—", 13, Ui.Text, Ui.Bold) },
+                new() { Title = "КН", Width = 50, Tip = "Коэффициент надёжности: пропущено за матч", Cell = x => Ui.L($"{x.s.Gaa:0.00}", 13) },
+                new() { Title = "Сух", Width = 40, Cell = x => Ui.L($"{x.s.So}", 13) },
+                new() { Title = "Ср. оц.", Width = 60, Cell = x => Ui.L(x.s.Rated == 0 ? "—" : $"{x.s.AvgRating:0.00}", 13) },
             }, rows);
-            return Widget.Make("Статистика", g.Root, null, null, 0);
+            return Widget.Make(title, g.Root, null, null, 0);
         }
-        var srows = new List<(string name, int gp, int g, int a, int ppg, double avg)>();
-        if (real.Count > 0) srows.Add((realName, (int)real.GetValueOrDefault("gp"), (int)real.GetValueOrDefault("g"), (int)real.GetValueOrDefault("a"), -1, 0));
-        if (C.Skaters.TryGetValue(p.Id, out var k1)) srows.Add(("HM27 · регулярный чемпионат", k1.Gp, k1.G, k1.A, k1.Ppg, k1.AvgRating));
-        if (C.PoSkaters.TryGetValue(p.Id, out var k2)) srows.Add(("HM27 · плей-офф", k2.Gp, k2.G, k2.A, k2.Ppg, k2.AvgRating));
-        var grid = new Grid<(string name, int gp, int g, int a, int ppg, double avg)>(new List<Col<(string name, int gp, int g, int a, int ppg, double avg)>>
+        var srows = new List<(string name, SkaterLine s)>();
+        if (C.Skaters.TryGetValue(p.Id, out var k1)) srows.Add(("Регулярный чемпионат", k1));
+        if (C.PoSkaters.TryGetValue(p.Id, out var k2)) srows.Add(("Плей-офф", k2));
+        if (srows.Count == 0) return Widget.Make(title, Ui.L("В этом сезоне ещё не играл", 13, Ui.Muted));
+        bool c = p.Pos == "C";
+        var cols = new List<Col<(string name, SkaterLine s)>>
         {
             new() { Title = "Турнир", Width = 0, Align = HorizontalAlignment.Left, Cell = x => Ui.L(x.name, 13) },
-            new() { Title = "И", Width = 40, Cell = x => Ui.L($"{x.gp}", 13) },
-            new() { Title = "Г", Width = 40, Cell = x => Ui.L($"{x.g}", 13) },
-            new() { Title = "П", Width = 40, Cell = x => Ui.L($"{x.a}", 13) },
-            new() { Title = "О", Width = 44, Cell = x => Ui.L($"{x.g + x.a}", 13, Ui.Text, Ui.Bold) },
-            new() { Title = "ГБ", Width = 40, Cell = x => Ui.L(x.ppg < 0 ? "—" : $"{x.ppg}", 13, Ui.Muted) },
-            new() { Title = "О/И", Width = 50, Cell = x => Ui.L(x.gp > 0 ? $"{(x.g + x.a) / (double)x.gp:0.00}" : "—", 13, Ui.Muted) },
-            new() { Title = "Ср. оц.", Width = 60, Cell = x => Ui.L(x.avg > 0 ? $"{x.avg:0.00}" : "—", 13) },
-        }, srows);
-        return Widget.Make("Статистика", grid.Root, null, null, 0);
+            new() { Title = "И", Width = 36, Cell = x => Ui.L($"{x.s.Gp}", 13) },
+            new() { Title = "Г", Width = 36, Cell = x => Ui.L($"{x.s.G}", 13) },
+            new() { Title = "П", Width = 36, Cell = x => Ui.L($"{x.s.A}", 13) },
+            new() { Title = "О", Width = 40, Cell = x => Ui.L($"{x.s.Pts}", 13, Ui.Text, Ui.Bold) },
+            new() { Title = "+/−", Width = 44, Cell = x => Ui.L(Ui.Signed(x.s.Pm, "0"), 13, x.s.Pm > 0 ? Ui.Win : x.s.Pm < 0 ? Ui.Loss : Ui.Muted) },
+            new() { Title = "Бол", Width = 40, Tip = "Очки в большинстве", Cell = x => Ui.L($"{x.s.Ppp}", 13, Ui.Muted) },
+            new() { Title = "Бр", Width = 40, Tip = "Броски в створ", Cell = x => Ui.L($"{x.s.S}", 13, Ui.Muted) },
+            new() { Title = "%Р", Width = 50, Tip = "Реализация: голы / броски в створ", Cell = x => Ui.L(x.s.S > 0 ? $"{100.0 * x.s.G / x.s.S:0.0}" : "—", 13, Ui.Muted) },
+            new() { Title = "Вр/И", Width = 54, Tip = "Время на льду за матч", Cell = x => Ui.L(x.s.Gp > 0 && x.s.Toi > 0 ? Ui.Toi(x.s.Toi / (double)x.s.Gp) : "—", 13, Ui.Muted) },
+            new() { Title = "Блк", Width = 40, Tip = "Заблокированные броски", Cell = x => Ui.L($"{x.s.Blk}", 13, Ui.Muted) },
+            new() { Title = "Сил", Width = 40, Tip = "Силовые приёмы", Cell = x => Ui.L($"{x.s.Hit}", 13, Ui.Muted) },
+            new() { Title = "Штр", Width = 40, Tip = "Штрафные минуты", Cell = x => Ui.L($"{x.s.Pim}", 13, Ui.Muted) },
+        };
+        if (c) cols.Add(new() { Title = "Вбр", Width = 50, Tip = "Выигранные вбрасывания", Cell = x => Ui.L(x.s.Fow + x.s.Fol > 0 ? $"{x.s.FoPct * 100:0.0}%" : "—", 13, Ui.Muted) });
+        cols.Add(new() { Title = "Ср. оц.", Width = 56, Cell = x => Ui.L(x.s.AvgRating > 0 ? $"{x.s.AvgRating:0.00}" : "—", 13) });
+        var grid = new Grid<(string name, SkaterLine s)>(cols, srows);
+        return Widget.Make(title, grid.Root, null, null, 0);
     }
 
     Control Games(PlayerData p)
@@ -439,7 +449,7 @@ public partial class PlayerPage : Control
             } },
             new() { Title = "Оценка", Width = 60, Cell = gm => { var v = gm.Result.Ratings[p.Id]; return Ui.L($"{v:0.0}", 13, v >= 7.5 ? new Color("43D17A") : v >= 6.8 ? Ui.Text : v >= 6.3 ? Ui.Otl : Ui.Loss, Ui.Bold); } },
         }, games, gm => Main.I.ShowMatch(gm));
-        return Widget.Make("Последние матчи в HM27", gg.Root, null, null, 0);
+        return Widget.Make("Последние матчи", gg.Root, null, null, 0);
     }
 
     static string Capital(string s) => string.IsNullOrEmpty(s) ? s : char.ToUpper(s[0]) + s[1..];

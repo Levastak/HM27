@@ -54,7 +54,7 @@ public sealed class Grid<T>
     Control Header()
     {
         var p = new PanelContainer();
-        var sb = new StyleBoxFlat { BgColor = Ui.Panel2, BorderColor = Ui.Line, BorderWidthBottom = 1 };
+        var sb = new StyleBoxFlat { BgColor = new Color(0, 0, 0, 0.18f), BorderColor = Ui.Line, BorderWidthBottom = 1 };
         sb.ContentMarginLeft = sb.ContentMarginRight = 8; sb.ContentMarginTop = sb.ContentMarginBottom = 0;
         p.AddThemeStyleboxOverride("panel", sb);
         var h = Ui.H(6);
@@ -65,9 +65,9 @@ public sealed class Grid<T>
             int ci = c;
             string arrow = _sortCol == c ? (_desc ? " ▼" : " ▲") : "";
             var b = new Button { Text = col.Title + arrow, Flat = true, FocusMode = Control.FocusModeEnum.None, CustomMinimumSize = new Vector2(col.Width, 28), Alignment = col.Align, TooltipText = col.Tip ?? "" };
-            b.AddThemeFontSizeOverride("font_size", 11);
-            b.AddThemeFontOverride("font", Ui.Semi);
-            b.AddThemeColorOverride("font_color", _sortCol == c ? Ui.Text : Ui.Muted);
+            b.AddThemeFontSizeOverride("font_size", 13);
+            b.AddThemeFontOverride("font", Ui.Cond);
+            b.AddThemeColorOverride("font_color", _sortCol == c ? Ui.Gold : Ui.Muted);
             b.AddThemeColorOverride("font_hover_color", Ui.Text);
             var empty = new StyleBoxEmpty();
             b.AddThemeStyleboxOverride("normal", empty); b.AddThemeStyleboxOverride("hover", empty); b.AddThemeStyleboxOverride("pressed", empty);
@@ -87,7 +87,7 @@ public sealed class Grid<T>
     {
         var p = new PanelContainer { CustomMinimumSize = new Vector2(0, 28) };
         bool hi = _highlight?.Invoke(r) ?? false;
-        var bg = hi ? new Color(Ui.AccentBright, 0.16f) : i % 2 == 1 ? new Color(1, 1, 1, 0.025f) : new Color(0, 0, 0, 0);
+        var bg = hi ? new Color(Ui.Blue, 0.16f) : i % 2 == 1 ? new Color(1, 1, 1, 0.022f) : new Color(0, 0, 0, 0);
         var sb = new StyleBoxFlat { BgColor = bg };
         sb.ContentMarginLeft = sb.ContentMarginRight = 8; sb.ContentMarginTop = sb.ContentMarginBottom = 2;
         p.AddThemeStyleboxOverride("panel", sb);
@@ -128,20 +128,19 @@ public static class Widget
     public static PanelContainer Make(string title, Control content, string link = null, Action onLink = null, int pad = 12)
     {
         var p = new PanelContainer();
-        p.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 4, null, 0).Also(s => { s.ContentMarginTop = s.ContentMarginBottom = 0; }));
+        p.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 4, null, 0).Also(s => { s.ContentMarginTop = s.ContentMarginBottom = 0; s.BorderColor = Ui.Line; s.BorderWidthTop = 1; }));
         var v = Ui.V(0);
         p.AddChild(v);
         var head = new PanelContainer();
-        var hs = new StyleBoxFlat { BgColor = Ui.Panel2 };
-        hs.CornerRadiusTopLeft = hs.CornerRadiusTopRight = 4;
-        hs.ContentMarginLeft = hs.ContentMarginRight = 12; hs.ContentMarginTop = hs.ContentMarginBottom = 6;
+        var hs = new StyleBoxFlat { BgColor = new Color(0, 0, 0, 0), BorderColor = Ui.Line, BorderWidthBottom = 1 };
+        hs.ContentMarginLeft = hs.ContentMarginRight = 14; hs.ContentMarginTop = 8; hs.ContentMarginBottom = 7;
         head.AddThemeStyleboxOverride("panel", hs);
-        var hh = Ui.H(8, Ui.Expand(Ui.L(title.ToUpperInvariant(), 11, Ui.Muted, Ui.Bold)));
+        var hh = Ui.H(8, Ui.Expand(Ui.L(title, 18, Ui.Text, Ui.Cond)));
         if (link != null)
         {
             var b = new Button { Text = link, Flat = true, FocusMode = Control.FocusModeEnum.None, MouseDefaultCursorShape = Control.CursorShape.PointingHand };
-            b.AddThemeFontSizeOverride("font_size", 11);
-            b.AddThemeColorOverride("font_color", Ui.AccentBright);
+            b.AddThemeFontSizeOverride("font_size", 12);
+            b.AddThemeColorOverride("font_color", Ui.Blue);
             b.AddThemeColorOverride("font_hover_color", Colors.White);
             var e = new StyleBoxEmpty();
             b.AddThemeStyleboxOverride("normal", e); b.AddThemeStyleboxOverride("hover", e); b.AddThemeStyleboxOverride("pressed", e);
