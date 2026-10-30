@@ -462,3 +462,63 @@ public partial class TacticsBoard : Control
         }
     }
 }
+
+/// <summary>
+/// «Правила матча»: что помощник делает в перерывах, если… (и в матче «сразу к итогу», и советом в трансляции).
+/// Каждый перерыв решение считается заново от плана на матч.
+/// </summary>
+public partial class RulesPage : Control
+{
+    Career C => P.C;
+    Lineup L => C.Lineups[C.UserTeam];
+
+    public RulesPage() { SizeFlagsHorizontal = SizeFlags.ExpandFill; SizeFlagsVertical = SizeFlags.ExpandFill; }
+
+    public override void _Ready() => Build();
+
+    void Build()
+    {
+        foreach (var ch in GetChildren()) { RemoveChild(ch); ch.QueueFree(); }
+        var v = Ui.V(14);
+        var page = P.Page(v);
+        page.SetAnchorsPreset(LayoutPreset.FullRect);
+        AddChild(page);
+        L.Rules ??= Rules.Default();
+        v.AddChild(Ui.V(2, Ui.L("Если — то", 26, Ui.Text, Ui.CondBold),
+            Ui.L("Что помощник меняет в перерывах. В матче «сразу к итогу» он так и сделает, в трансляции — предложит, решать вам. " +
+                 "Каждый перерыв решение считается заново от плана на матч: условие перестало выполняться — всё возвращается.", 12, Ui.Muted).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart)));
+        var grid = new GridContainer { Columns = 3 };
+        grid.AddThemeConstantOverride("h_separation", 18);
+        grid.AddThemeConstantOverride("v_separation", 10);
+        foreach (var (key, text) in Rules.Whens)
+        {
+            int idx = L.Rules.FindIndex(r => r.When == key);
+            var rule = idx >= 0 ? L.Rules[idx] : new Rules.Rule(key, "none", false);
+            var cb = new CheckBox { ButtonPressed = rule.On && rule.Then != "none", FocusMode = FocusModeEnum.None };
+            var ob = new OptionButton { FocusMode = FocusModeEnum.None, CustomMinimumSize = new Vector2(260, 0) };
+            for (int k = 0; k < Rules.Thens.Length; k++) { ob.AddItem(Rules.Thens[k].text, k); if (Rules.Thens[k].key == rule.Then) ob.Selected = k; }
+            void Save(Rules.Rule r)
+            {
+                int i = L.Rules.FindIndex(x => x.When == key);
+                if (i >= 0) L.Rules[i] = r; else L.Rules.Add(r);
+                Main.I.Save();
+                CallDeferred(nameof(Build));
+            }
+            cb.Toggled += on => Save(rule with { On = on });
+            ob.ItemSelected += k => Save(rule with { Then = Rules.Thens[(int)k].key, On = Rules.Thens[(int)k].key != "none" });
+            grid.AddChild(cb);
+            grid.AddChild(Ui.L(text, 15, rule.On ? Ui.Text : Ui.Muted, rule.On ? Ui.Semi : null));
+            grid.AddChild(ob);
+        }
+        var card = new PanelContainer();
+        card.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 4, null, 18));
+        card.AddChild(grid);
+        v.AddChild(card);
+        v.AddChild(Ui.H(10,
+            Ui.B("Как у тренеров НХЛ", () => { L.Rules = Rules.Default(); Main.I.Save(); CallDeferred(nameof(Build)); }, false, 13),
+            Ui.B("Ничего не менять", () => { L.Rules = Rules.Default().Select(r => r with { On = false }).ToList(); Main.I.Save(); CallDeferred(nameof(Build)); }, false, 13)));
+        v.AddChild(Ui.L("Закрыть игру — меньше моментов у обеих команд: ведущему проще удержать счёт. Открыть — наоборот, нужно отыгрываться. " +
+                        "Прессинг приносит удаления, а смена вратаря иногда встряхивает команду — но сменщик обычно слабее. " +
+                        "Клубы ИИ в перерывах только меняют вратаря после четырёх пропущенных.", 12, Ui.Dim).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart));
+    }
+}

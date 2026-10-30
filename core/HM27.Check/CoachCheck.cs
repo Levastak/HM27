@@ -181,3 +181,45 @@ static class RolesCheck
         return (atkOz, defDz, shut, gain);
     }
 }
+
+/// <summary>Указания игрокам: «бросать чаще» снайперу и мазиле, «подключаться» подходящему и неподходящему защитнику (те же матчи).</summary>
+static class OrdersCheck
+{
+    public static (double sniper, double poor, double dGood, double dBad) Run(GameData data, bool verbose, int reps = 30)
+    {
+        var c = Career.New(data, "MIN", 717);
+        var l = c.Lineups["MIN"];
+        l.Rules = new(); l.TempoAuto = false;
+        var games = c.Games.Where(g => !g.Playoff && (g.Home == "MIN" || g.Away == "MIN")).Take(41).ToList();
+        double Net(int id, string order)
+        {
+            l.Orders = id == 0 ? null : new() { [id] = order };
+            double s = 0; int n = 0;
+            foreach (var g in games)
+            {
+                bool home = g.Home == "MIN";
+                var (h, a) = c.Sides(g);
+                for (int k = 0; k < reps; k++)
+                {
+                    var r = ShiftEngine.Play(data, h, a, new Random(k * 7919 + g.Id));
+                    s += home ? r.HomeGoals - r.AwayGoals : r.AwayGoals - r.HomeGoals; n++;
+                }
+            }
+            l.Orders = null;
+            return s / n;
+        }
+        var fw = l.F.Take(3).SelectMany(x => x).Where(id => id != 0).Select(id => c.Data.PlayerById[id]).ToList();
+        var ds = l.D.Take(3).SelectMany(x => x).Where(id => id != 0).Select(id => c.Data.PlayerById[id]).ToList();
+        var shoot = Orders.Get("shoot"); var join = Orders.Get("join");
+        var best = fw.OrderByDescending(p => Orders.Fit(c, p, shoot)).First(); var worst = fw.OrderBy(p => Orders.Fit(c, p, shoot)).First();
+        var dG = ds.OrderByDescending(p => Orders.Fit(c, p, join)).First(); var dB = ds.OrderBy(p => Orders.Fit(c, p, join)).First();
+        double b0 = Net(0, null);
+        double r1 = Net(best.Id, "shoot") - b0, r2 = Net(worst.Id, "shoot") - b0, r3 = Net(dG.Id, "join") - b0, r4 = Net(dB.Id, "join") - b0;
+        if (verbose)
+        {
+            Console.WriteLine($"Бросать чаще: {c.Short(best.Id)} (пригодность {Orders.Fit(c, best, shoot):+0.00;-0.00}) {r1:+0.000;-0.000} гола за матч, {c.Short(worst.Id)} ({Orders.Fit(c, worst, shoot):+0.00;-0.00}) {r2:+0.000;-0.000}");
+            Console.WriteLine($"Подключаться: {c.Short(dG.Id)} ({Orders.Fit(c, dG, join):+0.00;-0.00}) {r3:+0.000;-0.000}, {c.Short(dB.Id)} ({Orders.Fit(c, dB, join):+0.00;-0.00}) {r4:+0.000;-0.000}");
+        }
+        return (r1, r2, r3, r4);
+    }
+}

@@ -39,6 +39,10 @@ public sealed class Lineup
     public int RoleF(int i) => FRole != null && i < FRole.Length ? FRole[i] : 0;
     public int RoleD(int i) => DRole != null && i < DRole.Length ? DRole[i] : 0;
     public static readonly string[] RoleNames = { "Обычная", "Атакующая", "Оборонительная" };
+    /// <summary>Указания игрокам (Orders): игрок → ключ указания.</summary>
+    public Dictionary<int, string> Orders { get; set; }
+    /// <summary>Правила «если — то» для помощника в перерывах (null — правила по умолчанию, Coach.DefaultRules).</summary>
+    public List<Rules.Rule> Rules { get; set; }
 
     /// <summary>Тактические настройки клуба (не звенья): темп, снятие вратаря, отдых вратаря, система и её выучка.</summary>
     public void CopySettings(Lineup from)
@@ -46,6 +50,8 @@ public sealed class Lineup
         Tempo = from.Tempo; TempoAuto = from.TempoAuto; Pull = from.Pull; BackupOnB2B = from.BackupOnB2B;
         Sys = (int[])from.Sys?.Clone(); Learn = from.Learn == null ? null : new(from.Learn);
         FRole = (int[])from.FRole?.Clone(); DRole = (int[])from.DRole?.Clone(); Matchup = from.Matchup;
+        Rules = from.Rules?.Select(r => r with { }).ToList();
+        Orders = from.Orders == null ? null : new(from.Orders);
     }
     public double[] FMin { get; set; } = { 20, 17, 14, 9 };
     public double[] DMin { get; set; } = { 24, 20, 16 };
@@ -164,7 +170,7 @@ public sealed class Lineup
         D = D.Select(a => (int[])a.Clone()).ToList(),
         G1 = G1, G2 = G2, Pp1 = (int[])Pp1.Clone(), Pp2 = (int[])Pp2.Clone(), Pk1 = (int[])Pk1.Clone(), Pk2 = (int[])Pk2.Clone(),
         Tempo = Tempo, TempoAuto = TempoAuto, Pull = Pull, Sys = (int[])Sys?.Clone(), Learn = Learn == null ? null : new(Learn),
-        FRole = (int[])FRole?.Clone(), DRole = (int[])DRole?.Clone(), Matchup = Matchup,
+        FRole = (int[])FRole?.Clone(), DRole = (int[])DRole?.Clone(), Matchup = Matchup, Rules = Rules?.Select(r => r with { }).ToList(), Orders = Orders == null ? null : new(Orders),
         FMin = (double[])FMin.Clone(), DMin = (double[])DMin.Clone(), BackupOnB2B = BackupOnB2B,
     };
 

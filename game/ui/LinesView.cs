@@ -339,6 +339,7 @@ public partial class LinesView : HBoxContainer
             _ => null,
         };
         info.AddChild(off == null ? Ui.Stars(fit, 10) : Ui.L("⚠ не своё место", 10, Ui.Otl, Ui.Semi));
+        if (L.Orders != null && L.Orders.TryGetValue(id, out var ord) && Orders.Get(ord) is { } od) info.AddChild(Ui.L(od.Name, 10, Ui.Gold, Ui.Semi));
         h.AddChild(info);
         h.MouseFilter = MouseFilterEnum.Ignore;
         foreach (var c in h.GetChildren().OfType<Control>()) c.MouseFilter = MouseFilterEnum.Ignore;
@@ -406,6 +407,7 @@ public partial class LinesView : HBoxContainer
             new() { Title = "Сыгр.", Width = 46, Tip = "Сыгранность с партнёрами по этому звену (тройка или пара)", Cell = p => { var f = MateFam(p.Id, kind); return f < 0 ? Ui.L("", 11) : Ui.L($"{f * 100:0}%", 12, FamColor(f), Ui.Cond); }, Sort = p => MateFam(p.Id, kind) },
         }, pool, p => Assign(p.Id), p => p.Id == cur, sortCol: 3);
         var v = Ui.V(8);
+        if (kind != "G" && cur != 0 && C.Data.PlayerById.TryGetValue(cur, out var who)) v.AddChild(OrderBox(who));
         v.AddChild(Ui.L($"Кандидаты: {label}, {(kind == "G" ? "вратарь" : unitName)}", 16, Ui.Text, Ui.Cond));
         v.AddChild(Ui.L(kind.StartsWith("P") ? "В спецбригады — только игроки, заявленные на матч." : "Щёлкните игрока, чтобы поставить его на выбранное место.", 11, Ui.Dim).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart));
         v.AddChild(Ui.Expand(Ui.Scroll(grid.Root), true, true));
@@ -413,6 +415,40 @@ public partial class LinesView : HBoxContainer
         panel.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 4, null, 10));
         panel.AddChild(v);
         return panel;
+    }
+
+    /// <summary>Указание игроку на выбранном месте: варианты с пригодностью, что даёт и чего стоит.</summary>
+    Control OrderBox(PlayerData p)
+    {
+        var allowed = Orders.All.Where(o => Orders.Allowed(o, p)).ToList();
+        string curKey = L.Orders != null && L.Orders.TryGetValue(p.Id, out var k) ? k : null;
+        var ob = new OptionButton { FocusMode = FocusModeEnum.None };
+        ob.AddItem("Без указаний", 0);
+        for (int i = 0; i < allowed.Count; i++)
+        {
+            double f = Orders.Fit(C, p, allowed[i]);
+            ob.AddItem($"{allowed[i].Name} — {Orders.FitWord(f)}", i + 1);
+            if (allowed[i].Key == curKey) ob.Selected = i + 1;
+        }
+        if (curKey == null) ob.Selected = 0;
+        ob.ItemSelected += idx =>
+        {
+            L.Orders ??= new();
+            if (idx == 0) L.Orders.Remove(p.Id); else L.Orders[p.Id] = allowed[(int)idx - 1].Key;
+            Changed();
+        };
+        var v = Ui.V(4, Ui.H(8, Ui.L($"Указание: {p.LastRu}", 16, Ui.Text, Ui.Cond)), ob);
+        if (Orders.Get(curKey) is { } o)
+        {
+            double f = Orders.Fit(C, p, o);
+            v.AddChild(Ui.L(o.What + ".", 11, Ui.Muted).Also(l => { l.AutowrapMode = TextServer.AutowrapMode.WordSmart; l.CustomMinimumSize = new Vector2(300, 0); }));
+            v.AddChild(Ui.L(f < -0.5 ? "Не его игра: пользы меньше, и он будет понемногу раздражаться." : f >= 0.5 ? "Это его игра — выгода больше обычного." : "Пригодность средняя: размен примерно поровну.",
+                11, f < -0.5 ? Ui.Otl : f >= 0.5 ? Ui.Win : Ui.Dim).Also(l => { l.AutowrapMode = TextServer.AutowrapMode.WordSmart; l.CustomMinimumSize = new Vector2(300, 0); }));
+        }
+        var box = new PanelContainer();
+        box.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel2, 3, curKey != null ? Ui.Gold : Ui.Line, 10));
+        box.AddChild(v);
+        return box;
     }
 
     /// <summary>Сыгранность кандидата с партнёрами по выбранному звену (без того, кого он заменит).</summary>

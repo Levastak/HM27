@@ -305,3 +305,138 @@ public static class Coach
         return (gpg * (Math.Exp(e) - 1), gpg * (Math.Exp(-e) - 1));
     }
 }
+
+/// <summary>План на конкретный матч: система на матч (вместо системы клуба) и задания на соперника.</summary>
+public sealed class MatchPlan
+{
+    public int Game { get; set; }
+    public int[] Sys { get; set; }
+    public int Shadow { get; set; }
+    public int PressD { get; set; }
+}
+
+/// <summary>
+/// Правила «если — то»: помощник применяет их в перерывах (и в матче «сразу к итогу», и у клубов ИИ); в трансляции — советует.
+/// Каждый перерыв решение считается заново от плана на матч: правило перестало выполняться — настройка возвращается.
+/// Смена вратаря — один раз за матч.
+/// </summary>
+public static class Rules
+{
+    public sealed record Rule(string When, string Then, bool On = true);
+
+    public static readonly (string key, string text)[] Whens =
+    {
+        ("lead2", "Ведём в две шайбы и больше"),
+        ("lead1", "Ведём в одну шайбу после второго периода"),
+        ("trail", "Проигрываем после второго периода"),
+        ("trail2", "Проигрываем в две шайбы и больше"),
+        ("pens", "Три удаления и больше за период"),
+        ("goalie", "Вратарь пропускает много, а мы проигрываем"),
+        ("shots", "Уступаем по броскам восемь и больше"),
+    };
+
+    public static readonly (string key, string text)[] Thens =
+    {
+        ("none", "Ничего не менять"),
+        ("tempo-", "Закрыть игру"), ("tempo+", "Открыть игру"),
+        ("fc-", "Сдержанный форчек 1-2-2"), ("fc0", "Убрать прессинг"), ("fc+", "Прессинг 2-3"),
+        ("sh+", "Бросать всё"), ("da-", "Защитники — сзади"), ("da+", "Защитники — в атаку"),
+        ("goalie", "Сменить вратаря"),
+    };
+
+    public static string WhenText(string k) => Whens.FirstOrDefault(x => x.key == k).text ?? k;
+    public static string ThenText(string k) => Thens.FirstOrDefault(x => x.key == k).text ?? k;
+
+    /// <summary>Как поступают тренеры НХЛ: при большом счёте закрываются, проигрывая после второго — открываются, после четырёх пропущенных меняют вратаря.</summary>
+    public static List<Rule> Default() => new()
+    {
+        new("lead2", "tempo-"), new("lead1", "fc-", false), new("trail", "tempo+"), new("trail2", "fc+", false),
+        new("pens", "fc0"), new("goalie", "goalie"), new("shots", "sh+", false),
+    };
+
+    /// <summary>Клубы ИИ: только смена вратаря — поведение при счёте (закрыться, открыться) уже внутри эффекта счёта по данным НХЛ.</summary>
+    public static List<Rule> Ai() => new() { new("goalie", "goalie") };
+
+    public static List<Rule> Of(Lineup l) => l.Rules ?? Default();
+
+    /// <summary>Выполняется ли условие для стороны в этом перерыве.</summary>
+    public static bool Holds(ShiftEngine.Sim sim, bool home, string when)
+    {
+        int my = home ? sim.HomeGoals : sim.AwayGoals, op = home ? sim.AwayGoals : sim.HomeGoals, diff = my - op, per = sim.Period;
+        var side = home ? sim.HomeSide : sim.AwaySide;
+        return when switch
+        {
+            "lead2" => diff >= 2,
+            "lead1" => per >= 2 && diff == 1,
+            "trail" => per >= 2 && diff < 0,
+            "trail2" => diff <= -2,
+            "pens" => sim.PensIn(home, per) >= 3,
+            "goalie" => GoalieBad(sim.GoalieLine(home), diff) && sim.GoalieOn(home) == sim.Result.GoalieStart(home) && Backup(side) != 0,
+            "shots" => (home ? sim.AwayShots - sim.HomeShots : sim.HomeShots - sim.AwayShots) >= 8,
+            _ => false,
+        };
+    }
+
+    /// <summary>Вратаря меняют, когда он пропустил 5+ и команда проигрывает, или 4 при отражённых ниже 85% и −3 и больше.</summary>
+    static bool GoalieBad((int ga, int sa) g, int diff) => (g.ga >= 5 && diff < 0) || (g.ga >= 4 && diff <= -3 && g.sa > 0 && 1 - g.ga / (double)g.sa < 0.85);
+
+    static int Backup(MatchSide s) => s.Goalie == s.Lineup.G1 ? s.Lineup.G2 : s.Lineup.G1;
+
+    /// <summary>Что получится, если применить действия: темп, система на матч, смена вратаря (база — план на матч).</summary>
+    public sealed class Decision { public int Tempo; public int[] Sys; public bool Goalie; public readonly List<string> Fired = new(); }
+
+    public static Decision Decide(ShiftEngine.Sim sim, bool home, IEnumerable<Rule> rules, int baseTempo, int[] baseSys)
+    {
+        var d = new Decision { Tempo = baseTempo, Sys = (int[])(baseSys ?? new int[Tactics.Levers.Length]).Clone() };
+        foreach (var r in rules)
+        {
+            if (!r.On || r.Then == "none" || !Holds(sim, home, r.When)) continue;
+            switch (r.Then)
+            {
+                case "tempo-": d.Tempo = -1; break;
+                case "tempo+": d.Tempo = 1; break;
+                case "goalie": d.Goalie = true; break;
+                case "fc0" when d.Sys[0] <= 0: continue;   // «убрать прессинг» — только если давим
+                default:
+                    int lever = Array.FindIndex(Tactics.Levers, l => r.Then.StartsWith(l.Key));
+                    if (lever >= 0) d.Sys[lever] = r.Then.EndsWith("-") ? -1 : r.Then.EndsWith("+") ? 1 : 0;
+                    break;
+            }
+            d.Fired.Add(ThenText(r.Then).ToLowerInvariant());
+        }
+        return d;
+    }
+
+    /// <summary>Перерыв: оба клуба решают по своим правилам (свой — по правилам тренера), матч продолжается с новыми настройками.</summary>
+    public static void Break(Career c, ShiftEngine.Sim sim, (int tempo, int[] sys) homeBase, (int tempo, int[] sys) awayBase)
+    {
+        bool changed = false;
+        foreach (bool home in new[] { true, false })
+        {
+            var side = home ? sim.HomeSide : sim.AwaySide;
+            var (bt, bs) = home ? homeBase : awayBase;
+            var d = Decide(sim, home, side.Lineup.Rules ?? (side.Team.Abbr == c.UserTeam ? Default() : Ai()), bt, bs);
+            changed |= ApplyTo(c, sim, home, d);
+        }
+        if (changed) { Tactics.Prepare(c, sim.HomeSide, sim.AwaySide); sim.Apply(); }
+    }
+
+    /// <summary>Записать решение в сторону матча (без пересчёта систем); true — что-то поменялось.</summary>
+    public static bool ApplyTo(Career c, ShiftEngine.Sim sim, bool home, Decision d)
+    {
+        var side = home ? sim.HomeSide : sim.AwaySide;
+        var cur = side.Plan ?? side.Lineup.Sys ?? new int[Tactics.Levers.Length];
+        bool sysChanged = !cur.SequenceEqual(d.Sys), tempoChanged = side.Tempo != d.Tempo, g = d.Goalie && Backup(side) != 0 && sim.GoalieOn(home) == sim.Result.GoalieStart(home);
+        if (!sysChanged && !tempoChanged && !g) return false;
+        var what = new List<string>();
+        if (tempoChanged) what.Add(d.Tempo < 0 ? "закрываем игру" : d.Tempo > 0 ? "открываем игру" : "обычный темп");
+        if (sysChanged)
+            for (int i = 0; i < Tactics.Levers.Length; i++)
+                if (cur.Length <= i || cur[i] != d.Sys[i]) what.Add(Tactics.Levers[i].Name.ToLowerInvariant() + " — " + Tactics.PoleName(Tactics.Levers[i], d.Sys[i]).ToLowerInvariant());
+        if (g) { side.Goalie = Backup(side); what.Add("в воротах " + c.Short(side.Goalie)); }
+        side.Tempo = d.Tempo;
+        side.Plan = d.Sys;
+        sim.Note(home, string.Join(", ", what));
+        return true;
+    }
+}

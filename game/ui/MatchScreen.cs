@@ -127,40 +127,159 @@ public partial class MatchScreen : Control
         var body = Frame();
         var o = C.Preview(_g);
         var (hs, aws) = C.Sides(_g, true);
+        bool mine = _g.Home == C.UserTeam || _g.Away == C.UserTeam;
+        if (!mine) { ShowNeutralPreview(body, o, hs, aws); return; }
+        bool home = _g.Home == C.UserTeam;
+        var rep = Scout.For(C, _g);
+        var row = Ui.H(14);
+        row.AddChild(Ui.Expand(ScoutColumn(rep, home ? aws : hs)));
+        var mid = PlanColumn(rep, o, home);
+        mid.CustomMinimumSize = new Vector2(560, 0);
+        row.AddChild(mid);
+        var right = TeamColumn(home ? Home : Away, home ? hs : aws, home);
+        right.AddChild(RulesWidget());
+        row.AddChild(Ui.Expand(right));
+        body.AddChild(Ui.Scroll(row));
+    }
+
+    /// <summary>Правила помощника в перерывах (сводка; редактируются на странице «Тактика»).</summary>
+    Control RulesWidget()
+    {
+        var rules = Rules.Of(C.Lineups[C.UserTeam]).Where(r => r.On && r.Then != "none").ToList();
+        var rl = Ui.V(4);
+        foreach (var r in rules) rl.AddChild(Ui.V(0, Ui.L(Rules.WhenText(r.When), 11, Ui.Muted), Ui.L("→ " + Rules.ThenText(r.Then).ToLowerInvariant(), 12, Ui.Text)));
+        if (rules.Count == 0) rl.AddChild(Ui.L("Правил нет — в перерывах помощник ничего не меняет.", 12, Ui.Muted));
+        return Widget.Make("В перерывах помощник", rl, "Правила →", () => Main.I.ShowHub("tactics"));
+    }
+
+    void ShowNeutralPreview(VBoxContainer body, MatchOdds o, MatchSide hs, MatchSide aws)
+    {
         var row = Ui.H(12);
         row.AddChild(Ui.Expand(TeamColumn(Away, aws, false)));
         var mid = Ui.V(12); mid.CustomMinimumSize = new Vector2(420, 0);
-        var chances = Ui.V(8);
-        chances.AddChild(Ui.H(8, Ui.Icon("mail-open", 16, Ui.Muted), Ui.Expand(Ui.L(Pundits.Forecast(C.Data, _g, o), 15, Ui.Text, Ui.Semi).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart))));
-        chances.AddChild(Ui.L($"Статусы: «{Away.City}» — {Pundits.Status(C, Away.Abbr).label.ToLowerInvariant()}, «{Home.City}» — {Pundits.Status(C, Home.Abbr).label.ToLowerInvariant()}", 12, Ui.Muted));
-        if (hs.B2B || aws.B2B) chances.AddChild(Ui.L($"Второй матч за два дня: {string.Join(", ", new[] { aws.B2B ? Away.City : null, hs.B2B ? Home.City : null }.Where(x => x != null))}", 12, Ui.Otl));
-        mid.AddChild(Widget.Make("Прогноз журналистов", chances));
-        bool mine = _g.Home == C.UserTeam || _g.Away == C.UserTeam;
-        if (mine)
-        {
-            var my = C.Lineups[C.UserTeam];
-            var ms = _g.Home == C.UserTeam ? hs : aws;
-            string tempo = (ms.Tempo switch { -1 => "Закрытый", 1 => "Открытый", _ => "Обычный" }) + (my.TempoAuto ? " (по сопернику)" : "");
-            string pull = ms.Pull1 is double p1 ? $"за {Coach.Clock(p1)} при −1, за {Coach.Clock(ms.Pull2 ?? p1)} при −2" : "как в НХЛ, за 2:00";
-            var tac = Ui.V(4,
-                Ui.H(8, Ui.Expand(Ui.L("Темп игры", 12, Ui.Muted)), Ui.L(tempo, 13, Ui.Text, Ui.Semi)),
-                Ui.H(8, Ui.Expand(Ui.L("Снятие вратаря", 12, Ui.Muted)), Ui.L(pull, 13, Ui.Text, Ui.Semi)),
-                Ui.H(8, Ui.Expand(Ui.L("Вратарь на матч", 12, Ui.Muted)), Ui.L(C.Short((_g.Home == C.UserTeam ? hs : aws).Goalie), 13, Ui.Text, Ui.Semi)));
-            mid.AddChild(Widget.Make("Ваш план на матч", tac, "Звенья →", () => Main.I.ShowHub("lines")));
-            var go = Ui.B("Начать матч", StartMatch, true, 18);
-            go.CustomMinimumSize = new Vector2(0, 52);
-            mid.AddChild(go);
-            var quick = Ui.B("Сразу результат", PlayInstant);
-            quick.AddThemeFontSizeOverride("font_size", 13);
-            mid.AddChild(quick);
-            mid.AddChild(Ui.B("Арена в 3Д", () => Main.I.ShowArena(_g)).Also(b => b.AddThemeFontSizeOverride("font_size", 13)));
-        }
+        mid.AddChild(Widget.Make("Прогноз журналистов", Ui.L(Pundits.Forecast(C.Data, _g, o), 15, Ui.Text, Ui.Semi).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart)));
         row.AddChild(mid);
         row.AddChild(Ui.Expand(TeamColumn(Home, hs, true)));
         body.AddChild(Ui.Scroll(row));
     }
 
-    Control TeamColumn(TeamData t, MatchSide side, bool home)
+    // ------------------------------------------------------------------ скаут: соперник
+    Control ScoutColumn(Scout.Report rep, MatchSide op)
+    {
+        var v = Ui.V(12);
+        var sys = Ui.V(4);
+        for (int i = 0; i < Tactics.Levers.Length; i++)
+        {
+            int pv = rep.OppSys[i];
+            sys.AddChild(Ui.H(8, Ui.L(Tactics.Levers[i].Name, 12, Ui.Muted).Also(l => l.CustomMinimumSize = new Vector2(110, 0)),
+                Ui.L(Tactics.PoleName(Tactics.Levers[i], pv), 13, pv == 0 ? Ui.Text : Ui.Gold, Ui.Semi)));
+        }
+        v.AddChild(Widget.Make($"Скаут: {rep.Opp}", Ui.V(10,
+            Ui.L("Система", 15, Ui.Text, Ui.Cond), sys,
+            Ui.L("Опасны", 15, Ui.Text, Ui.Cond),
+            Ui.V(4, rep.Threats.Select(t => (Control)Ui.V(0,
+                Links.Player(C, t.Id, C.Data.PlayerById[t.Id].NameRu, 13, Ui.Text, Ui.Semi),
+                Ui.L(t.Why, 11, Ui.Muted))).ToArray()),
+            Ui.L("Вратарь", 15, Ui.Text, Ui.Cond),
+            Ui.V(0, Links.Player(C, rep.Goalie, C.Data.PlayerById.GetValueOrDefault(rep.Goalie)?.NameRu ?? "—", 13, Ui.Text, Ui.Semi), Ui.L(rep.GoalieText ?? "", 11, Ui.Muted).Also(Wrap)),
+            Ui.L("Спецбригады", 15, Ui.Text, Ui.Cond),
+            Ui.L($"Большинство: {rep.PpFor:0.00} гола за матч, {rep.PpRank}-е в лиге", 12, rep.PpRank <= 8 ? Ui.Otl : Ui.Muted),
+            Ui.L($"Меньшинство: пропускают {rep.PkAgainst:0.00} за матч, {rep.PkRank}-е", 12, rep.PkRank >= 25 ? Ui.Win : Ui.Muted))));
+        var l = op.Lineup;
+        var lines = Ui.V(2);
+        for (int i = 0; i < Math.Min(3, l.F.Count); i++)
+            lines.AddChild(Ui.H(6, Ui.L($"{i + 1}", 12, Ui.Dim).Also(x => x.CustomMinimumSize = new Vector2(14, 0)),
+                Ui.L(l.RoleF(i) == 1 ? "атака" : l.RoleF(i) == 2 ? "оборона" : "", 10, LinesView.RoleColor(l.RoleF(i))).Also(x => x.CustomMinimumSize = new Vector2(46, 0)),
+                Links.Row(l.F[i].Select(id => (Control)Links.Player(C, id, C.Short(id), 12)))));
+        v.AddChild(Widget.Make("Их звенья", lines));
+        return v;
+    }
+
+    static void Wrap(Label l) { l.AutowrapMode = TextServer.AutowrapMode.WordSmart; l.CustomMinimumSize = new Vector2(220, 0); }
+
+    // ------------------------------------------------------------------ план на матч
+    MatchPlan EnsurePlan()
+    {
+        var club = C.Lineups[C.UserTeam].Sys ?? new int[Tactics.Levers.Length];
+        if (C.Plan == null || C.Plan.Game != _g.Id) C.Plan = new MatchPlan { Game = _g.Id, Sys = (int[])club.Clone() };
+        C.Plan.Sys ??= (int[])club.Clone();
+        return C.Plan;
+    }
+
+    void PlanChanged() { Main.I.Save(); CallDeferred(nameof(ShowPreview)); }
+
+    Control PlanColumn(Scout.Report rep, MatchOdds o, bool home)
+    {
+        var v = Ui.V(12);
+        // прогноз
+        double pw = home ? o.PHome : 1 - o.PHome;
+        var fc = Ui.V(6,
+            Ui.H(8, Ui.Expand(Ui.L(Pundits.Forecast(C.Data, _g, o), 14, Ui.Text, Ui.Semi).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart)),
+                Ui.L($"{100 * pw:0}%", 30, Ui.Gold, Ui.CondBlack)),
+            SplitBar(pw, Ui.Club, new Color(C.Team(home ? _g.Away : _g.Home).Colors[0])),
+            Ui.L("шанс на победу по прогнозу — уже с вашим планом", 11, Ui.Dim));
+        v.AddChild(Widget.Make("Прогноз", fc));
+
+        // система на матч: советы скаута
+        var plan = C.Plan != null && C.Plan.Game == _g.Id ? C.Plan : null;
+        var club = C.Lineups[C.UserTeam].Sys ?? new int[Tactics.Levers.Length];
+        var cur = plan?.Sys ?? club;
+        var sys = Ui.V(8);
+        for (int i = 0; i < Tactics.Levers.Length; i++)
+        {
+            int li = i;
+            var lv = Tactics.Levers[i];
+            var adv = rep.Advice.FirstOrDefault(a => a.Lever == i);
+            var seg = new Segmented(new[] { lv.Minus.Short, lv.MidShort, lv.Plus.Short }, cur[i] + 1, k => { var p = EnsurePlan(); p.Sys[li] = k - 1; PlanChanged(); });
+            var r = Ui.H(10, Ui.L(lv.Name, 13, Ui.Text, Ui.Semi).Also(l => l.CustomMinimumSize = new Vector2(110, 0)), seg);
+            if (cur[i] != club[i]) r.AddChild(Ui.L("только на матч", 11, Ui.Gold));
+            sys.AddChild(r);
+            if (adv != null)
+            {
+                var tip = Ui.H(8, Ui.Icon("lightbulb", 13, Ui.Gold),
+                    Ui.Expand(Ui.L($"Скаут: {Tactics.PoleName(lv, adv.V).ToLowerInvariant()} — {Ui.Signed(adv.Gain, "0.00")} гола за матч. {Cap(adv.Why)}" + (adv.Learn < 0.95 ? $" Схема выучена на {adv.Learn * 100:0}% — это уже учтено." : ""), 11, Ui.Muted).Also(Wrap)),
+                    Ui.B("Принять", () => { var p = EnsurePlan(); p.Sys[li] = adv.V; PlanChanged(); }, false, 11));
+                sys.AddChild(tip);
+            }
+        }
+        if (rep.Advice.Count == 0) sys.AddChild(Ui.L("Скаут не видит, что менять: система клуба против них подходит.", 11, Ui.Muted));
+        if (plan != null && !plan.Sys.SequenceEqual(club))
+            sys.AddChild(Ui.B("Вернуть систему клуба", () => { plan.Sys = (int[])club.Clone(); PlanChanged(); }, false, 11));
+        v.AddChild(Widget.Make("Система на матч", sys));
+
+        // задания на соперника
+        var tasks = Ui.V(6);
+        var opp = home ? _g.Away : _g.Home;
+        var ol = C.Lineups[opp];
+        var fwds = ol.F.SelectMany(x => x).Where(id => id != 0).Distinct().ToList();
+        var defs = ol.D.SelectMany(x => x).Where(id => id != 0).Distinct().ToList();
+        Control Pick(string label, string hint, List<int> pool, int cur, int sug, double gain, Action<int> set)
+        {
+            var ob = new OptionButton { FocusMode = FocusModeEnum.None };
+            ob.AddItem("никого", 0);
+            int sel = 0;
+            for (int k = 0; k < pool.Count; k++) { ob.AddItem(C.Short(pool[k]) + (pool[k] == sug ? "  · совет" : ""), k + 1); if (pool[k] == cur) sel = k + 1; }
+            ob.Selected = sel;
+            ob.ItemSelected += idx => set(idx == 0 ? 0 : pool[(int)idx - 1]);
+            return Ui.V(2, Ui.H(10, Ui.L(label, 13, Ui.Text, Ui.Semi).Also(l => l.CustomMinimumSize = new Vector2(150, 0)), ob),
+                Ui.L(hint + (sug != 0 ? $" Скаут советует: {C.Short(sug)}, около {Ui.Signed(gain, "0.00")} гола за матч." : ""), 11, Ui.Muted).Also(Wrap));
+        }
+        tasks.AddChild(Pick("Плотная опека", "Его атака ниже, бросает реже; у нас чуть больше удалений.", fwds, plan?.Shadow ?? 0, rep.ShadowPick, rep.ShadowGain, id => { EnsurePlan().Shadow = id; PlanChanged(); }));
+        tasks.AddChild(Pick("Давить на защитника", "Под давлением он ошибается; наши устают чуть быстрее.", defs, plan?.PressD ?? 0, rep.PressPick, rep.PressGain, id => { EnsurePlan().PressD = id; PlanChanged(); }));
+        v.AddChild(Widget.Make("Задания на соперника", tasks));
+
+        var go = Ui.B("Начать матч", StartMatch, true, 18);
+        go.CustomMinimumSize = new Vector2(0, 52);
+        v.AddChild(go);
+        var quick = Ui.B("Сразу результат", PlayInstant);
+        quick.AddThemeFontSizeOverride("font_size", 13);
+        v.AddChild(Ui.H(10, Ui.Expand(quick), Ui.Expand(Ui.B("Арена в 3Д", () => Main.I.ShowArena(_g)).Also(b => b.AddThemeFontSizeOverride("font_size", 13)))));
+        return v;
+    }
+
+    static string Cap(string s) => string.IsNullOrEmpty(s) ? s : char.ToUpper(s[0]) + s[1..] + (s.EndsWith(".") ? "" : ".");
+
+    VBoxContainer TeamColumn(TeamData t, MatchSide side, bool home)
     {
         var v = Ui.V(12);
         var r = C.Table[t.Abbr];
@@ -328,7 +447,7 @@ public partial class MatchScreen : Control
         if (_clock >= end + 30) { _clock = -1; ShowResult(); }
     }
 
-    static bool IsKey(MatchEvent e) => e.Kind is "goal" or "pen" or "start" or "period";
+    static bool IsKey(MatchEvent e) => e.Kind is "goal" or "pen" or "start" or "period" or "coach" or "goalie";
 
     void RefillFeed()
     {
@@ -390,6 +509,8 @@ public partial class MatchScreen : Control
             case "miss": return ($"{S(e.P1)} бросает — {e.Note}", Ui.Muted, null, "");
             case "block": return ($"{S(e.P1)} бросает — блокирует {S(e.P2)}", Ui.Muted, null, "");
             case "pen": int pm = e.P2 is 4 or 5 ? e.P2 : 2; return ($"Удаление: {N(e.P1)}, {pm} {(pm == 5 ? "минут" : "минуты")} ({e.Note})", Ui.Otl, Ui.Semi, "");
+            case "coach": return ($"Тренер «{C.Team(e.Team).City}»: {e.Note}", Ui.Gold, Ui.Semi, "clipboard-list");
+            case "goalie": return ($"Замена вратаря у «{C.Team(e.Team).City}»: вместо {S(e.P2)} выходит {N(e.P1)}", Ui.Gold, Ui.Semi, "");
             default: return (e.Kind, Ui.Muted, null, "");
         }
     }

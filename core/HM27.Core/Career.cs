@@ -284,6 +284,8 @@ public sealed class Career
     // ------------------------------------------------------------------ сыгранность
     /// <summary>Минуты вместе на льду для пар партнёров (тройки — между собой, пары защиты — между собой); ключ — ShiftEngine.PairKey.</summary>
     public Dictionary<long, float> Chem { get; set; }
+    /// <summary>План тренера на ближайший свой матч (Career.Sides); после матча — сброс.</summary>
+    public MatchPlan Plan { get; set; }
     /// <summary>Сыгранность 0–1 = 1 − e^(−(база + минуты вместе) / FAM_M0). База — общие тренировки и матчи одного клуба;
     /// звенья на старте (как в последних матчах клуба) — FAM_START минут, это ровно ShiftEngine.FAM_REF.</summary>
     public const double FAM_M0 = 200, FAM_BASE = 40;
@@ -377,6 +379,12 @@ public sealed class Career
     public (MatchSide home, MatchSide away) Sides(ScheduledGame g, bool preview = false)
     {
         var h = Side(g.Home, g.Date, preview, g.Playoff); var a = Side(g.Away, g.Date, preview, g.Playoff);
+        // план тренера на этот матч: система на матч и задания на соперника
+        if (Plan != null && Plan.Game == g.Id && (g.Home == UserTeam || g.Away == UserTeam))
+        {
+            var me = g.Home == UserTeam ? h : a;
+            me.Plan = (int[])Plan.Sys?.Clone(); me.Shadow = Plan.Shadow; me.PressD = Plan.PressD;
+        }
         if (BottomUp) Tactics.Prepare(this, h, a);
         Coach.Prepare(this, g, h, a);
         return (h, a);
@@ -407,7 +415,15 @@ public sealed class Career
         }
         var (h, a) = Sides(g);
         // новые карьеры — движок по сменам; старые сохранения (сила модели) — движок «матч целиком»
-        var r = BottomUp && ShiftEngine.Enabled ? ShiftEngine.Play(Data, h, a, RngFor(g), g.Playoff) : MatchEngine.Play(Data, h, a, RngFor(g), g.Playoff);
+        MatchResult r;
+        if (BottomUp && ShiftEngine.Enabled)
+        {
+            // перерывы: помощники обоих клубов решают по своим правилам (база — план на матч)
+            var hb = (h.Tempo, h.Plan ?? h.Lineup.Sys); var ab = (a.Tempo, a.Plan ?? a.Lineup.Sys);
+            r = ShiftEngine.Play(Data, h, a, RngFor(g), g.Playoff, sim => Rules.Break(this, sim, hb, ab));
+        }
+        else r = MatchEngine.Play(Data, h, a, RngFor(g), g.Playoff);
+        if (Plan?.Game == g.Id) Plan = null;
         g.Result = r;
         AddChem(r);
         bool mine = g.Home == UserTeam || g.Away == UserTeam;
@@ -416,6 +432,7 @@ public sealed class Career
         InjuryModel.AfterGame(this, g, new Random(unchecked(Seed * 104729 + g.Id)));
         Fatigue.AfterGame(this, g);
         Morale.AfterGame(this, g);
+        if (g.Home == UserTeam || g.Away == UserTeam) Orders.AfterGame(this, UserTeam, g.Home == UserTeam ? g.Result.HomeDressed : g.Result.AwayDressed);
         Tactics.AfterGame(this, g);
         if (!mine) { r.Events = new(); r.Box = new(); }   // хронику и протокол храним только для своих матчей — сохранение не раздувается
         foreach (var (side, abbr) in new[] { (h, g.Home), (a, g.Away) })
@@ -527,14 +544,22 @@ public sealed class Career
         foreach (var e in r.Goals.Where(e => e.Team == winTeam && e.Kind != "so"))
             if (++cnt == loserGoals + 1) { Get(sk, e.Scorer).Gwg++; break; }
 
-        void G(int goalie, int sa, int ga, bool won, string end, bool shutout)
+        void G(int goalie, int sa, int ga, bool won, string end, bool shutout, bool decision = true)
         {
             if (goalie == 0) return;
             var x = Get(gk, goalie); x.Gp++; x.Sa += sa; x.Ga += ga;
             if (r.Box.TryGetValue(goalie, out var gb)) x.Xga += gb.Xga;
             if (r.Ratings.TryGetValue(goalie, out var rt)) { x.RatingSum += rt; x.Rated++; }
+            if (!decision) return;
             if (won) x.W++; else if (end == "REG" || g.Playoff) x.L++; else x.Otl++;
             if (shutout) x.So++;
+        }
+        // замена по ходу матча: оба вратаря — по своему протоколу, решение — тому, кто доиграл
+        foreach (var (g1, g2, won) in new[] { (r.HomeGoalie, r.HomeGoalie2, homeWon), (r.AwayGoalie, r.AwayGoalie2, !homeWon) })
+        {
+            if (g2 == 0) continue;
+            foreach (var (id, dec) in new[] { (g1, false), (g2, true) })
+                if (r.Box.TryGetValue(id, out var bx)) G(id, bx.Sa, bx.Ga, won, r.End, false, dec);
         }
         // голы в пустые ворота и победный буллит вратарю не засчитываются
         int hGa = r.AwayGoals - (r.End == "SO" && !homeWon ? 1 : 0) - r.Goals.Count(e => e.Team == g.Away && e.Kind == "en");
@@ -542,8 +567,8 @@ public sealed class Career
         // броски по вратарю: из протокола (без бросков по пустым воротам), иначе — броски команды без голов в пустые
         int hSa = r.Box.TryGetValue(r.HomeGoalie, out var hb) ? hb.Sa : r.AwayShots - r.Goals.Count(e => e.Team == g.Away && e.Kind == "en");
         int aSa = r.Box.TryGetValue(r.AwayGoalie, out var ab) ? ab.Sa : r.HomeShots - r.Goals.Count(e => e.Team == g.Home && e.Kind == "en");
-        G(r.HomeGoalie, hSa, hGa, homeWon, r.End, hGa == 0);
-        G(r.AwayGoalie, aSa, aGa, !homeWon, r.End, aGa == 0);
+        if (r.HomeGoalie2 == 0) G(r.HomeGoalie, hSa, hGa, homeWon, r.End, hGa == 0);
+        if (r.AwayGoalie2 == 0) G(r.AwayGoalie, aSa, aGa, !homeWon, r.End, aGa == 0);
     }
 
     static void Mark(StandingRow row, char c)

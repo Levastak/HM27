@@ -25,6 +25,10 @@ public sealed class MatchSide
     public double? Pull1, Pull2;
     /// <summary>Система игры на этот матч (Tactics.Of); null — обычная.</summary>
     public Tactics.Effect Sys;
+    /// <summary>Задания на соперника: плотная опека (его игрок) и давление на его защитника; 0 — нет.</summary>
+    public int Shadow, PressD;
+    /// <summary>Система на этот матч (план тренера или решение в перерыве); null — система клуба (Lineup.Sys).</summary>
+    public int[] Plan;
 }
 
 public sealed class GoalEvent
@@ -49,6 +53,10 @@ public sealed class MatchResult
     public int AwayShots { get; set; }
     public int HomeGoalie { get; set; }
     public int AwayGoalie { get; set; }
+    /// <summary>Сменщик, вышедший по ходу матча (0 — не было замены): решение — ему.</summary>
+    public int HomeGoalie2 { get; set; }
+    public int AwayGoalie2 { get; set; }
+    public int GoalieStart(bool home) => home ? HomeGoalie : AwayGoalie;
     public List<GoalEvent> Goals { get; set; } = new();
     public double PHome { get; set; }            // шанс хозяев перед матчем (с ОТ и буллитами)
     public double LamHome { get; set; }

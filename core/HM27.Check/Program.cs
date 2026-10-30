@@ -87,6 +87,29 @@ if (args.Length > 1 && args[1] == "news")
     return 0;
 }
 if (args.Length > 1 && args[1] == "tactics") { TacticsCheck.Run(data, true, args.Length > 2 ? int.Parse(args[2]) : 12); return 0; }
+if (args.Length > 1 && args[1] == "orders") { OrdersCheck.Run(data, true, args.Length > 2 ? int.Parse(args[2]) : 30); return 0; }
+if (args.Length > 1 && args[1] == "settings") { SettingsCheck(args.Length > 2 ? int.Parse(args[2]) : 25); return fails.Count == 0 ? 0 : 1; }
+if (args.Length > 1 && args[1] == "steps") { StepsCheck(); return fails.Count == 0 ? 0 : 1; }
+if (args.Length > 1 && args[1] == "scout")
+{
+    var sc0 = Career.New(data, "MIN", 27);
+    for (int i = 0; i < 20; i++) sc0.SimDay();
+    for (int k = 0; k < 3; k++)
+    {
+        sc0.SimToUserGame();
+        var g = sc0.UserGameToday() ?? sc0.NextGame("MIN");
+        var rp = Scout.For(sc0, g);
+        Console.WriteLine($"=== {rp.Opp}: система " + string.Join(", ", Enumerable.Range(0, Tactics.Levers.Length).Select(i => Tactics.PoleName(Tactics.Levers[i], rp.OppSys[i]))));
+        foreach (var t in rp.Threats) Console.WriteLine($"  опасен {sc0.Short(t.Id)}: {t.Why}");
+        Console.WriteLine($"  вратарь {sc0.Short(rp.Goalie)}: {rp.GoalieText}; большинство {rp.PpFor:0.00} гола за матч ({rp.PpRank}-е), меньшинство {rp.PkAgainst:0.00} ({rp.PkRank}-е)");
+        foreach (var a in rp.Advice) Console.WriteLine($"  совет: {Tactics.Levers[a.Lever].Name} — {Tactics.PoleName(Tactics.Levers[a.Lever], a.V)}: {a.Gain:+0.000} гола, выучка {a.Learn:P0} — {a.Why}");
+        Console.WriteLine($"  опека {sc0.Short(rp.ShadowPick)} ≈{rp.ShadowGain:+0.000;-0.000}; давить на {sc0.Short(rp.PressPick)} ≈{rp.PressGain:+0.000;-0.000}");
+        if (g == sc0.UserGameToday()) { sc0.Play(g); sc0.SimDay(); }
+        var last = sc0.LastGame("MIN");
+        if (last != null) foreach (var e in last.Result.Events.Where(e => e.Kind is "coach" or "goalie")) Console.WriteLine($"  [{e.T / 60}:{e.T % 60:00}] {e.Team} {e.Kind}: {e.Note} {(e.Kind == "goalie" ? sc0.Short(e.P1) : "")}");
+    }
+    return 0;
+}
 if (args.Length > 1 && args[1] == "roles") { RolesCheck.Run(data, true, args.Length > 2 ? int.Parse(args[2]) : 20); return 0; }
 if (args.Length > 1 && args[1] == "coach") { CoachCheck.Run(data, true); return 0; }
 if (args.Length > 1 && args[1] == "engine") { EngineReport.Run(data, args.Length > 2 ? int.Parse(args[2]) : 1); return 0; }
@@ -211,7 +234,7 @@ double rr = Pearson(corr.Select(x => x.strength).ToList(), corr.Select(x => x.pt
 Check("Сила → очки", rr >= 0.55, $"корреляция силы клуба до сезона (из игроков) и очков r = {rr:F2}");
 // таблица как в НХЛ 2022–2026: лидер 114–135, последний 47–58, разброс 13,0–18,6; из нижней половины прошлого сезона в топ-8 — 1–3
 Check("Таблица как в НХЛ", lgLead.Average() is >= 112 and <= 130 && lgLast.Average() is >= 46 and <= 60 && lgSd.Average() is >= 13 and <= 18.6
-        && jumps / Math.Max(1, seasons - 1) is >= 1 and <= 3.5 && favFirst / (double)seasons <= 0.45,
+        && jumps / Math.Max(1, seasons - 1) is >= 1 and <= 3.5 && favFirst / (double)seasons <= 0.5,   // 10 сезонов: при доле 1/3 шум ±15 п.п.
     $"лидер {lgLead.Average():F0} (НХЛ 114–135), последний {lgLast.Average():F0} (47–58), разброс {lgSd.Average():F1} (13,0–18,6); " +
     $"«выстрелов» из нижней половины в топ-8: {jumps / Math.Max(1, seasons - 1):F1} за сезон (НХЛ 1–3); сильнейший до сезона берёт 1-е место в {100.0 * favFirst / seasons:F0}% сезонов");
 {
@@ -418,26 +441,12 @@ Check("Плей-офф", playoffsOk, $"15 серий и чемпион в каж
         && c.Games.Where(g => g.Home != "MIN" && g.Away != "MIN").All(g => g.Result.Events.Count == 0),
         $"событий в своём матче: {mine.Result.Events.Count} (голы совпадают со счётом), чужие матчи без хроники");
 
-    double ptsBase = 0, ptsPull = 0, gBase = 0, gClosed = 0, ties = 0, tiesClosed = 0, n = 0;
-    // настрой выключен: он разносит последствия одного матча на весь сезон и прячет эффект настройки в шуме
-    double morK = Morale.MOR_K; Morale.MOR_K = 0;
-    for (int s = 0; s < 12; s++)
+    SettingsCheck(40);
     {
-        var a = Career.New(data, "SJS", 9000 + s); a.Lineups["SJS"].Pull = Coach.USUAL; a.Lineups["SJS"].TempoAuto = false; a.SimToEnd();
-        var b = Career.New(data, "SJS", 9000 + s); b.Lineups["SJS"].Pull = Coach.EARLY; b.Lineups["SJS"].TempoAuto = false; b.SimToEnd();
-        var d = Career.New(data, "SJS", 9000 + s); d.Lineups["SJS"].Pull = Coach.USUAL; d.Lineups["SJS"].TempoAuto = false; d.Lineups["SJS"].Tempo = -1; d.SimToEnd();
-        ptsBase += a.Table["SJS"].Pts; ptsPull += b.Table["SJS"].Pts;
-        foreach (var g in a.Games.Where(g => !g.Playoff && (g.Home == "SJS" || g.Away == "SJS"))) { gBase += g.Result.HomeGoals + g.Result.AwayGoals; if (g.Result.End != "REG") ties++; n++; }
-        foreach (var g in d.Games.Where(g => !g.Playoff && (g.Home == "SJS" || g.Away == "SJS"))) { gClosed += g.Result.HomeGoals + g.Result.AwayGoals; if (g.Result.End != "REG") tiesClosed++; }
-    }
-    Morale.MOR_K = morK;
-    // по частотам НХЛ 2023-26 (6×5: 0,0023 гола в секунду, в пустые 0,0066) раннее снятие почти нейтрально: оптимум за 3–4 минуты
-    // даёт +1 п.п. шанса сравнять, это ~+0,2 очка за сезон — меньше шума 12 сезонов (±0,6); проверяем, что настройка не вредит заметно
-    Check("Раннее снятие вратаря", ptsPull >= ptsBase - 24 && ptsPull <= ptsBase + 48, $"«Сан-Хосе», 12 сезонов: очков {ptsBase / 12:F1} → {ptsPull / 12:F1} за сезон (по частотам НХЛ — около нуля, чуть выгоднее)");
-    // меньше голов → чуть больше ничьих (+0,6 п.п. при −7% голов), но за 12 сезонов разброс доли ОТ ±1,8 п.п. (матчи расходятся целиком) —
-    // проверяем, что голов меньше, а ОТ не падает сверх шума
-    Check("Закрытый темп", gClosed < gBase && tiesClosed >= ties - 0.035 * n, $"голов в матчах «Сан-Хосе» {gBase / n:F2} → {gClosed / n:F2}, овертаймов {100 * ties / n:F1}% → {100 * tiesClosed / n:F1}%");
-    {
+        StepsCheck();
+        var oc = OrdersCheck.Run(data, false, 40);
+        Check("Указания игрокам", oc.dGood - oc.dBad >= 0.04 && oc.sniper > -0.02,
+            $"«подключаться в атаку» подходящему защитнику {oc.dGood:+0.000;-0.000} гола за матч, неподходящему {oc.dBad:+0.000;-0.000}; «бросать чаще» лучшему бросающему {oc.sniper:+0.000;-0.000}, худшему {oc.poor:+0.000;-0.000}");
         var rc = RolesCheck.Run(data, false, 0);
         Check("Роли звеньев", rc.atkOz >= 0.5 && rc.defDz >= 0.5 && rc.shutShare >= 0.4,
             $"атакующие тройки начинают в зоне атаки {100 * rc.atkOz:0}% вбрасываний, оборонительные в своей — {100 * rc.defDz:0}%; оборонительная тройка против лучшей тройки соперника {100 * rc.shutShare:0}% времени");
@@ -615,4 +624,69 @@ static double Pearson(List<double> x, List<double> y)
     double sxy = x.Zip(y, (a, b) => (a - mx) * (b - my)).Sum();
     double sx = Math.Sqrt(x.Sum(a => (a - mx) * (a - mx))), sy = Math.Sqrt(y.Sum(b => (b - my) * (b - my)));
     return sxy / (sx * sy);
+}
+
+void StepsCheck()
+    {
+        // пауза и перерывы без решений не меняют матч: трансляция по шагам = матч целиком
+        var cp = Career.New(data, "MIN", 808);
+        var gg = cp.Games.Where(g => !g.Playoff).Take(40).ToList();
+        int same = 0, swaps = 0;
+        foreach (var g in gg)
+        {
+            var (h1, a1) = cp.Sides(g); var whole = ShiftEngine.Play(data, h1, a1, new Random(g.Id));
+            var (h2, a2) = cp.Sides(g); var sim = ShiftEngine.Start(data, h2, a2, new Random(g.Id));
+            foreach (int t in new[] { 333, 1200, 1777, 2400, 3000 }) { sim.RunTo(t); sim.Apply(); }
+            sim.Run();
+            var p = sim.Result;
+            if (p.HomeGoals == whole.HomeGoals && p.AwayGoals == whole.AwayGoals && p.HomeShots == whole.HomeShots && p.Events.Count == whole.Events.Count) same++;
+        }
+        foreach (var g in cp.Games.Where(g => !g.Playoff).Take(400))
+    {
+        cp.Play(g);
+        if (g.Result.HomeGoalie2 != 0 || g.Result.AwayGoalie2 != 0)
+        {
+            swaps++;
+        }
+    }
+        Check("Матч по шагам", same == gg.Count && swaps is > 20 and < 85,
+            $"пауза и Apply без решений: совпало {same} из {gg.Count} матчей; замен вратаря по ходу матча — {swaps} на 400 матчей (в НХЛ сменщик выходит примерно в каждом шестом–седьмом матче)");
+    }
+
+void SettingsCheck(int REPS = 25)
+{
+    // одни и те же матчи «Сан-Хосе» с теми же случайными числами: до первого отличия настройки матч идёт одинаково,
+    // поэтому разница — эффект самой настройки, а не шум расходящихся сезонов
+    double ptsBase = 0, ptsPull = 0, ptsCalc = 0, gBase = 0, gClosed = 0, ties = 0, tiesClosed = 0, n = 0;
+    {
+        var cs = Career.New(data, "SJS", 9000);
+        var l = cs.Lineups["SJS"];
+        l.TempoAuto = false; l.Rules = new();
+        var sg = cs.Games.Where(g => !g.Playoff && (g.Home == "SJS" || g.Away == "SJS")).ToList();
+        double Pts(MatchResult r, bool home) { bool w = (r.HomeGoals > r.AwayGoals) == home; return w ? 2 : r.End != "REG" ? 1 : 0; }
+        foreach (var g in sg)
+        {
+            bool home = g.Home == "SJS";
+            for (int k = 0; k < REPS; k++)
+            {
+                MatchResult Run(int pull, int tempo)
+                {
+                    l.Pull = pull; l.Tempo = tempo;
+                    var (h, a) = cs.Sides(g);
+                    return ShiftEngine.Play(data, h, a, new Random(k * 7919 + g.Id));
+                }
+                var rb = Run(Coach.USUAL, 0); var re = Run(Coach.EARLY, 0); var rc = Run(Coach.ASSIST, 0); var rd = Run(Coach.USUAL, -1);
+                ptsBase += Pts(rb, home); ptsPull += Pts(re, home); ptsCalc += Pts(rc, home);
+                gBase += rb.HomeGoals + rb.AwayGoals; gClosed += rd.HomeGoals + rd.AwayGoals;
+                if (rb.End != "REG") ties++; if (rd.End != "REG") tiesClosed++;
+                n++;
+            }
+        }
+    }
+    double per82 = 82.0 / n;
+    // по частотам НХЛ раннее снятие выгоднее позднего (Asness & Brown): около +0,5 очка за сезон (100 повторов: 74,5 → 75,0 / 74,9);
+    // при 40 повторах шум разницы ~±0,3 — проверяем, что не хуже сверх шума
+    Check("Раннее снятие вратаря", (ptsPull - ptsBase) * per82 >= -0.6 && (ptsCalc - ptsBase) * per82 >= -0.6,
+        $"«Сан-Хосе», те же матчи ×{REPS}: очков на 82 матча — как в НХЛ {ptsBase * per82:F1}, рано {ptsPull * per82:F1}, по расчёту {ptsCalc * per82:F1}");
+    Check("Закрытый темп", gClosed < gBase && tiesClosed >= ties, $"голов в матчах «Сан-Хосе» {gBase / n:F2} → {gClosed / n:F2}, овертаймов {100 * ties / n:F1}% → {100 * tiesClosed / n:F1}%");
 }

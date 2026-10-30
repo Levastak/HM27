@@ -148,10 +148,10 @@ public static class Tactics
     public static Effect Of(Career c, MatchSide me, MatchSide opp)
     {
         var e = new Effect();
-        var sys = me.Lineup.Sys;
+        var sys = me.Plan ?? me.Lineup.Sys;
         if (sys == null || sys.All(x => x == 0)) return e;
         var attr = me.Attr ?? TeamStrength.Attr(c, c.DlBase);
-        var oSys = opp.Lineup.Sys ?? new int[Levers.Length];
+        var oSys = opp.Plan ?? opp.Lineup.Sys ?? new int[Levers.Length];
         for (int i = 0; i < Levers.Length; i++)
         {
             int v = i < sys.Length ? sys[i] : 0;
@@ -375,6 +375,7 @@ public static class Tactics
         {
             var l = c.Lineups[t.Abbr];
             DefaultRoles(c, l);
+            l.Rules = t.Abbr == c.UserTeam ? Rules.Default() : Rules.Ai();
             l.Sys = Suggest(c, l);
             l.Learn = new();
             for (int i = 0; i < Levers.Length; i++) if (l.Sys[i] != 0) l.Learn[Key(Levers[i], l.Sys[i])] = 1;
