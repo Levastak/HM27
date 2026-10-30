@@ -134,7 +134,19 @@ public partial class LogoCache : Node
     static Texture2D Decode(string key, byte[] data)
     {
         var img = new Image();
-        var err = key.StartsWith("p:") ? img.LoadPngFromBuffer(data) : img.LoadSvgFromString(System.Text.Encoding.UTF8.GetString(data), 4.0f);
+        Error err;
+        if (key.StartsWith("p:")) err = img.LoadPngFromBuffer(data);
+        else
+        {
+            // эмблема — растр ~640 пикселей по большей стороне (у SVG НХЛ viewBox 960×640: ×4 давало 40 МБ на эмблему)
+            var svg = System.Text.Encoding.UTF8.GetString(data);
+            float scale = 1;
+            var m = System.Text.RegularExpressions.Regex.Match(svg, @"viewBox=""[-\d.]+\s+[-\d.]+\s+([\d.]+)\s+([\d.]+)""");
+            if (m.Success && float.TryParse(m.Groups[1].Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var vw)
+                && float.TryParse(m.Groups[2].Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var vh) && Math.Max(vw, vh) > 0)
+                scale = Math.Clamp(640f / Math.Max(vw, vh), 0.1f, 4f);
+            err = img.LoadSvgFromString(svg, scale);
+        }
         if (err != Error.Ok) return null;
         img.GenerateMipmaps();
         return ImageTexture.CreateFromImage(img);
