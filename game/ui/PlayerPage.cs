@@ -266,7 +266,7 @@ public partial class PlayerPage : Control
         ab.AddChild(Ui.Stars(StarScale.StarsV(C, p, ca), 24).Also(x => x.TooltipText = StarScale.Relative
             ? $"Текущие способности по оценке штаба — относительно вашего клуба (по шкале лиги: {PlayerModel.Stars(ca):0.#} ★)"
             : "Текущие способности по оценке штаба — по шкале лиги"));
-        ab.AddChild(Ui.L(StarScale.Class(C.Data, p, ca), 17, Ui.Text, Ui.Cond).Also(x => x.TooltipText = "Класс игрока по меркам лиги"));
+        ab.AddChild(Ui.L(StarScale.Class(C.Data, p, ca), 16, Ui.Text, Ui.Semi).Also(x => x.TooltipText = "Класс игрока по меркам лиги"));
         ab.AddChild(Ui.Spacer(false, 10));
         ab.AddChild(Ui.L("Потенциал", 12, Ui.Dim));
         ab.AddChild(Ui.H(6, Ui.Stars((int)Math.Round(phi * 20), 18),
@@ -282,7 +282,7 @@ public partial class PlayerPage : Control
     static PanelContainer Frame(Control c, int pad)
     {
         var p = new PanelContainer();
-        var sb = Ui.Box(Ui.Panel, 4, Ui.Line, pad);
+        var sb = Ui.Box(Ui.Panel, Ds.R_L, Ds.Edge, pad);
         if (pad == 0) sb.ContentMarginTop = sb.ContentMarginBottom = sb.ContentMarginLeft = sb.ContentMarginRight = 0;
         p.AddThemeStyleboxOverride("panel", sb);
         p.AddChild(c);
@@ -349,7 +349,7 @@ public partial class PlayerPage : Control
             foreach (var grp in groups)
             {
                 if (grp != groups[0]) col.AddChild(Ui.Spacer(false, 8));
-                col.AddChild(Ui.L(grp, 16, Ui.Text, Ui.Cond));
+                col.AddChild(Ui.L(grp, 15, Ui.Text, Ui.Semi));
                 col.AddChild(Ui.Rule());
                 foreach (var d in defs.Where(d => d.Group == grp))
                 {

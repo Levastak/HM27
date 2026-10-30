@@ -242,7 +242,7 @@ public partial class HubScreen : Control
 
     static Control Section(string title, Control content)
     {
-        var v = Ui.V(10, Ui.L(title, 18, Ui.Text, Ui.Cond), content);
+        var v = Ui.V(10, Ui.L(title, 17, Ui.Text, Ui.Semi), content);
         return Ui.Card(v, Ui.Panel, 16);
     }
 
@@ -252,7 +252,7 @@ public partial class HubScreen : Control
     Control Calendar(string team)
     {
         var v = Ui.V(12);
-        v.AddChild(Ui.L(team == C.UserTeam ? "Календарь клуба" : $"Календарь: {C.Team(team).Name}", 28, Ui.Text, Ui.CondBold));
+        v.AddChild(Ui.L(team == C.UserTeam ? "Календарь клуба" : $"Календарь: {C.Team(team).Name}", 20, Ui.Text, Ds.Display));
         var t = new Table(new[] { "Дата", "", "Соперник", "Результат", "" }, new[] { 140, 30, 0, 170, 50 });
         int lastMonth = 0;
         foreach (var g in C.TeamGames(team).OrderBy(g => g.Date))
@@ -260,7 +260,7 @@ public partial class HubScreen : Control
             if (g.Date.Month != lastMonth)
             {
                 lastMonth = g.Date.Month;
-                t.Add(new Control[] { Ui.L(MonthName(g.Date), 13, Ui.AccentBright, Ui.Semi) });
+                t.Add(new Control[] { Ui.Margin(Ui.L(MonthName(g.Date), 15, Ui.Text, Ds.DisplayLight), 0, 10, 0, 4) });
             }
             if (g.Played) t.Add(ResultCells(g, team).Select((c, i) => i == 0 ? Ui.L(Ui.Date(g.Date), 13, Ui.Muted) : c).ToArray(), false, () => Main.I.ShowMatch(g));
             else
@@ -271,7 +271,7 @@ public partial class HubScreen : Control
                     Ui.L("—", 13, Ui.Dim), Ui.L(b2b ? "2-й день" : "", 11, Ui.Otl) }, g.Date == C.Today);
             }
         }
-        v.AddChild(t);
+        v.AddChild(Ui.Card(t, Ui.Panel, 16, Ds.Edge));
         return Ui.Scroll(v);
     }
 
@@ -281,7 +281,7 @@ public partial class HubScreen : Control
     Control TableView(int mode)
     {
         var v = Ui.V(14);
-        var head = Ui.H(16, Ui.Expand(Ui.L("Турнирная таблица", 28, Ui.Text, Ui.CondBold)));
+        var head = Ui.H(16, Ui.Expand(Ui.L("Турнирная таблица", 20, Ui.Text, Ds.Display)));
         head.AddChild(new Segmented(new[] { "Дивизионы", "Конференции", "Лига", "Уайлд-кард" }, mode, k => Swap(TableView(k))));
         v.AddChild(head);
         var groups = new List<(string, List<StandingRow>, int cut)>();
@@ -335,7 +335,7 @@ public partial class HubScreen : Control
     Control StatsView(int mode, bool mine)
     {
         var v = Ui.V(14);
-        var head = Ui.H(16, Ui.Expand(Ui.L(mine ? "Статистика клуба" : "Статистика лиги", 28, Ui.Text, Ui.CondBold)));
+        var head = Ui.H(16, Ui.Expand(Ui.L(mine ? "Статистика клуба" : "Статистика лиги", 20, Ui.Text, Ds.Display)));
         if (!_embedded)
         {
             var mineBox = new CheckBox { Text = "Только мой клуб", ButtonPressed = mine, FocusMode = FocusModeEnum.None };
@@ -391,7 +391,7 @@ public partial class HubScreen : Control
     Control PlayoffsView()
     {
         var v = Ui.V(16);
-        v.AddChild(Ui.L(C.Phase == Phase.Regular ? "Плей-офф: расклад, если бы сезон закончился сегодня" : "Плей-офф Кубка Стэнли 2027", 28, Ui.Text, Ui.CondBold));
+        v.AddChild(Ui.L(C.Phase == Phase.Regular ? "Плей-офф: расклад, если бы сезон закончился сегодня" : "Плей-офф Кубка Стэнли 2027", 20, Ui.Text, Ds.Display));
         if (C.Phase == Phase.Regular)
         {
             v.AddChild(Ui.L("Топ-3 каждого дивизиона и две «уайлд-кард» в конференции. Подробно — вкладка «Таблица» → «Уайлд-кард».", 14, Ui.Muted));
@@ -411,7 +411,7 @@ public partial class HubScreen : Control
         for (int r = 1; r <= 4; r++)
         {
             var col = Ui.Expand(Ui.V(10), true, false);
-            col.AddChild(Ui.L(rounds[r - 1], 17, Ui.Text, Ui.Cond));
+            col.AddChild(Ui.L(rounds[r - 1], 16, Ui.Text, Ui.Semi));
             var ss = C.Bracket.Where(s => s.Round == r).OrderBy(s => s.Slot).ToList();
             if (ss.Count == 0) col.AddChild(Ui.L("—", 14, Ui.Dim));
             foreach (var s in ss)

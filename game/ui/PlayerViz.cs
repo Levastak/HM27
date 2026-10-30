@@ -91,7 +91,7 @@ public static class PlayerViz
     public static Control Tile(string icon, string caption, string value, Color valueCol, string sub, string tip = null)
     {
         var p = new PanelContainer { TooltipText = tip ?? "", MouseFilter = Control.MouseFilterEnum.Stop };
-        var sb = Ui.Box(Ui.Panel, 4, null, 14);
+        var sb = Ui.Box(Ui.Panel, 14, null, 14);
         sb.BorderColor = Ui.Line; sb.BorderWidthTop = 1;
         sb.ContentMarginTop = 10; sb.ContentMarginBottom = 10;
         p.AddThemeStyleboxOverride("panel", sb);

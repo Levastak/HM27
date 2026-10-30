@@ -189,14 +189,14 @@ public partial class MatchScreen : Control
                 Ui.L(Tactics.PoleName(Tactics.Levers[i], pv), 13, pv == 0 ? Ui.Text : Ui.Gold, Ui.Semi)));
         }
         v.AddChild(Widget.Make($"Скаут: {rep.Opp}", Ui.V(10,
-            Ui.L("Система", 15, Ui.Text, Ui.Cond), sys,
-            Ui.L("Опасны", 15, Ui.Text, Ui.Cond),
+            Ui.L("Система", 14, Ui.Text, Ui.Semi), sys,
+            Ui.L("Опасны", 14, Ui.Text, Ui.Semi),
             Ui.V(4, rep.Threats.Select(t => (Control)Ui.V(0,
                 Links.Player(C, t.Id, C.Data.PlayerById[t.Id].NameRu, 13, Ui.Text, Ui.Semi),
                 Ui.L(t.Why, 11, Ui.Muted))).ToArray()),
-            Ui.L("Вратарь", 15, Ui.Text, Ui.Cond),
+            Ui.L("Вратарь", 14, Ui.Text, Ui.Semi),
             Ui.V(0, Links.Player(C, rep.Goalie, C.Data.PlayerById.GetValueOrDefault(rep.Goalie)?.NameRu ?? "—", 13, Ui.Text, Ui.Semi), Ui.L(rep.GoalieText ?? "", 11, Ui.Muted).Also(Wrap)),
-            Ui.L("Спецбригады", 15, Ui.Text, Ui.Cond),
+            Ui.L("Спецбригады", 14, Ui.Text, Ui.Semi),
             Ui.L($"Большинство: {rep.PpFor:0.00} гола за матч, {rep.PpRank}-е в лиге", 12, rep.PpRank <= 8 ? Ui.Otl : Ui.Muted),
             Ui.L($"Меньшинство: пропускают {rep.PkAgainst:0.00} за матч, {rep.PkRank}-е", 12, rep.PkRank >= 25 ? Ui.Win : Ui.Muted))));
         var l = op.Lineup;
@@ -470,7 +470,7 @@ public partial class MatchScreen : Control
             // панель тренера: на паузе и в перерыве вместо ленты
             _coachBody = Ui.V(10);
             _coachPanel = new PanelContainer { Visible = false, SizeFlagsVertical = SizeFlags.ExpandFill };
-            _coachPanel.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 4, Ui.Gold, 14));
+            _coachPanel.AddThemeStyleboxOverride("panel", Ds.GlassBoxStyle(Ds.R_L, 18, 0.06f).Also(s => { s.BgColor = new Color(0.1f, 0.12f, 0.16f, 0.94f); s.BorderColor = new Color(Ui.Gold, 0.55f); }));
             _coachPanel.AddChild(Ui.Scroll(_coachBody));
             center.AddChild(_coachPanel);
         }
@@ -611,7 +611,7 @@ public partial class MatchScreen : Control
         var sim = _live.Sim;
         int per = sim.Period;
         string title = _live.AtBreak ? $"Перерыв после {(per <= 3 ? per + "-го периода" : "овертайма")}" : $"Пауза · {(per <= 3 ? per + "-й период" : "овертайм")}";
-        var head = Ui.H(10, Ui.L(title, 22, Ui.Gold, Ui.CondBold), Ui.Spacer());
+        var head = Ui.H(10, Ui.L(title, 18, Ui.Gold, Ui.Bold), Ui.Spacer());
         if (_live.AtBreak)
             head.AddChild(Ui.B(sim.Period >= 3 ? "Начать овертайм" : $"Начать {sim.Period + 1}-й период", () => { _live.AtBreak = false; _paused = false; ShowCoach(false); FillAdvice(false); }, true, 14));
         else head.AddChild(Ui.B("Играть", TogglePause, true, 14));
@@ -1205,32 +1205,6 @@ public partial class MatchScreen : Control
             if (e.Period >= 4) h.AddChild(Ui.Card(Ui.L("овертайм", 10, Colors.White, Ui.Bold), Ui.Accent, 6));
         }
         return h;
-    }
-
-    IEnumerable<Control> Stars(MatchResult r)
-    {
-        var top = r.Ratings.Count > 0
-            ? r.Ratings.OrderByDescending(kv => kv.Value).Take(3).Select(kv => kv.Key).ToList()
-            : r.Goals.Where(e => e.Scorer != 0).GroupBy(e => e.Scorer).OrderByDescending(x => x.Count()).Take(3).Select(x => x.Key).ToList();
-        int i = 0;
-        foreach (var id in top)
-        {
-            var p = C.Data.PlayerById[id];
-            string line;
-            if (p.IsGoalie)
-            {
-                bool home = id == r.HomeGoalie;
-                int sh = home ? r.AwayShots : r.HomeShots, ga = home ? r.AwayGoals : r.HomeGoals;
-                line = $"{sh - ga} сейвов";
-            }
-            else line = $"{r.Goals.Count(e => e.Scorer == id && e.Kind != "so")}+{r.Goals.Count(e => e.A1 == id || e.A2 == id)}";
-            var st = Ui.H(1);
-            for (int k = 0; k < 3 - i; k++) st.AddChild(Ui.Icon("star", 13, Ui.Gold).Also(x => x.Texture = Icons.Get("star", true)));
-            st.CustomMinimumSize = new Vector2(44, 0);
-            i++;
-            yield return Ui.H(8, st, new TeamBadge(C.Team(p.Team), 20), Ui.Expand(Links.Player(p, null, 13, Ui.Text, Ui.Semi)), Ui.L(line, 12, Ui.Muted),
-                r.Ratings.TryGetValue(id, out var rt) ? Ui.L($"{rt:0.0}", 13, new Color("43D17A"), Ui.Bold) : new Control());
-        }
     }
 }
 

@@ -54,8 +54,8 @@ public sealed class Grid<T>
     Control Header()
     {
         var p = new PanelContainer();
-        var sb = new StyleBoxFlat { BgColor = new Color(0, 0, 0, 0.18f), BorderColor = Ui.Line, BorderWidthBottom = 1 };
-        sb.ContentMarginLeft = sb.ContentMarginRight = 8; sb.ContentMarginTop = sb.ContentMarginBottom = 0;
+        var sb = new StyleBoxFlat { BgColor = new Color(0, 0, 0, 0), BorderColor = Ui.Line, BorderWidthBottom = 1 };
+        sb.ContentMarginLeft = sb.ContentMarginRight = 12; sb.ContentMarginTop = sb.ContentMarginBottom = 0;
         p.AddThemeStyleboxOverride("panel", sb);
         var h = Ui.H(6);
         p.AddChild(h);
@@ -65,8 +65,8 @@ public sealed class Grid<T>
             int ci = c;
             string arrow = _sortCol == c ? (_desc ? " ▼" : " ▲") : "";
             var b = new Button { Text = col.Title + arrow, Flat = true, FocusMode = Control.FocusModeEnum.None, CustomMinimumSize = new Vector2(col.Width, 28), Alignment = col.Align, TooltipText = col.Tip ?? "" };
-            b.AddThemeFontSizeOverride("font_size", 13);
-            b.AddThemeFontOverride("font", Ui.Cond);
+            b.AddThemeFontSizeOverride("font_size", 11);
+            b.AddThemeFontOverride("font", Ui.Semi);
             b.AddThemeColorOverride("font_color", _sortCol == c ? Ui.Gold : Ui.Muted);
             b.AddThemeColorOverride("font_hover_color", Ui.Text);
             var empty = new StyleBoxEmpty();
@@ -85,11 +85,13 @@ public sealed class Grid<T>
 
     Control Row(T r, int i)
     {
-        var p = new PanelContainer { CustomMinimumSize = new Vector2(0, 28) };
+        var p = new PanelContainer { CustomMinimumSize = new Vector2(0, 30) };
         bool hi = _highlight?.Invoke(r) ?? false;
-        var bg = hi ? new Color(Ui.Blue, 0.16f) : i % 2 == 1 ? new Color(1, 1, 1, 0.022f) : new Color(0, 0, 0, 0);
+        // свой клуб и выбранное — свечением цвета клуба, полосы — едва заметные
+        var bg = hi ? new Color(Ui.Club.Lightened(0.15f), 0.2f) : i % 2 == 1 ? new Color(1, 1, 1, 0.02f) : new Color(0, 0, 0, 0);
         var sb = new StyleBoxFlat { BgColor = bg };
-        sb.ContentMarginLeft = sb.ContentMarginRight = 8; sb.ContentMarginTop = sb.ContentMarginBottom = 2;
+        sb.SetCornerRadiusAll(8);
+        sb.ContentMarginLeft = sb.ContentMarginRight = 12; sb.ContentMarginTop = sb.ContentMarginBottom = 2;
         p.AddThemeStyleboxOverride("panel", sb);
         var h = Ui.H(6);
         h.MouseFilter = Control.MouseFilterEnum.Ignore;
@@ -114,7 +116,7 @@ public sealed class Grid<T>
         {
             p.MouseFilter = Control.MouseFilterEnum.Stop;
             p.MouseDefaultCursorShape = Control.CursorShape.PointingHand;
-            p.MouseEntered += () => sb.BgColor = new Color(1, 1, 1, 0.07f);
+            p.MouseEntered += () => sb.BgColor = new Color(1, 1, 1, 0.065f);
             p.MouseExited += () => sb.BgColor = bg;
             p.GuiInput += e => { if (e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left }) _click(r); };
         }

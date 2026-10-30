@@ -131,9 +131,11 @@ public static class Ui
         if (size != 15) b.AddThemeFontSizeOverride("font_size", size);
         if (primary)
         {
-            b.AddThemeStyleboxOverride("normal", Box(Accent, 6, null, 18));
-            b.AddThemeStyleboxOverride("hover", Box(Accent.Lightened(0.12f), 6, null, 18));
-            b.AddThemeStyleboxOverride("pressed", Box(Accent.Darkened(0.15f), 6, null, 18));
+            // главная кнопка: таблетка со свечением своего цвета
+            StyleBoxFlat Pr(Color c) { var x = Box(c, 16, null, 22); x.ShadowColor = new Color(Accent, 0.35f); x.ShadowSize = 14; return x; }
+            b.AddThemeStyleboxOverride("normal", Pr(Accent));
+            b.AddThemeStyleboxOverride("hover", Pr(Accent.Lightened(0.12f)));
+            b.AddThemeStyleboxOverride("pressed", Pr(Accent.Darkened(0.15f)));
             b.AddThemeColorOverride("font_color", ReadableOn(Accent));
             b.AddThemeColorOverride("font_hover_color", ReadableOn(Accent));
         }

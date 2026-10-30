@@ -40,7 +40,7 @@ public partial class JournalPage : Control
     Control LeverList(List<JournalEntry> entries)
     {
         var v = Ui.V(8);
-        v.AddChild(Ui.V(0, Ui.L("Что сработало", 22, Ui.Text, Ui.CondBold),
+        v.AddChild(Ui.V(0, Ui.L("Что сработало", 20, Ui.Text, Ds.Display),
             Ui.L($"Наши матчи: {entries.Count}. Сравнение — с остальными нашими матчами.", 11, Ui.Dim).Also(Wrap)));
         foreach (var (phase, levers) in Tactics.Phases)
         {
@@ -54,7 +54,7 @@ public partial class JournalPage : Control
                 card.AddThemeStyleboxOverride("panel", Ui.Box(sel ? Ui.Panel2 : new Color(0, 0, 0, 0.18f), 3, sel ? Ui.Blue : Ui.Line, 8));
                 int li = i;
                 card.GuiInput += e => { if (e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left }) { _sel = li; CallDeferred(nameof(Build)); } };
-                var h = Ui.H(8, Ui.Expand(Ui.L(lv.Name, 15, Ui.Text, Ui.Cond)),
+                var h = Ui.H(8, Ui.Expand(Ui.L(lv.Name, 14, Ui.Text, Ui.Semi)),
                     Ui.L(used <= 1 ? "один вариант" : $"{used} варианта", 11, used <= 1 ? Ui.Dim : Ui.Muted));
                 h.MouseFilter = MouseFilterEnum.Pass;
                 card.AddChild(h);
@@ -62,7 +62,7 @@ public partial class JournalPage : Control
             }
         }
         var panel = new PanelContainer { CustomMinimumSize = new Vector2(270, 0) };
-        panel.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 4, null, 12));
+        panel.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 14, null, 12));
         panel.AddChild(Ui.Scroll(v));
         return panel;
     }
@@ -74,7 +74,7 @@ public partial class JournalPage : Control
     {
         var lv = Tactics.Levers[_sel];
         var v = Ui.V(12);
-        v.AddChild(Ui.H(10, Ui.L(lv.Name, 26, Ui.Text, Ui.CondBold), Ui.Spacer(),
+        v.AddChild(Ui.H(10, Ui.L(lv.Name, 20, Ui.Text, Ds.Display), Ui.Spacer(),
             Ui.B("Настроить", () => Main.I.ShowHub("tactics:system", _sel.ToString()), false, 12)));
         if (entries.Count == 0)
         {
@@ -133,7 +133,7 @@ public partial class JournalPage : Control
     Control Recent(List<JournalEntry> entries)
     {
         var v = Ui.V(6);
-        v.AddChild(Ui.L("Последние матчи", 16, Ui.Text, Ui.Cond));
+        v.AddChild(Ui.L("Последние матчи", 15, Ui.Text, Ui.Semi));
         foreach (var e in entries.OrderByDescending(x => x.Date).Take(14))
         {
             var res = e.GF > e.GA ? Ui.Win : e.End != "REG" ? Ui.Otl : Ui.Loss;
@@ -146,7 +146,7 @@ public partial class JournalPage : Control
         }
         if (entries.Count == 0) v.AddChild(Ui.L("Пока пусто.", 12, Ui.Muted));
         var panel = new PanelContainer { CustomMinimumSize = new Vector2(300, 0) };
-        panel.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 4, null, 12));
+        panel.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 14, null, 12));
         panel.AddChild(Ui.Scroll(v));
         return panel;
     }

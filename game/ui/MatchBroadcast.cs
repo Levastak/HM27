@@ -331,7 +331,7 @@ public static class FinalBoard
                 q.DrawLine(pp[0], pp[3], new Color(1, 1, 1, 0.8f), 2, true);
                 var fg = Ui.ReadableOn(col.Darkened(0.4f));
                 // звёзды
-                for (int s = 0; s < 3 - k; s++) q.DrawTextureRect(Icons.Get("star", true), new Rect2(sk + 4 + s * 20, 14, 18, 18), false, Ui.Gold);
+                for (int s = 0; s <= k; s++) q.DrawTextureRect(Icons.Get("star", true), new Rect2(sk + 4 + s * 20, 14, 18, 18), false, Ui.Gold);
                 Broadcast.Txt(q, Ui.CondBold, 13, sk + 4, 36, k == 0 ? "ПЕРВАЯ ЗВЕЗДА" : k == 1 ? "ВТОРАЯ ЗВЕЗДА" : "ТРЕТЬЯ ЗВЕЗДА", new Color(fg, 0.7f));
                 var parts = p.NameRu.Split(' ', 2);
                 string last = (parts.Length > 1 ? parts[1] : parts[0]).ToUpperInvariant();

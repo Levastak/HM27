@@ -299,8 +299,8 @@ public partial class Shell : Control
         {
             var b = new Button { FocusMode = FocusModeEnum.None, CustomMinimumSize = new Vector2(300, 48), MouseDefaultCursorShape = CursorShape.PointingHand };
             b.AddThemeStyleboxOverride("normal", Ui.Box(new Color(0, 0, 0, 0), 3, null, 10));
-            b.AddThemeStyleboxOverride("hover", Ui.Box(Ui.Panel2, 3, null, 10));
-            b.AddThemeStyleboxOverride("pressed", Ui.Box(Ui.Panel2, 3, null, 10));
+            b.AddThemeStyleboxOverride("hover", Ui.Box(Ui.Panel2, 10, null, 10));
+            b.AddThemeStyleboxOverride("pressed", Ui.Box(Ui.Panel2, 10, null, 10));
             var hh = Ui.H(12, Ui.Icon(icon, 18, Ui.Muted), Ui.V(0, Ui.L(text, 14, Ui.Text, Ui.Semi), Ui.L(hint, 11, Ui.Dim)));
             hh.MouseFilter = MouseFilterEnum.Ignore; SetIgnore(hh);
             hh.SetAnchorsPreset(LayoutPreset.FullRect); hh.OffsetLeft = 12;
@@ -419,8 +419,8 @@ public partial class Shell : Control
             var nst = Ui.Box(cur ? new Color(Ui.Blue, 0.14f) : new Color(0, 0, 0, 0), 3, null, 10);
             row.AddThemeStyleboxOverride("normal", nst);
             row.AddThemeStyleboxOverride("disabled", Ui.Box(new Color(0, 0, 0, 0), 3, null, 10));
-            row.AddThemeStyleboxOverride("hover", Ui.Box(Ui.Panel2, 3, null, 10));
-            row.AddThemeStyleboxOverride("pressed", Ui.Box(Ui.Panel2, 3, null, 10));
+            row.AddThemeStyleboxOverride("hover", Ui.Box(Ui.Panel2, 10, null, 10));
+            row.AddThemeStyleboxOverride("pressed", Ui.Box(Ui.Panel2, 10, null, 10));
             var name = Ui.H(6, Ui.L(it.Name, 14, it.Soon ? Ui.Dim : Ui.Text, Ui.Semi));
             if (it.Soon) name.AddChild(Ui.L("скоро", 11, Ui.Gold.Darkened(0.2f), Ui.Semi));
             if (it.Page == "inbox" && C.Unread > 0) name.AddChild(Badge(C.Unread, Ui.Blue));
@@ -522,14 +522,14 @@ public partial class Shell : Control
     {
         var box = new LineEdit { PlaceholderText = "Игрок или клуб", CustomMinimumSize = new Vector2(280, 36), ClearButtonEnabled = true };
         box.SizeFlagsVertical = SizeFlags.ShrinkCenter;
-        var sb = Ui.Box(Ui.Panel, 3, Ui.Line, 10);
+        var sb = Ui.Box(Ui.Panel, 14, Ui.Line, 10);
         sb.ContentMarginLeft = 32;
         box.AddThemeStyleboxOverride("normal", sb);
-        box.AddThemeStyleboxOverride("focus", Ui.Box(Ui.Panel, 3, Ui.Blue, 10).Also(s => s.ContentMarginLeft = 32));
+        box.AddThemeStyleboxOverride("focus", Ui.Box(Ui.Panel, 14, Ui.Blue, 10).Also(s => s.ContentMarginLeft = 32));
         box.AddThemeColorOverride("font_placeholder_color", Ui.Dim);
         box.AddChild(Ui.Icon("search", 16, Ui.Muted).Also(i => i.Position = new Vector2(10, 9)));
         var popup = new PopupPanel();
-        popup.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 4, Ui.Line, 6));
+        popup.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 14, Ui.Line, 6));
         var list = Ui.V(2);
         popup.AddChild(list);
         box.AddChild(popup);
@@ -553,7 +553,7 @@ public partial class Shell : Control
     static Control SearchRow(Control icon, string name, string sub, Action a)
     {
         var b = new Button { Flat = true, FocusMode = FocusModeEnum.None, CustomMinimumSize = new Vector2(320, 36), MouseDefaultCursorShape = CursorShape.PointingHand };
-        b.AddThemeStyleboxOverride("hover", Ui.Box(Ui.Panel2, 4, null, 6));
+        b.AddThemeStyleboxOverride("hover", Ui.Box(Ui.Panel2, 10, null, 6));
         var h = Ui.H(8, icon, Ui.L(name, 13, Ui.Text, Ui.Semi), Ui.L(sub, 11, Ui.Muted));
         h.MouseFilter = MouseFilterEnum.Ignore;
         h.SetAnchorsPreset(LayoutPreset.FullRect); h.OffsetLeft = 8;

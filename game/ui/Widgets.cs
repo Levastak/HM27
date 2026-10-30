@@ -27,7 +27,7 @@ public partial class Table : VBoxContainer
 
     public Control Add(Control[] cells, bool highlight = false, Action onClick = null)
     {
-        var bg = highlight ? new Color(Ui.Accent, 0.18f) : (_n++ % 2 == 0 ? Colors.Transparent : new Color(1, 1, 1, 0.025f));
+        var bg = highlight ? new Color(Ui.Club.Lightened(0.15f), 0.2f) : (_n++ % 2 == 0 ? Colors.Transparent : new Color(1, 1, 1, 0.02f));
         var r = Row(cells, bg, onClick);
         AddChild(r);
         return r;

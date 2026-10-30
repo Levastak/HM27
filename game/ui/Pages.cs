@@ -512,7 +512,7 @@ public partial class SquadPage : Control
         }
         var grid = new Grid<PlayerData>(cols, rows, p => Shell.I.Go("player", null, p.Id.ToString()), null, sortCol: 6);
         var panel = new PanelContainer();
-        panel.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 4, null, 0).Also(s => s.ContentMarginTop = s.ContentMarginBottom = 0));
+        panel.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 14, null, 0).Also(s => s.ContentMarginTop = s.ContentMarginBottom = 0));
         panel.AddChild(grid.Root);
         _box.AddChild(panel);
     }
@@ -554,14 +554,14 @@ public partial class InboxPage : Control
         left.AddChild(_head);
         _list = Ui.V(0);
         var lp = new PanelContainer();
-        lp.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 4, null, 0).Also(s => s.ContentMarginTop = s.ContentMarginBottom = 0));
+        lp.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 14, null, 0).Also(s => s.ContentMarginTop = s.ContentMarginBottom = 0));
         lp.SizeFlagsVertical = SizeFlags.ExpandFill;
         lp.AddChild(Ui.Scroll(_list));
         left.AddChild(lp);
         h.AddChild(left);
         _view = Ui.V(12);
         var vp = new PanelContainer();
-        vp.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 4, null, 28).Also(s => { s.ContentMarginTop = 22; s.ContentMarginBottom = 28; }));
+        vp.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 14, null, 28).Also(s => { s.ContentMarginTop = 22; s.ContentMarginBottom = 28; }));
         vp.SizeFlagsHorizontal = vp.SizeFlagsVertical = SizeFlags.ExpandFill;
         vp.AddChild(Ui.Scroll(_view));
         h.AddChild(vp);

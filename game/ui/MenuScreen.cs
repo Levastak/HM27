@@ -59,7 +59,7 @@ public partial class MenuScreen : Control
         col.AddChild(Ui.Spacer(false, 28));
 
         // настройки — тихо, под меню
-        col.AddChild(Ui.L("Настройки", 15, Ui.Dim, Ui.Cond));
+        col.AddChild(Ui.L("Настройки", 14, Ui.Dim, Ui.Semi));
         col.AddChild(Ui.Spacer(false, 4));
         Button names = null;
         names = Toggle(NamesText(), () => { Names.English = !Names.English; Main.SaveSettings(); names.Text = NamesText(); },
@@ -88,11 +88,11 @@ public partial class MenuScreen : Control
     static Control Item(string text, string sub, Action a, bool main)
     {
         var b = new Button { FocusMode = FocusModeEnum.None, MouseDefaultCursorShape = CursorShape.PointingHand, SizeFlagsHorizontal = SizeFlags.ShrinkBegin };
-        var st = new StyleBoxFlat { BgColor = new Color(0, 0, 0, 0), BorderColor = main ? Ui.Gold : new Color(0, 0, 0, 0), BorderWidthLeft = 4 };
-        st.ContentMarginLeft = 18;
-        var hov = (StyleBoxFlat)st.Duplicate(); hov.BorderColor = Ui.Blue; hov.BgColor = new Color(Ui.Blue, 0.08f);
+        var st = new StyleBoxFlat { BgColor = new Color(0, 0, 0, 0), BorderColor = main ? Ui.Gold : new Color(0, 0, 0, 0), BorderWidthLeft = 3 };
+        st.SetCornerRadiusAll(14); st.ContentMarginLeft = 18;
+        var hov = (StyleBoxFlat)st.Duplicate(); hov.BorderColor = main ? Ui.Gold : new Color(1, 1, 1, 0.5f); hov.BgColor = new Color(1, 1, 1, 0.07f);
         b.AddThemeStyleboxOverride("normal", st); b.AddThemeStyleboxOverride("hover", hov); b.AddThemeStyleboxOverride("pressed", hov);
-        var title = Ui.L(text, 40, main ? Ui.Text : new Color(Ui.Text, 0.72f), Ui.CondBold);
+        var title = Ui.L(text, main ? 30 : 26, main ? Ui.Text : new Color(Ui.Text, 0.72f), Ds.Display);
         var v = Ui.V(-4, title);
         if (sub != null) v.AddChild(Ui.L(sub, 14, Ui.Muted));
         v.MouseFilter = MouseFilterEnum.Ignore;
@@ -101,7 +101,7 @@ public partial class MenuScreen : Control
         mm.MouseFilter = MouseFilterEnum.Ignore;
         mm.SetAnchorsPreset(LayoutPreset.FullRect);
         b.AddChild(mm);
-        b.CustomMinimumSize = new Vector2(440, sub != null ? 78 : 58);
+        b.CustomMinimumSize = new Vector2(500, sub != null ? 78 : 58);
         b.MouseEntered += () => title.AddThemeColorOverride("font_color", Colors.White);
         b.MouseExited += () => title.AddThemeColorOverride("font_color", main ? Ui.Text : new Color(Ui.Text, 0.72f));
         b.Pressed += a;

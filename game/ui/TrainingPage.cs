@@ -42,13 +42,13 @@ public partial class TrainingPage : Control
     // ------------------------------------------------------------------ неделя
     void Week(VBoxContainer v)
     {
-        v.AddChild(Ui.V(2, Ui.L("Тренировки на неделю", 26, Ui.Text, Ui.CondBold),
+        v.AddChild(Ui.V(2, Ui.L("Тренировки на неделю", 20, Ui.Text, Ds.Display),
             Ui.L("Нагрузка и упор действуют, пока вы их не поменяете. Бесплатного выбора нет: быстрее растут — быстрее устают, учат схемы — меньше развиваются.", 12, Ui.Muted).Also(Wrap)));
         var row = Ui.H(14);
         var left = Ui.Expand(Ui.V(14));
         row.AddChild(left);
 
-        left.AddChild(Ui.L("Нагрузка", 18, Ui.Text, Ui.Cond));
+        left.AddChild(Ui.L("Нагрузка", 17, Ui.Text, Ui.Semi));
         var loads = Ui.H(10);
         foreach (var (val, name, eff) in new[]
         {
@@ -59,7 +59,7 @@ public partial class TrainingPage : Control
             loads.AddChild(Ui.Expand(Card(name, eff, T.Load == val, () => { T.Load = val; Changed(); })));
         left.AddChild(loads);
 
-        left.AddChild(Ui.L("Упор недели", 18, Ui.Text, Ui.Cond));
+        left.AddChild(Ui.L("Упор недели", 17, Ui.Text, Ui.Semi));
         var grid = new GridContainer { Columns = 4 };
         grid.AddThemeConstantOverride("h_separation", 10); grid.AddThemeConstantOverride("v_separation", 10);
         foreach (var f in Training.Foci)
@@ -94,7 +94,7 @@ public partial class TrainingPage : Control
         var roster = C.Roster(C.UserTeam).Where(p => C.Players.ContainsKey(p.Id) && !p.IsGoalie).ToList();
         double fresh = roster.Average(p => C.Players[p.Id].Fresh);
         int tired = roster.Count(p => C.Players[p.Id].Fresh < Fatigue.FRESH_OK);
-        v.AddChild(Ui.L("Состояние команды", 18, Ui.Text, Ui.Cond));
+        v.AddChild(Ui.L("Состояние команды", 17, Ui.Text, Ui.Semi));
         v.AddChild(PlayerViz.Tile("battery", "Свежесть", $"{fresh:0}%", fresh >= 85 ? Ui.Win : fresh >= Fatigue.FRESH_OK ? Ui.Text : Ui.Otl,
             tired == 0 ? "уставших нет" : $"уставших: {tired}", "Средняя свежесть полевых. Ниже 75% игрок теряет в уровне и чаще травмируется"));
         var l = C.Lineups[C.UserTeam];
@@ -109,7 +109,7 @@ public partial class TrainingPage : Control
         int young = C.Roster(C.UserTeam).Count(p => (p.Age(C.Today) ?? 30) <= 23);
         v.AddChild(PlayerViz.Tile("trending-up", "Молодые", $"{young}", Ui.Text, $"индивидуальная работа: {T.Individual.Count} из {Training.SLOTS}"));
         var panel = new PanelContainer { CustomMinimumSize = new Vector2(340, 0) };
-        panel.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 4, null, 14));
+        panel.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 14, null, 14));
         panel.AddChild(v);
         return panel;
     }
@@ -117,7 +117,7 @@ public partial class TrainingPage : Control
     // ------------------------------------------------------------------ индивидуальные
     void Individual(VBoxContainer v)
     {
-        v.AddChild(Ui.V(2, Ui.L("Индивидуальная работа", 26, Ui.Text, Ui.CondBold),
+        v.AddChild(Ui.V(2, Ui.L("Индивидуальная работа", 20, Ui.Text, Ds.Display),
             Ui.L($"Одна характеристика растёт вдвое быстрее, остальные — чуть медленнее. Мест — {Training.SLOTS}: тренеры не разорвутся. Расти может только тот, у кого есть запас до потенциала.", 12, Ui.Muted).Also(Wrap)));
         v.AddChild(Ui.L($"Занято {T.Individual.Count} из {Training.SLOTS}", 14, T.Individual.Count >= Training.SLOTS ? Ui.Gold : Ui.Text, Ui.Semi));
         var rows = C.Roster(C.UserTeam).Where(p => C.Players.ContainsKey(p.Id)).OrderBy(p => T.Individual.ContainsKey(p.Id) ? 0 : 1).ThenBy(p => p.Age(C.Today) ?? 30).ToList();
@@ -159,7 +159,7 @@ public partial class TrainingPage : Control
     // ------------------------------------------------------------------ развитие молодых
     void Youth(VBoxContainer v)
     {
-        v.AddChild(Ui.V(2, Ui.L("Развитие молодых", 26, Ui.Text, Ui.CondBold),
+        v.AddChild(Ui.V(2, Ui.L("Развитие молодых", 20, Ui.Text, Ds.Display),
             Ui.L("Потенциал — потолок, а не обещание: до него доходит примерно каждый четвёртый. Растут от игрового времени и роли, характера, удачи сезона, своих оценок и тренировок; мешают травмы и скамейка.", 12, Ui.Muted).Also(Wrap)));
         var rows = C.Roster(C.UserTeam).Where(p => C.Players.ContainsKey(p.Id) && (p.Age(C.Today) ?? 30) <= 23).OrderBy(p => p.Age(C.Today)).ToList();
         if (rows.Count == 0) { v.AddChild(Ui.L("В клубе нет игроков моложе 24 лет.", 14, Ui.Muted)); return; }

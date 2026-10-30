@@ -25,7 +25,8 @@ public partial class ClubPage : Control
 
         // ---------- верх: эмблема, факты, арена
         var top = Ui.H(12);
-        var crest = Frame(new TeamBadge(t, 150) { SizeFlagsHorizontal = SizeFlags.ShrinkCenter, SizeFlagsVertical = SizeFlags.ShrinkCenter }, 18);
+        var glow = Ds.ClubBright(t);
+        var crest = Frame(new Paint(new Vector2(154, 154), q => { Face.Glow(q, q.Size / 2, 100, glow, 0.04f); Face.Logo(q, t, new Rect2(10, 10, q.Size.X - 20, q.Size.Y - 20)); }) { SizeFlagsHorizontal = SizeFlags.ShrinkCenter, SizeFlagsVertical = SizeFlags.ShrinkCenter }, 18);
         crest.CustomMinimumSize = new Vector2(190, 190);
         top.AddChild(crest);
         top.AddChild(Ui.Expand(Frame(Facts(t), 16)));
@@ -50,7 +51,7 @@ public partial class ClubPage : Control
     static PanelContainer Frame(Control c, int pad)
     {
         var p = new PanelContainer();
-        var sb = Ui.Box(Ui.Panel, 4, Ui.Line, pad);
+        var sb = Ui.Box(Ui.Panel, Ds.R_L, Ds.Edge, pad);
         if (pad == 0) sb.ContentMarginTop = sb.ContentMarginBottom = sb.ContentMarginLeft = sb.ContentMarginRight = 0;
         p.AddThemeStyleboxOverride("panel", sb);
         p.AddChild(c);
@@ -87,7 +88,7 @@ public partial class ClubPage : Control
         F("Система игры", SysText(l));
         if (Staff.Decider(C, t.Abbr) is { } coach)
             F(t.Abbr == C.UserTeam ? "Помощник" : "Главный тренер", $"{coach.Name} — {Staff.StyleText(coach)}");
-        var v2 = Ui.V(10, Ui.L(t.Name, 34, Ui.Text, Ui.CondBold), g);
+        var v2 = Ui.V(10, Ui.L(t.Name, 26, Ui.Text, Ds.Display), g);
         if (t.Abbr != C.UserTeam)
         {
             var next = C.TeamGames(C.UserTeam).Where(x => !x.Played && (x.Home == t.Abbr || x.Away == t.Abbr)).OrderBy(x => x.Date).FirstOrDefault();
@@ -157,7 +158,7 @@ public partial class ClubPage : Control
         v.AddChild(Ui.L(Ui.DateShort(g.Date), 11, Ui.Dim, null, HorizontalAlignment.Center));
         var p = new PanelContainer { CustomMinimumSize = new Vector2(112, 0), MouseDefaultCursorShape = CursorShape.PointingHand, MouseFilter = MouseFilterEnum.Stop };
         p.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        var sb = Ui.Box(Ui.Panel2, 4, null, 6); sb.BorderColor = edge; sb.BorderWidthTop = 3;
+        var sb = Ui.Box(Ui.Panel2, 10, null, 6); sb.BorderColor = edge; sb.BorderWidthTop = 3;
         p.AddThemeStyleboxOverride("panel", sb);
         v.MouseFilter = MouseFilterEnum.Ignore;
         p.AddChild(v);

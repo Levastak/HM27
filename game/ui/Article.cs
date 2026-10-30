@@ -77,7 +77,7 @@ public static class Article
 
         var text = Ui.V(12);
         text.AddChild(Tag(m.Tag, 15));
-        text.AddChild(Wrap(Ui.L(m.Subject, 38, Ui.Text, Ui.CondBold)));
+        text.AddChild(Wrap(Ui.L(m.Subject, 28, Ui.Text, Ds.Display)));
         if (!string.IsNullOrEmpty(m.Lead)) text.AddChild(Wrap(Ui.L(m.Lead, 17, new Color(Ui.Text, 0.86f), Ui.Medium)));
         col.AddChild(Narrow(text));
 
@@ -97,7 +97,7 @@ public static class Article
             var ps = Ui.H(8);
             foreach (var id in m.Players.Take(4))
                 if (c.Data.PlayerById.TryGetValue(id, out var p)) ps.AddChild(PlayerChip(c, p));
-            col.AddChild(Ui.V(6, Ui.L(m.Tag == "Матч" ? "Звёзды матча" : "Герои материала", 16, Ui.Muted, Ui.Cond), ps));
+            col.AddChild(Ui.V(6, Ui.L(m.Tag == "Матч" ? "Звёзды матча" : "Герои материала", 15, Ui.Muted, Ui.Semi), ps));
         }
 
         if (m.Options != null) col.AddChild(Narrow(Choices(c, m, onAnswer)));
@@ -121,7 +121,7 @@ public static class Article
         var v = Ui.V(8);
         if (m.Pending)
         {
-            var head = Ui.H(8, Ui.Icon("message-circle", 18, Ui.Gold), Ui.L(m.Required ? "Нужно решение" : "Ваш ответ", 20, Ui.Gold, Ui.CondBold));
+            var head = Ui.H(8, Ui.Icon("message-circle", 18, Ui.Gold), Ui.L(m.Required ? "Нужно решение" : "Ваш ответ", 17, Ui.Gold, Ui.Bold));
             if (m.Due.HasValue)
             {
                 int d = m.Due.Value.DayNumber - c.Today.DayNumber;
@@ -131,7 +131,7 @@ public static class Article
             foreach (var o in m.Options)
             {
                 var b = new Button { FocusMode = Control.FocusModeEnum.None, MouseDefaultCursorShape = Control.CursorShape.PointingHand, CustomMinimumSize = new Vector2(0, 58) };
-                var st = Ui.Box(Ui.Panel2, 3, Ui.Line, 14);
+                var st = Ui.Box(Ui.Panel2, 10, Ui.Line, 14);
                 b.AddThemeStyleboxOverride("normal", st);
                 b.AddThemeStyleboxOverride("hover", Ui.Box(Ui.Panel2.Lightened(0.06f), 3, Ui.Blue, 14));
                 b.AddThemeStyleboxOverride("pressed", Ui.Box(Ui.Blue.Darkened(0.45f), 3, Ui.Blue, 14));
@@ -208,7 +208,7 @@ public static class Article
         {
             var s = line.TrimEnd();
             if (s.Length == 0) { v.AddChild(Ui.Spacer(false, 2)); continue; }
-            if (s.StartsWith("## ")) { v.AddChild(Ui.Spacer(false, 4)); v.AddChild(Ui.L(s[3..], 21, Ui.Text, Ui.CondBold)); continue; }
+            if (s.StartsWith("## ")) { v.AddChild(Ui.Spacer(false, 4)); v.AddChild(Ui.L(s[3..], 18, Ui.Text, Ui.Bold)); continue; }
             if (s.StartsWith("• "))
             {
                 var dot = new ColorRect { Color = Ui.Blue, CustomMinimumSize = new Vector2(6, 6), SizeFlagsVertical = Control.SizeFlags.ShrinkBegin };

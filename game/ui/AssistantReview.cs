@@ -22,7 +22,7 @@ public static class AssistantReview
         pop.AddChild(v);
 
         v.AddChild(Ui.V(2,
-            Ui.L("Вариант помощника", 26, Ui.Text, Ui.CondBold),
+            Ui.L("Вариант помощника", 20, Ui.Text, Ds.Display),
             Note(rv.By == null ? "Лучшие по способностям и свежести." :
                 $"{rv.By.Name}: оценка игроков — {Staff.Level(rv.By.Judge)}, {Staff.StyleText(rv.By)}. Это его взгляд на силу игроков — он может ошибаться. " +
                 "Сыгранность, настроение и минуты молодых он не учитывает — решаете вы.", 12)));
@@ -43,7 +43,7 @@ public static class AssistantReview
         var risks = Ui.V(4);
         foreach (var (id, t) in rv.Upset) risks.AddChild(Risk("triangle-alert", Ui.Otl, c.Short(id), t));
         foreach (var (id, t) in rv.Youth) risks.AddChild(Risk("user", Ui.Muted, c.Short(id), t));
-        if (risks.GetChildCount() > 0) v.AddChild(Ui.V(6, Ui.L("Чего помощник не учёл", 15, Ui.Text, Ui.Cond), risks));
+        if (risks.GetChildCount() > 0) v.AddChild(Ui.V(6, Ui.L("Чего помощник не учёл", 14, Ui.Text, Ui.Semi), risks));
 
         var keep = Ui.B("Оставить как есть", () => pop.Hide(), false, 14);
         var ok = Ui.B("Принять вариант", () => { pop.Hide(); accept(rv.Lineup); }, true, 14);
@@ -96,7 +96,7 @@ public static class AssistantReview
         for (int i = 0; i < Math.Min(cur.F.Count, nw.F.Count); i++) Row($"{i + 1}-я тройка", cur.F[i], nw.F[i]);
         for (int i = 0; i < Math.Min(cur.D.Count, nw.D.Count); i++) Row($"{i + 1}-я пара", cur.D[i], nw.D[i]);
         var p = new PanelContainer();
-        p.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 3, null, 14));
+        p.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 14, null, 14));
         p.AddChild(g);
         return p;
     }

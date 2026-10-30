@@ -65,7 +65,7 @@ public partial class TacticsPage : Control
     Control LeversPanel()
     {
         var v = Ui.V(10);
-        v.AddChild(Ui.V(0, Ui.L("Система игры", 22, Ui.Text, Ui.CondBold),
+        v.AddChild(Ui.V(0, Ui.L("Система игры", 20, Ui.Text, Ds.Display),
             Ui.L("Середина — обычный хоккей, его знают все. Края дают больше, если подходят игрокам, и требуют выучки.", 11, Ui.Dim).Also(Wrap)));
         // готовые стили
         var cur = Enumerable.Range(0, Tactics.Levers.Length).Select(i => L.SysOf(i)).ToArray();
@@ -97,7 +97,7 @@ public partial class TacticsPage : Control
             foreach (var i in levers) v.AddChild(LeverCard(i, views[i]));
         }
         var panel = new PanelContainer { CustomMinimumSize = new Vector2(370, 0) };
-        panel.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 4, null, 12));
+        panel.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 14, null, 12));
         panel.AddChild(Ui.Scroll(v));
         return panel;
     }
@@ -115,7 +115,7 @@ public partial class TacticsPage : Control
         var col = Ui.V(5);
         col.MouseFilter = MouseFilterEnum.Pass;
         card.AddChild(col);
-        var head = Ui.H(8, Ui.Expand(Ui.L(lever.Name, 16, Ui.Text, Ui.Cond)));
+        var head = Ui.H(8, Ui.Expand(Ui.L(lever.Name, 15, Ui.Text, Ui.Semi)));
         if (v != 0)
         {
             string lw = lv.Learn >= 0.95 ? "выучена" : lv.Learn >= 0.6 ? "почти выучена" : "учим";
@@ -162,7 +162,7 @@ public partial class TacticsPage : Control
         var board = new TacticsBoard { Lever = lever.Key, V = v, Club = Ui.Club };
         board.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         board.CustomMinimumSize = new Vector2(520, 360);
-        v0.AddChild(Ui.H(10, Ui.L(lever.Name + ": ", 26, Ui.Muted, Ui.CondBold), Ui.L(Tactics.PoleName(lever, v), 26, v == 0 ? Ui.Text : Ui.Gold, Ui.CondBold)));
+        v0.AddChild(Ui.H(10, Ui.L(lever.Name + ": ", 20, Ui.Muted, Ds.Display), Ui.L(Tactics.PoleName(lever, v), 20, v == 0 ? Ui.Text : Ui.Gold, Ds.Display)));
         v0.AddChild(board);
         v0.AddChild(Legend(lever.Key));
         v0.AddChild(Ui.L(pole?.What ?? lever.MidWhat, 15, Ui.Text).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart));
@@ -242,7 +242,7 @@ public partial class TacticsPage : Control
         v.AddChild(Card(who));
 
         var panel = new PanelContainer { CustomMinimumSize = new Vector2(380, 0) };
-        panel.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 4, null, 14));
+        panel.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 14, null, 14));
         panel.AddChild(Ui.Scroll(v));
         return panel;
     }
@@ -686,7 +686,7 @@ public partial class RulesPage : Control
         page.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(page);
         L.Rules ??= Rules.Default();
-        v.AddChild(Ui.V(2, Ui.L("Если — то", 26, Ui.Text, Ui.CondBold),
+        v.AddChild(Ui.V(2, Ui.L("Если — то", 20, Ui.Text, Ds.Display),
             Ui.L("Что помощник меняет в перерывах. В матче «сразу к итогу» он так и сделает, в трансляции — предложит, решать вам. " +
                  "Каждый перерыв решение считается заново от плана на матч: условие перестало выполняться — всё возвращается.", 12, Ui.Muted).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart)));
         var grid = new GridContainer { Columns = 3 };
@@ -713,7 +713,7 @@ public partial class RulesPage : Control
             grid.AddChild(ob);
         }
         var card = new PanelContainer();
-        card.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 4, null, 18));
+        card.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 14, null, 18));
         card.AddChild(grid);
         v.AddChild(card);
         v.AddChild(Ui.H(10,

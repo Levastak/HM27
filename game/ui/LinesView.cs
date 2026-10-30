@@ -182,7 +182,7 @@ public partial class LinesView : HBoxContainer
 
     static Control Section(string title, params Control[] kids)
     {
-        var v = Ui.V(6, Ui.L(title, 16, Ui.Text, Ui.Cond));
+        var v = Ui.V(6, Ui.L(title, 15, Ui.Text, Ui.Semi));
         foreach (var k in kids) v.AddChild(k);
         return v;
     }
@@ -402,7 +402,7 @@ public partial class LinesView : HBoxContainer
         }, pool, p => Assign(p.Id), p => p.Id == cur, sortCol: 3);
         var v = Ui.V(8);
         if (kind != "G" && cur != 0 && C.Data.PlayerById.TryGetValue(cur, out var who)) v.AddChild(OrderBox(who));
-        v.AddChild(Ui.L($"Кандидаты: {label}, {(kind == "G" ? "вратарь" : unitName)}", 16, Ui.Text, Ui.Cond));
+        v.AddChild(Ui.L($"Кандидаты: {label}, {(kind == "G" ? "вратарь" : unitName)}", 15, Ui.Text, Ui.Semi));
         v.AddChild(Ui.L(kind.StartsWith("P") ? "В спецбригады — только игроки, заявленные на матч." : "Щёлкните игрока, чтобы поставить его на выбранное место.", 11, Ui.Dim).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart));
         v.AddChild(Ui.Expand(Ui.Scroll(grid.Root), true, true));
         var panel = new PanelContainer { CustomMinimumSize = new Vector2(340, 0) };
@@ -431,7 +431,7 @@ public partial class LinesView : HBoxContainer
             if (idx == 0) L.Orders.Remove(p.Id); else L.Orders[p.Id] = allowed[(int)idx - 1].Key;
             Changed();
         };
-        var v = Ui.V(4, Ui.H(8, Ui.L($"Указание: {p.LastRu}", 16, Ui.Text, Ui.Cond)), ob);
+        var v = Ui.V(4, Ui.H(8, Ui.L($"Указание: {p.LastRu}", 15, Ui.Text, Ui.Semi)), ob);
         if (Orders.Get(curKey) is { } o)
         {
             double f = Orders.Fit(Staff.AttrView(C, Staff.Assistant(C)), p, o);
@@ -440,7 +440,7 @@ public partial class LinesView : HBoxContainer
                 11, f < -0.5 ? Ui.Otl : f >= 0.5 ? Ui.Win : Ui.Dim).Also(l => { l.AutowrapMode = TextServer.AutowrapMode.WordSmart; l.CustomMinimumSize = new Vector2(300, 0); }));
         }
         var box = new PanelContainer();
-        box.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel2, 3, curKey != null ? Ui.Gold : Ui.Line, 10));
+        box.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel2, 10, curKey != null ? Ui.Gold : Ui.Line, 10));
         box.AddChild(v);
         return box;
     }
