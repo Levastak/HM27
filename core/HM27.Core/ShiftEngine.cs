@@ -123,6 +123,8 @@ public static class ShiftEngine
 
     // ───────────── смены (карты смен НХЛ: нападающие 47 с, защитники 49 с)
     public const double SHIFT_F = 48, SHIFT_D = 51, SHIFT_SD = 9, PP1_SEC = 65, PK_SHIFT = 40, OT_SHIFT = 40;
+    /// <summary>Расстановка по ролям (Deploy): звено выходит, если средняя энергия не ниже DEPLOY_E и переиграно своих минут не больше DEPLOY_OVER секунд.</summary>
+    public static double DEPLOY_E = 0.85, DEPLOY_OVER = 90;
     // ───────────── вратарь (НХЛ 2023-26: со снятым вратарём при −1 — 25 с за матч, при −2 — 24 с, при −3 — 8 с):
     // снятие при −1 за ~2:00 до конца, при −2 за ~2:05, при −3 (в трети случаев) за ~3:40; план тренера (Coach) — ± PULL_JIT
     public const double PULL1 = 120, PULL2 = 125, PULL3 = 220, PULL_SD = 25, PULL_JIT = 8;
@@ -150,6 +152,10 @@ public static class ShiftEngine
     {
         public readonly Dictionary<string, double> Sec = new(), Goals = new(), Att = new(), Blk = new(), Miss = new(), Sog = new();
         public int Games, PpEntries, Rebounds, RebGoals;
+        /// <summary>Вбрасывания по ролям звена на льду (0 обычная, 1 атакующая, 2 оборонительная) и зонам (0 атаки, 1 средняя, 2 своя).</summary>
+        public readonly int[,] RoleStarts = new int[3, 3];
+        /// <summary>Секунды оборонительной тройки против лучшей тройки соперника и всего лучшей тройки соперника на льду (5×5).</summary>
+        public int ShutVsTop, TopSec;
         public readonly Dictionary<int, double> ScoreSecAtt = new();   // разница → попытки за
         public readonly Dictionary<int, double> ScoreSec = new();
         public readonly Dictionary<int, double> PullSec = new(), PullGf = new(), PullGa = new();
@@ -240,6 +246,8 @@ public static class ShiftEngine
         public int Goalie; public double GMult; public PlayerBox GBox;
         public double GSkill;            // для буллитов
         public int Fi = -1, Di = -1; public double FLeft, DLeft;
+        /// <summary>Роли троек и пар (как в t.F / t.D), против лучших; лучшая тройка по атаке.</summary>
+        public int[] FRole = Array.Empty<int>(), DRole = Array.Empty<int>(); public bool Matchup; public int FTop = -1;
         public int UnitIdx; public double UnitLeft; public string Mode = "";
         public readonly List<Pen> Pens = new();
         public bool Pulled; public double Pull1, Pull2, Pull3;
@@ -345,8 +353,11 @@ public static class ShiftEngine
                 t.All[id] = sk;
                 return sk;
             }
-            foreach (var line in l.F) { var u = line.Select(Get).Where(x => x != null).ToArray(); if (u.Length > 0) t.F.Add(u); }
-            foreach (var pair in l.D) { var u = pair.Select(Get).Where(x => x != null).ToArray(); if (u.Length > 0) t.D.Add(u); }
+            var fr = new List<int>(); var dr = new List<int>();
+            for (int i = 0; i < l.F.Count; i++) { var u = l.F[i].Select(Get).Where(x => x != null).ToArray(); if (u.Length > 0) { t.F.Add(u); fr.Add(l.RoleF(i)); } }
+            for (int i = 0; i < l.D.Count; i++) { var u = l.D[i].Select(Get).Where(x => x != null).ToArray(); if (u.Length > 0) { t.D.Add(u); dr.Add(l.RoleD(i)); } }
+            t.FRole = fr.ToArray(); t.DRole = dr.ToArray(); t.Matchup = l.Matchup;
+            t.FTop = t.F.Count == 0 ? -1 : Enumerable.Range(0, t.F.Count).OrderByDescending(i => t.F[i].Average(x => x.Off)).First();
             foreach (var sk0 in t.All.Values.ToList())
                 if (l.SlotOf(sk0.Id) is char slot) (sk0.PosOff, sk0.PosDef) = Lineup.SlotPenalty(sk0.P, slot);
             var fMin = l.F.Select((x, i) => i < l.FMin.Length ? l.FMin[i] : 5).ToList();
@@ -440,7 +451,13 @@ public static class ShiftEngine
                 Rotate();
                 if (recompose) Compose();
                 if (s == 0) foPending = 1;
-                if (foPending != 0) Faceoff();
+                if (foPending != 0)
+                {
+                    // смена на остановке: гости первыми, хозяева — последними (видят, кого выпустил соперник)
+                    Deploy(A); Deploy(H);
+                    if (recompose) Compose();
+                    Faceoff();
+                }
                 if (T == H.FoUntil || T == A.FoUntil) dirty = true;
                 if (dirty || T - lastRate >= 10) Rates();
                 double u = rng.NextDouble();
@@ -464,6 +481,16 @@ public static class ShiftEngine
                         if (Label(t) == "5v5" && Per <= 3) { int df = Math.Clamp(t.Goals - Opp(t).Goals, -3, 3); Diag.ScoreSec[df] = Diag.ScoreSec.GetValueOrDefault(df) + 1; }
                         if (t.Pulled) { int df = t.Goals - Opp(t).Goals; Diag.PullSec[df] = Diag.PullSec.GetValueOrDefault(df) + 1; }
                         if (Label(t) == "5v5" && Per <= 3) foreach (var x in t.On) Diag.Es5Sec[x.Id] = Diag.Es5Sec.GetValueOrDefault(x.Id) + 1;
+                    }
+                if (Diag != null)
+                    foreach (var t in new[] { H, A })
+                    {
+                        var o = Opp(t);
+                        if (t.Mode == "es" && o.Mode == "es" && o.Fi >= 0 && o.Fi == o.FTop)
+                        {
+                            Diag.TopSec++;
+                            if (t.Fi >= 0 && t.Fi < t.FRole.Length && t.FRole[t.Fi] == 2) Diag.ShutVsTop++;
+                        }
                     }
                 // минуты звеньев в равных составах — для ротации
                 foreach (var t in new[] { H, A })
@@ -555,7 +582,13 @@ public static class ShiftEngine
                 switch (mode)
                 {
                     case "es":
-                        if (t.FLeft <= 0 || t.Fi < 0) { t.Fi = Next(t.F, t.FT, t.FToi, t.Fi, t.All.Values, boxed); t.FLeft = Math.Max(20, SHIFT_F + SHIFT_SD * Normal()); }
+                        if (t.FLeft <= 0 || t.Fi < 0)
+                        {
+                            t.Fi = Next(t.F, t.FT, t.FToi, t.Fi, t.All.Values, boxed);
+                            // против лучшей тройки соперника — оборонительная, если отдохнула и не сверх своих минут
+                            if (t.Matchup && o.Mode == "es" && o.Fi >= 0 && o.Fi == o.FTop && Find(t.FRole, 2) is int sh and >= 0 && sh != t.Fi && Ready(t, true, sh)) t.Fi = sh;
+                            t.FLeft = Math.Max(20, SHIFT_F + SHIFT_SD * Normal());
+                        }
                         if (t.DLeft <= 0 || t.Di < 0) { t.Di = Next(t.D, t.DT, t.DToi, t.Di, t.All.Values, boxed); t.DLeft = Math.Max(20, SHIFT_D + SHIFT_SD * Normal()); }
                         if (t.Fi >= 0) list.AddRange(t.F[t.Fi].Where(x => !boxed.Contains(x.Id)));
                         if (t.Di >= 0) list.AddRange(t.D[t.Di].Where(x => !boxed.Contains(x.Id)));
@@ -588,6 +621,34 @@ public static class ShiftEngine
                 t.On = list;
                 t.Fam = UnitFam(t, list);
             }
+        }
+
+        static int Find(int[] roles, int role) => Array.IndexOf(roles, role);
+
+        /// <summary>Звено готово выйти: отдохнуло (средняя энергия ≥ DEPLOY_E) и не переиграло свои минуты больше чем на DEPLOY_OVER секунд.</summary>
+        bool Ready(Team t, bool fwd, int i)
+        {
+            var units = fwd ? t.F : t.D; var toi = fwd ? t.FToi : t.DToi; var tg = fwd ? t.FT : t.DT;
+            if (i < 0 || i >= units.Count) return false;
+            if (units[i].Average(x => x.Energy(T)) < DEPLOY_E) return false;
+            return toi[i] - tg[i] * (toi.Sum() + 45) < DEPLOY_OVER;
+        }
+
+        /// <summary>
+        /// Расстановка на вбрасывание по ролям: в зоне атаки — атакующие тройка и пара, в своей — оборонительные;
+        /// хозяева (последняя смена) выпускают оборонительную тройку против лучшей тройки соперника и на вбрасывании в средней зоне.
+        /// </summary>
+        void Deploy(Team t)
+        {
+            if (t.Mode != "es" || t.Pulled || ot3 || foPending == 0) return;
+            var o = Opp(t);
+            int z = foPending == 1 ? 1 : (foPending == 2) == (t == H) ? 0 : 2;
+            int wf = z == 0 ? Find(t.FRole, 1) : z == 2 ? Find(t.FRole, 2) : -1;
+            int wd = z == 0 ? Find(t.DRole, 1) : z == 2 ? Find(t.DRole, 2) : -1;
+            if (t == H && t.Matchup && o.Fi >= 0 && o.Fi == o.FTop && z != 0) { wf = Find(t.FRole, 2); wd = Find(t.DRole, 2); }
+            if (wf >= 0 && wf != t.Fi && Ready(t, true, wf)) { t.Fi = wf; t.FLeft = Math.Max(20, SHIFT_F + SHIFT_SD * Normal()); recompose = true; }
+            if (wd >= 0 && wd != t.Di && Ready(t, false, wd)) { t.Di = wd; t.DLeft = Math.Max(20, SHIFT_D + SHIFT_SD * Normal()); recompose = true; }
+            if (Diag != null && t.Fi >= 0 && t.Fi < t.FRole.Length) Diag.RoleStarts[t.FRole[t.Fi] is >= 0 and <= 2 ? t.FRole[t.Fi] : 0, z]++;
         }
 
         /// <summary>Секунды вместе для пар текущей пятёрки — в протокол сыгранности.</summary>

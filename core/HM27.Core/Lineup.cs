@@ -31,11 +31,21 @@ public sealed class Lineup
     public double Learned(string key) => Learn != null && Learn.TryGetValue(key, out var v) ? v : 0;
     public int SysOf(int lever) => Sys != null && lever < Sys.Length ? Sys[lever] : 0;
 
+    /// <summary>Роли троек и пар: 0 — обычная, 1 — атакующая (начинает в зоне атаки), 2 — оборонительная (в своей зоне и против лучших).</summary>
+    public int[] FRole { get; set; }
+    public int[] DRole { get; set; }
+    /// <summary>Оборонительную тройку и пару — против лучшего звена соперника (дома — на каждой остановке, в гостях — на ходу).</summary>
+    public bool Matchup { get; set; }
+    public int RoleF(int i) => FRole != null && i < FRole.Length ? FRole[i] : 0;
+    public int RoleD(int i) => DRole != null && i < DRole.Length ? DRole[i] : 0;
+    public static readonly string[] RoleNames = { "Обычная", "Атакующая", "Оборонительная" };
+
     /// <summary>Тактические настройки клуба (не звенья): темп, снятие вратаря, отдых вратаря, система и её выучка.</summary>
     public void CopySettings(Lineup from)
     {
         Tempo = from.Tempo; TempoAuto = from.TempoAuto; Pull = from.Pull; BackupOnB2B = from.BackupOnB2B;
         Sys = (int[])from.Sys?.Clone(); Learn = from.Learn == null ? null : new(from.Learn);
+        FRole = (int[])from.FRole?.Clone(); DRole = (int[])from.DRole?.Clone(); Matchup = from.Matchup;
     }
     public double[] FMin { get; set; } = { 20, 17, 14, 9 };
     public double[] DMin { get; set; } = { 24, 20, 16 };
@@ -154,6 +164,7 @@ public sealed class Lineup
         D = D.Select(a => (int[])a.Clone()).ToList(),
         G1 = G1, G2 = G2, Pp1 = (int[])Pp1.Clone(), Pp2 = (int[])Pp2.Clone(), Pk1 = (int[])Pk1.Clone(), Pk2 = (int[])Pk2.Clone(),
         Tempo = Tempo, TempoAuto = TempoAuto, Pull = Pull, Sys = (int[])Sys?.Clone(), Learn = Learn == null ? null : new(Learn),
+        FRole = (int[])FRole?.Clone(), DRole = (int[])DRole?.Clone(), Matchup = Matchup,
         FMin = (double[])FMin.Clone(), DMin = (double[])DMin.Clone(), BackupOnB2B = BackupOnB2B,
     };
 

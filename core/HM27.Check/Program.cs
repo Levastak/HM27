@@ -87,6 +87,7 @@ if (args.Length > 1 && args[1] == "news")
     return 0;
 }
 if (args.Length > 1 && args[1] == "tactics") { TacticsCheck.Run(data, true, args.Length > 2 ? int.Parse(args[2]) : 12); return 0; }
+if (args.Length > 1 && args[1] == "roles") { RolesCheck.Run(data, true, args.Length > 2 ? int.Parse(args[2]) : 20); return 0; }
 if (args.Length > 1 && args[1] == "coach") { CoachCheck.Run(data, true); return 0; }
 if (args.Length > 1 && args[1] == "engine") { EngineReport.Run(data, args.Length > 2 ? int.Parse(args[2]) : 1); return 0; }
 Console.WriteLine($"База: {data.Teams.Count} клубов, {data.Players.Count} игроков, данные на {data.DataDate}; голов за матч на команду {data.League.GoalsPerGame:F3}");
@@ -437,6 +438,9 @@ Check("Плей-офф", playoffsOk, $"15 серий и чемпион в каж
     // проверяем, что голов меньше, а ОТ не падает сверх шума
     Check("Закрытый темп", gClosed < gBase && tiesClosed >= ties - 0.035 * n, $"голов в матчах «Сан-Хосе» {gBase / n:F2} → {gClosed / n:F2}, овертаймов {100 * ties / n:F1}% → {100 * tiesClosed / n:F1}%");
     {
+        var rc = RolesCheck.Run(data, false, 0);
+        Check("Роли звеньев", rc.atkOz >= 0.5 && rc.defDz >= 0.5 && rc.shutShare >= 0.4,
+            $"атакующие тройки начинают в зоне атаки {100 * rc.atkOz:0}% вбрасываний, оборонительные в своей — {100 * rc.defDz:0}%; оборонительная тройка против лучшей тройки соперника {100 * rc.shutShare:0}% времени");
         // нет одного верного решения: лучший план помощника зависит от соперника, вариант состава не бесплатный
         var cc = CoachCheck.Run(data, false);
         var tc = TacticsCheck.Run(data, false, 0);

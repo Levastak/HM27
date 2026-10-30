@@ -99,6 +99,7 @@ public partial class LinesView : HBoxContainer
         AddChild(center);
         center.AddChild(new Segmented(Units.Select(u => u.name).ToArray(), Array.FindIndex(Units, u => u.key == _unit), k => { _unit = Units[k].key; _slot = 0; CallDeferred(nameof(Rebuild)); }));
         center.AddChild(FamStrip());
+        if (_unit.StartsWith("F")) center.AddChild(RoleStrip(_unit[1] - '0'));
         center.AddChild(RinkBoard());
         center.AddChild(Ui.Expand(Overview(), true, true));
         AddChild(Candidates());
@@ -149,6 +150,9 @@ public partial class LinesView : HBoxContainer
             new Segmented(new[] { "Как в НХЛ", "По расчёту", "Рано" }, L.Pull switch { Coach.ASSIST => 1, Coach.EARLY => 2, _ => 0 },
                 k => { L.Pull = k switch { 1 => Coach.ASSIST, 2 => Coach.EARLY, _ => Coach.USUAL }; Changed(); }),
             pullPlan ?? new Control(), Note(pullNote)));
+        var mu = new CheckBox { Text = "Оборонительная тройка — против их лучшей", ButtonPressed = L.Matchup, FocusMode = FocusModeEnum.None };
+        mu.Toggled += on => { L.Matchup = on; Changed(); };
+        v.AddChild(Section("Расстановка", mu, Note("Дома на каждой остановке выпускаем оборонительную тройку и пару против лучшей тройки соперника — у хозяев последняя смена. В гостях — только на ходу, получается реже.")));
         var presets = new (string name, double[] f, double[] d)[]
         {
             ("Ровно", new double[] { 17, 16, 15, 12 }, new double[] { 21, 20, 19 }),
@@ -201,6 +205,46 @@ public partial class LinesView : HBoxContainer
         var h = Ui.H(6, bar, Ui.L($"{f * 100:0}%", 12, FamColor(f), Ui.Cond).Also(l => l.CustomMinimumSize = new Vector2(32, 0)));
         h.TooltipText = FamTip;
         h.MouseFilter = MouseFilterEnum.Stop;
+        return h;
+    }
+
+    // ------------------------------------------------------------------ роли звеньев
+    static readonly string[] RoleTips =
+    {
+        "Выходит по очереди, без особых заданий.",
+        "Начинает смены вбрасыванием в зоне атаки: больше голов, если звено сильно в атаке.",
+        "Начинает в своей зоне и выходит против лучшей тройки соперника: нужны оборона и вбрасывание.",
+    };
+
+    public static Color RoleColor(int r) => r == 1 ? Ui.Gold : r == 2 ? Ui.Blue : Ui.Muted;
+
+    void EnsureRoles()
+    {
+        if (L.FRole == null || L.FRole.Length != L.F.Count) L.FRole = Enumerable.Range(0, L.F.Count).Select(i => L.RoleF(i)).ToArray();
+        if (L.DRole == null || L.DRole.Length != L.D.Count) L.DRole = Enumerable.Range(0, L.D.Count).Select(i => L.RoleD(i)).ToArray();
+    }
+
+    /// <summary>Роль тройки и пары выбранного звена: одна атакующая и одна оборонительная на клуб (новая снимает старую).</summary>
+    Control RoleStrip(int i)
+    {
+        var h = Ui.H(18);
+        void One(string what, bool d)
+        {
+            int cur = d ? L.RoleD(i) : L.RoleF(i);
+            var seg = new Segmented(new[] { "Обычная", "Атака", "Оборона" }, cur, k =>
+            {
+                EnsureRoles();
+                var arr = d ? L.DRole : L.FRole;
+                if (k != 0) for (int j = 0; j < arr.Length; j++) if (arr[j] == k) arr[j] = 0;
+                arr[i] = k;
+                Changed();
+            });
+            seg.TooltipText = RoleTips[cur];
+            h.AddChild(Ui.H(8, Ui.L(what, 13, Ui.Muted), seg));
+        }
+        One("Роль тройки", false);
+        if (i < L.D.Count) One("пары", true);
+        h.TooltipText = RoleTips[L.RoleF(i)];
         return h;
     }
 
@@ -308,14 +352,16 @@ public partial class LinesView : HBoxContainer
     Control Overview()
     {
         var v = Ui.V(0);
-        void Row(string key, string name, string mins, IEnumerable<int> ids, double fam = -1)
+        void Row(string key, string name, string mins, IEnumerable<int> ids, double fam = -1, int role = 0)
         {
             bool on = key == _unit;
             var p = new PanelContainer { MouseDefaultCursorShape = CursorShape.PointingHand, MouseFilter = MouseFilterEnum.Stop };
             var sb = Ui.Box(on ? new Color(Ui.AccentBright, 0.14f) : new Color(0, 0, 0, 0), 0, null, 10);
             sb.ContentMarginTop = sb.ContentMarginBottom = 5; sb.BorderColor = Ui.Line; sb.BorderWidthBottom = 1;
             p.AddThemeStyleboxOverride("panel", sb);
-            var h = Ui.H(8, Ui.L(name, 12, on ? Ui.Text : Ui.Muted, Ui.Semi).Also(l => l.CustomMinimumSize = new Vector2(100, 0)), Ui.L(mins, 11, Ui.Dim).Also(l => l.CustomMinimumSize = new Vector2(42, 0)));
+            var h = Ui.H(8, Ui.L(name, 12, on ? Ui.Text : Ui.Muted, Ui.Semi).Also(l => l.CustomMinimumSize = new Vector2(62, 0)),
+                Ui.L(role == 1 ? "атака" : role == 2 ? "оборона" : "", 11, RoleColor(role), Ui.Semi).Also(l => l.CustomMinimumSize = new Vector2(48, 0)),
+                Ui.L(mins, 11, Ui.Dim).Also(l => l.CustomMinimumSize = new Vector2(42, 0)));
             foreach (var id in ids)
             {
                 var pl = C.Data.PlayerById.GetValueOrDefault(id);
@@ -333,7 +379,7 @@ public partial class LinesView : HBoxContainer
         {
             double f = C.UnitFam(L.F[i]);
             if (i < L.D.Count) f = (3 * f + C.UnitFam(L.D[i])) / 4;
-            Row($"F{i}", $"{i + 1}-е звено", $"{L.FMin[i]:0} мин", L.F[i].Concat(i < L.D.Count ? L.D[i] : Array.Empty<int>()), f);
+            Row($"F{i}", $"{i + 1}-е звено", $"{L.FMin[i]:0} мин", L.F[i].Concat(i < L.D.Count ? L.D[i] : Array.Empty<int>()), f, L.RoleF(i));
         }
         Row("PP0", "Большинство 1", "", L.Pp1); Row("PP1", "Большинство 2", "", L.Pp2);
         Row("PK0", "Меньшинство 1", "", L.Pk1); Row("PK1", "Меньшинство 2", "", L.Pk2);

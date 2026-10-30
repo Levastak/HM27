@@ -129,3 +129,55 @@ static class TacticsCheck
         return (bothPoles, fcP, nErr > 0 ? err / nErr : 0, picks.Count);
     }
 }
+
+/// <summary>Роли звеньев: как расставляют по зонам и против лучших; что дают роли против «все обычные» (общие сиды).</summary>
+static class RolesCheck
+{
+    public static (double atkOz, double defDz, double shutShare, double gain) Run(GameData data, bool verbose, int reps = 20)
+    {
+        ShiftEngine.Diag = new ShiftEngine.Diagnostics();
+        var c = Career.New(data, "MIN", 616);
+        var games = c.Games.Where(g => !g.Playoff).Take(300).ToList();
+        foreach (var g in games) { var (h, a) = c.Sides(g); ShiftEngine.Play(data, h, a, new Random(g.Id), false); }
+        var d = ShiftEngine.Diag; ShiftEngine.Diag = null;
+        double Share(int role, int z) { double s = 0; for (int k = 0; k < 3; k++) s += d.RoleStarts[role, k]; return s == 0 ? 0 : d.RoleStarts[role, z] / s; }
+        double atkOz = Share(1, 0), defDz = Share(2, 2), shut = d.TopSec == 0 ? 0 : d.ShutVsTop / (double)d.TopSec;
+        if (verbose)
+        {
+            for (int r = 0; r < 3; r++) Console.WriteLine($"{Lineup.RoleNames[r],-15}: в зоне атаки {100 * Share(r, 0):0}%, в средней {100 * Share(r, 1):0}%, в своей {100 * Share(r, 2):0}%");
+            Console.WriteLine($"Оборонительная тройка против лучшей тройки соперника: {100 * shut:0}% её времени (без расстановки ~25%)");
+        }
+        // эффект ролей: клуб с ролями и расстановкой против того же клуба без них (все соперники — с ролями)
+        double gain = 0;
+        if (reps > 0)
+        {
+            foreach (var team in new[] { "MIN", "COL", "SJS" })
+            {
+                var tg = c.Games.Where(g => !g.Playoff && (g.Home == team || g.Away == team)).Take(41).ToList();
+                var l = c.Lineups[team];
+                var (fr, dr, mu) = (l.FRole, l.DRole, l.Matchup);
+                double Diff(bool roles)
+                {
+                    l.FRole = roles ? fr : null; l.DRole = roles ? dr : null; l.Matchup = roles && mu;
+                    double s = 0; int n = 0;
+                    foreach (var g in tg)
+                    {
+                        var (h, a) = c.Sides(g); bool home = g.Home == team;
+                        for (int k = 0; k < reps; k++)
+                        {
+                            var r = ShiftEngine.Play(data, h, a, new Random(k * 7919 + g.Id), false);
+                            s += home ? r.HomeGoals - r.AwayGoals : r.AwayGoals - r.HomeGoals; n++;
+                        }
+                    }
+                    return s / n;
+                }
+                double with = Diff(true), without = Diff(false);
+                (l.FRole, l.DRole, l.Matchup) = (fr, dr, mu);
+                gain += with - without;
+                if (verbose) Console.WriteLine($"{team}: разница голов за матч с ролями {with:+0.000;-0.000}, без {without:+0.000;-0.000} → {with - without:+0.000;-0.000}");
+            }
+            gain /= 3;
+        }
+        return (atkOz, defDz, shut, gain);
+    }
+}

@@ -17,6 +17,8 @@ public static class Coach
     public const double EARLY1 = 240, EARLY2 = 300;
     /// <summary>Темп меняется, только если это даёт хотя бы столько очков за матч (иначе — обычный).</summary>
     const double TEMPO_MIN = 0.004;
+    /// <summary>Насколько больше весит атака атакующего звена и оборона оборонительного в оценке помощника.</summary>
+    const double ROLE_W = 0.1;
     /// <summary>
     /// Раньше этого помощник вратаря не снимает (7:00 при −1, 9:00 при −2). Расчёт по частотам НХЛ (как у Asness и Brown, 2018)
     /// даёт оптимум около 5–6 минут при −1 и 10+ при −2, но тренеры НХЛ так не делают никогда: за этим — крупные поражения.
@@ -186,7 +188,24 @@ public static class Coach
         var inj = c.Injured.ToHashSet();
         var bench = c.Roster(abbr).Where(p => !p.IsGoalie && !inj.Contains(p.Id) && !l.Skaters.Contains(p.Id)).ToList();
         double gpg = c.Data.League.GoalsPerGame * MatchEngine.REG_SHARE;
-        double J(Lineup x) { var (at, df) = TeamStrength.Live(c, x, x.G1, c.DlBase); return gpg * (Math.Exp(at) - Math.Exp(df)); }
+        // роли звеньев: атакующее звено начинает в зоне атаки, оборонительное — в своей и против лучших; их атака (оборона)
+        // весит больше (~10%: столько дают зоны вбрасываний и расстановка в движке)
+        var sc = TeamStrength.Coef(c.Data);
+        var od = c.Roster(abbr).ToDictionary(p => p.Id, p => Tactics.OffDef(c, p.Id));
+        double Role(Lineup x)
+        {
+            double b = 0;
+            void Add(int[] ids, double min, int role)
+            {
+                if (role == 0) return;
+                foreach (var id in ids)
+                    if (od.TryGetValue(id, out var v)) b += ROLE_W * min / 60 * TeamStrength.SPREAD * (role == 1 ? sc.A1 * v.off : -sc.D1 * v.def);
+            }
+            for (int i = 0; i < x.F.Count; i++) Add(x.F[i], i < x.FMin.Length ? x.FMin[i] : 0, x.RoleF(i));
+            for (int i = 0; i < x.D.Count; i++) Add(x.D[i], i < x.DMin.Length ? x.DMin[i] : 0, x.RoleD(i));
+            return gpg * b;
+        }
+        double J(Lineup x) { var (at, df) = TeamStrength.Live(c, x, x.G1, c.DlBase); return gpg * (Math.Exp(at) - Math.Exp(df)) + Role(x); }
         var slotsF = new List<(int i, int s)>(); for (int i = 0; i < l.F.Count; i++) for (int s = 0; s < l.F[i].Length; s++) slotsF.Add((i, s));
         var slotsD = new List<(int i, int s)>(); for (int i = 0; i < l.D.Count; i++) for (int s = 0; s < l.D[i].Length; s++) slotsD.Add((i, s));
         double cur = J(l);

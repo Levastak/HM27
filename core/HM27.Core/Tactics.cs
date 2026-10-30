@@ -332,12 +332,49 @@ public static class Tactics
         return s;
     }
 
-    /// <summary>Старт карьеры: у каждого клуба — система под свой состав, выученная (так клуб и играл).</summary>
+    // ------------------------------------------------------------------ роли звеньев
+
+    /// <summary>Атака и оборона игрока (ед. шкалы, как в силе клуба): для ролей и подсказок.</summary>
+    public static (double off, double def) OffDef(Career c, int id)
+    {
+        if (!c.Data.PlayerById.TryGetValue(id, out var p)) return (0, 0);
+        var attr = TeamStrength.Attr(c, c.DlBase);
+        return (TeamStrength.Off.Sum(x => x.w * (attr(p, x.k) - 11)), TeamStrength.Def.Sum(x => x.w * (attr(p, x.k) - 11)));
+    }
+
+    static (double off, double def) UnitOD(Career c, int[] ids)
+    {
+        var v = ids.Where(id => id != 0).Select(id => OffDef(c, id)).ToList();
+        return v.Count == 0 ? (0, 0) : (v.Average(x => x.off), v.Average(x => x.def));
+    }
+
+    /// <summary>
+    /// Роли как у тренеров НХЛ: атакующая — сильнейшая в атаке из первых двух троек (пар), оборонительная — с наибольшим
+    /// перевесом обороны над атакой среди остальных (кроме четвёртой тройки); против лучших — да.
+    /// </summary>
+    public static void DefaultRoles(Career c, Lineup l)
+    {
+        int[] Pick(List<int[]> units, int maxDef)
+        {
+            var r = new int[units.Count];
+            if (units.Count < 2) return r;
+            var od = units.Select(u => UnitOD(c, u)).ToList();
+            int att = od[0].off >= od[1].off ? 0 : 1;
+            r[att] = 1;
+            int def = Enumerable.Range(0, Math.Min(units.Count, maxDef)).Where(i => i != att).OrderByDescending(i => od[i].def - od[i].off).First();
+            r[def] = 2;
+            return r;
+        }
+        l.FRole = Pick(l.F, 3); l.DRole = Pick(l.D, 3); l.Matchup = true;
+    }
+
+    /// <summary>Старт карьеры: у каждого клуба — система под свой состав, выученная (так клуб и играл), и роли звеньев.</summary>
     public static void Init(Career c)
     {
         foreach (var t in c.Data.Teams)
         {
             var l = c.Lineups[t.Abbr];
+            DefaultRoles(c, l);
             l.Sys = Suggest(c, l);
             l.Learn = new();
             for (int i = 0; i < Levers.Length; i++) if (l.Sys[i] != 0) l.Learn[Key(Levers[i], l.Sys[i])] = 1;
