@@ -9,4 +9,10 @@
   <ItemGroup>
     <ProjectReference Include="../core/HM27.Core/HM27.Core.csproj" />
   </ItemGroup>
+  <!-- Логотипы и лица (art/art.pak) для личной сборки: в GitHub Actions пак скачивается с сайта НХЛ перед сборкой, если его нет в репозитории.
+       Локально цель не запускается (сайт НХЛ может быть недоступен); пак можно положить в game/art/ вручную. -->
+  <Target Name="FetchArt" BeforeTargets="Build" Condition="'$(GITHUB_ACTIONS)' == 'true' And !Exists('art/art.pak')">
+    <MakeDir Directories="art" />
+    <Exec Command="python3 ../tools/fetch_art.py data/hm27-data.json art/art.pak" ContinueOnError="true" />
+  </Target>
 </Project>
