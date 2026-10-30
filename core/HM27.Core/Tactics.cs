@@ -134,12 +134,12 @@ public static class Tactics
     }
 
     /// <summary>Пригодность отдельного игрока к полюсу (для списков «кто подходит»), в тех же единицах, что у клуба × 3 (игроки разбросаны шире).</summary>
-    public static double PlayerFit(Career c, PlayerData p, Lever lv, int v)
+    public static double PlayerFit(Career c, PlayerData p, Lever lv, int v, Func<PlayerData, string, double> attr = null)
     {
         var pole = PoleOf(lv, v);
         if (pole == null || !InGroup(p, pole.Group)) return double.NaN;
         var (m, sd) = RefOf(c).P[Key(lv, v)];
-        return (Score(TeamStrength.Attr(c, c.DlBase), p, pole) - m) / (3 * sd);
+        return (Score(attr ?? TeamStrength.Attr(c, c.DlBase), p, pole) - m) / (3 * sd);
     }
 
     // ------------------------------------------------------------------ эффект на матч
@@ -221,7 +221,7 @@ public static class Tactics
     /// <summary>Разбор системы против среднего соперника: по рычагам — полюс, пригодность, выучка, свои голы и голы против (лог).</summary>
     public sealed record LeverView(int Index, int V, double Fit, double Learn, double F, double A);
 
-    public static List<LeverView> Breakdown(Career c, Lineup l)
+    public static List<LeverView> Breakdown(Career c, Lineup l, Func<PlayerData, string, double> attr = null)
     {
         var list = new List<LeverView>();
         for (int i = 0; i < Levers.Length; i++)
@@ -229,7 +229,7 @@ public static class Tactics
             int v = l.SysOf(i);
             if (v == 0) { list.Add(new LeverView(i, 0, 0, 1, 0, 0)); continue; }
             var lv = Levers[i]; string k = Key(lv, v);
-            double fit = Fit(c, l, lv, v), learn = l.Learned(k);
+            double fit = Fit(c, l, lv, v, attr), learn = l.Learned(k);
             var (bf, ba) = BASE[k];
             list.Add(new LeverView(i, v, fit, learn, bf + FIT_F * fit - LEARN_F * (1 - learn), ba - FIT_A * fit + LEARN_A * (1 - learn)));
         }
@@ -323,13 +323,18 @@ public static class Tactics
         return (bf + FIT_F * fit) - (ba - FIT_A * fit);
     }
 
-    /// <summary>Система по составу: для каждого рычага — полюс с наибольшей выгодой, если она заметна (иначе середина).</summary>
-    public static int[] Suggest(Career c, Lineup l, double min = 0.006)
+    /// <summary>
+    /// Система по составу глазами тренера: для каждого рычага — полюс с наибольшей выгодой, если она заметна (иначе середина).
+    /// Тренер ошибается (тактика) и тянет к любимому форчеку.
+    /// </summary>
+    public static int[] Suggest(Career c, Lineup l, double min = 0.006, StaffMember who = null, int salt = 0)
     {
         var s = new int[Levers.Length];
         for (int i = 0; i < Levers.Length; i++)
         {
-            double vm = Value(c, l, i, -1), vp = Value(c, l, i, 1);
+            double Est(int v) => v == 0 ? 0 : Value(c, l, i, v) + (who == null ? 0 : Staff.TacSd(who) / 3 * Staff.Noise(c, who, 900 + i + 10 * salt, v)
+                                                   + (i == 0 && who.Press == v ? 0.006 : 0));
+            double vm = Est(-1), vp = Est(1);
             if (vp >= vm && vp > min) s[i] = 1; else if (vm > vp && vm > min) s[i] = -1;
         }
         return s;
@@ -379,7 +384,7 @@ public static class Tactics
             var l = c.Lineups[t.Abbr];
             DefaultRoles(c, l);
             l.Rules = t.Abbr == c.UserTeam ? Rules.Default() : Rules.Ai();
-            l.Sys = Suggest(c, l);
+            l.Sys = Suggest(c, l, who: Staff.Decider(c, t.Abbr));
             l.Learn = new();
             for (int i = 0; i < Levers.Length; i++) if (l.Sys[i] != 0) l.Learn[Key(Levers[i], l.Sys[i])] = 1;
         }

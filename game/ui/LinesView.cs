@@ -124,7 +124,7 @@ public partial class LinesView : HBoxContainer
         v.AddChild(Section("Темп игры", tAuto, tSeg,
             Note(L.TempoAuto
                 ? (next == null ? "Помощник выбирает темп перед каждым матчем: со слабым — открытый, с сильным — закрытый."
-                    : "Следующий матч: " + Coach.TempoText(Coach.Tempo(C, next, hs, aws, home).tempo, Coach.Tempo(C, next, hs, aws, home).gain, opp, next.Playoff))
+                    : $"Следующий матч. {Staff.Assistant(C)?.Name} ({Coach.Tempo(C, next, hs, aws, home).conf}): " + Coach.TempoText(Coach.Tempo(C, next, hs, aws, home).tempo, Coach.Tempo(C, next, hs, aws, home).gain, opp, next.Playoff))
                 : L.Tempo switch
                 {
                     -1 => "Меньше моментов у обеих команд (−7% голов). Чаще овертаймы — это помогает слабому выстоять против сильного, а сильному стоит очков.",
@@ -142,7 +142,7 @@ public partial class LinesView : HBoxContainer
         string pullNote = L.Pull switch
         {
             Coach.ASSIST => next == null ? "Помощник рассчитывает время на каждый матч: чем опаснее соперник в атаке, тем позже."
-                : "Следующий матч. " + Coach.PullWhy(Coach.Pull(C, next, hs, aws, home), opp) + " «Сравнять» — шанс отыграться при −1 за 10 минут до конца. Цена раннего снятия — чаще крупные поражения.",
+                : $"Следующий матч, расчёт {Staff.Assistant(C)?.Name} ({Staff.StyleText(Staff.Assistant(C))}). " + Coach.PullWhy(Coach.Pull(C, next, hs, aws, home), opp) + " «Сравнять» — шанс отыграться при −1 за 10 минут до конца. Цена раннего снятия — чаще крупные поражения.",
             Coach.EARLY => $"Всегда за {Coach.Clock(Coach.EARLY1)} при −1 и за {Coach.Clock(Coach.EARLY2)} при −2, кто бы ни был соперник. Шансов сравнять больше, но чаще шайбы в пустые и крупные поражения.",
             _ => "Как большинство тренеров НХЛ: за 2:00 при −1 и −2. Реже крупные поражения, но и сравнивают реже.",
         };
@@ -175,7 +175,7 @@ public partial class LinesView : HBoxContainer
             Ui.H(8, Ui.Expand(Ui.L("Забиваем за матч", 12, Ui.Muted)), Ui.L(Ui.Signed(gF), 14, gF >= -0.005 ? Ui.Win : Ui.Loss, Ui.Bold)),
             Ui.H(8, Ui.Expand(Ui.L("Пропускаем за матч", 12, Ui.Muted)), Ui.L(Ui.Signed(gA), 14, gA <= 0.005 ? Ui.Win : Ui.Loss, Ui.Bold)),
             Ui.H(8, Ui.Expand(Ui.L("Сыгранность звеньев", 12, Ui.Muted)), Ui.L(Ui.Signed(famNet), 14, famNet >= -0.005 ? Ui.Win : Ui.Loss, Ui.Bold)),
-            Note("Способности — по сравнению со звеньями, с которыми клуб начал сезон. Сыгранность — голов за матч в пользу клуба против обычной: новые звенья теряют, сыгранные прибавляют.")));
+            Note("Способности — по оценке помощника, против звеньев «как в НХЛ». Сыгранность — голов за матч в пользу клуба против обычной: новые звенья теряют, сыгранные прибавляют.")));
         var auto = Ui.B("Вариант помощника", () => AssistantReview.Open(this, C, C.UserTeam, Set));
         var nhl = Ui.B("Как в НХЛ", () => Set(Lineup.FromTeam(C.Data, C.Team(C.UserTeam), C.Injured.ToHashSet())));
         auto.AddThemeFontSizeOverride("font_size", 12); nhl.AddThemeFontSizeOverride("font_size", 12);
@@ -426,7 +426,7 @@ public partial class LinesView : HBoxContainer
         ob.AddItem("Без указаний", 0);
         for (int i = 0; i < allowed.Count; i++)
         {
-            double f = Orders.Fit(C, p, allowed[i]);
+            double f = Orders.Fit(Staff.AttrView(C, Staff.Assistant(C)), p, allowed[i]);
             ob.AddItem($"{allowed[i].Name} — {Orders.FitWord(f)}", i + 1);
             if (allowed[i].Key == curKey) ob.Selected = i + 1;
         }
@@ -440,7 +440,7 @@ public partial class LinesView : HBoxContainer
         var v = Ui.V(4, Ui.H(8, Ui.L($"Указание: {p.LastRu}", 16, Ui.Text, Ui.Cond)), ob);
         if (Orders.Get(curKey) is { } o)
         {
-            double f = Orders.Fit(C, p, o);
+            double f = Orders.Fit(Staff.AttrView(C, Staff.Assistant(C)), p, o);
             v.AddChild(Ui.L(o.What + ".", 11, Ui.Muted).Also(l => { l.AutowrapMode = TextServer.AutowrapMode.WordSmart; l.CustomMinimumSize = new Vector2(300, 0); }));
             v.AddChild(Ui.L(f < -0.5 ? "Не его игра: пользы меньше, и он будет понемногу раздражаться." : f >= 0.5 ? "Это его игра — выгода больше обычного." : "Пригодность средняя: размен примерно поровну.",
                 11, f < -0.5 ? Ui.Otl : f >= 0.5 ? Ui.Win : Ui.Dim).Also(l => { l.AutowrapMode = TextServer.AutowrapMode.WordSmart; l.CustomMinimumSize = new Vector2(300, 0); }));

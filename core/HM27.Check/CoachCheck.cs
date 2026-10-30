@@ -23,7 +23,7 @@ static class CoachCheck
                 t1.Add(p.T1); n++;
                 // «рано» (4:00) против расчёта: ближе ли к лучшему, чем «как в НХЛ» (2:00)
                 if (Math.Abs(p.T1 - Coach.EARLY1) < Math.Abs(p.T1 - ShiftEngine.PULL1)) earlyBetter++;
-                var (tp, _) = Coach.Tempo(c, g, h, a, home);
+                var tp = Coach.Tempo(c, g, h, a, home).tempo;
                 if (tp < 0) closed++; else if (tp > 0) open++; else normal++;
             }
         }
@@ -221,5 +221,102 @@ static class OrdersCheck
             Console.WriteLine($"Подключаться: {c.Short(dG.Id)} ({Orders.Fit(c, dG, join):+0.00;-0.00}) {r3:+0.000;-0.000}, {c.Short(dB.Id)} ({Orders.Fit(c, dB, join):+0.00;-0.00}) {r4:+0.000;-0.000}");
         }
         return (r1, r2, r3, r4);
+    }
+}
+
+/// <summary>
+/// «Умный бот»: клуб игрока с хорошей политикой решений против того же клуба на автомате (звенья как на старте,
+/// без плана на матч). Политика: раз в неделю — вариант помощника, перед матчем — советы скаута (выгода от 0,02) и опека,
+/// темп и снятие вратаря по расчёту. По частям: только звенья, только план на матч.
+/// </summary>
+static class SmartBot
+{
+    public sealed record Result(double Auto, double Smart, double Lines, double Plans, int Seasons);
+
+    static double Season(GameData data, string team, int seed, bool lines, bool plans)
+    {
+        var c = Career.New(data, team, seed);
+        var l = c.Lineups[team];
+        l.TempoAuto = plans; l.Pull = plans ? Coach.ASSIST : Coach.USUAL;
+        if (!plans) l.Rules = new();
+        int guard = 0;
+        while (c.Phase == Phase.Regular && guard++ < 400)
+        {
+            if (lines && c.Today.DayOfWeek == DayOfWeek.Monday)
+            {
+                var rv = Coach.Propose(c, team);
+                var nl = rv.Lineup; nl.CopySettings(c.Lineups[team]); nl.Hold = c.Lineups[team].Hold;
+                c.Lineups[team] = nl;
+            }
+            var g = c.UserGameToday();
+            if (plans && g != null)
+            {
+                var rep = Scout.For(c, g);
+                var club = c.Lineups[team].Sys ?? new int[Tactics.Levers.Length];
+                var plan = new MatchPlan { Game = g.Id, Sys = (int[])club.Clone() };
+                foreach (var a in rep.Advice.Where(a => a.Gain >= 0.02)) plan.Sys[a.Lever] = a.V;
+                if (rep.ShadowGain >= 0.02) plan.Shadow = rep.ShadowPick;
+                if (rep.PressGain >= 0.02) plan.PressD = rep.PressPick;
+                c.Plan = plan;
+            }
+            c.SimDay();
+        }
+        return c.Table[team].Pts;
+    }
+
+    public static Result Run(GameData data, int seeds, bool verbose, string team = "SJS")
+    {
+        double a = 0, s = 0, li = 0, pl = 0;
+        for (int k = 0; k < seeds; k++)
+        {
+            int seed = 7100 + k;
+            double x0 = Season(data, team, seed, false, false), x1 = Season(data, team, seed, true, true);
+            double x2 = Season(data, team, seed, true, false), x3 = Season(data, team, seed, false, true);
+            a += x0; s += x1; li += x2; pl += x3;
+            if (verbose) Console.WriteLine($"  сезон {k + 1}: автомат {x0}, умный {x1}, только звенья {x2}, только план {x3}");
+        }
+        return new Result(a / seeds, s / seeds, li / seeds, pl / seeds, seeds);
+    }
+}
+
+/// <summary>То же, что SmartBot, но на одних и тех же матчах с одними и теми же случайными числами: шум меньше, без сезонной динамики.</summary>
+static class SmartBotFixed
+{
+    public sealed record Result(double Auto, double Lines, double Plans, double Smart);
+
+    public static Result Run(GameData data, string team, int reps, int seed = 4040)
+    {
+        var c = Career.New(data, team, seed);
+        var games = c.Games.Where(g => !g.Playoff && (g.Home == team || g.Away == team)).Take(41).ToList();
+        var auto = c.Lineups[team].Clone();
+        var smartL = Coach.Propose(c, team).Lineup; smartL.CopySettings(auto);
+        double Pts(MatchResult r, bool home) { bool w = (r.HomeGoals > r.AwayGoals) == home; return w ? 2 : r.End != "REG" ? 1 : 0; }
+        double Run(bool lines, bool plans)
+        {
+            c.Lineups[team] = (lines ? smartL : auto).Clone();
+            c.Lineups[team].TempoAuto = plans; c.Lineups[team].Pull = plans ? Coach.ASSIST : Coach.USUAL;
+            double s = 0; int n = 0;
+            foreach (var g in games)
+            {
+                c.Plan = null;
+                if (plans)
+                {
+                    var rep = Scout.For(c, g);
+                    var plan = new MatchPlan { Game = g.Id, Sys = (int[])(c.Lineups[team].Sys ?? new int[Tactics.Levers.Length]).Clone() };
+                    foreach (var a in rep.Advice.Where(a => a.Gain >= 0.02)) plan.Sys[a.Lever] = a.V;
+                    if (rep.ShadowGain >= 0.02) plan.Shadow = rep.ShadowPick;
+                    if (rep.PressGain >= 0.02) plan.PressD = rep.PressPick;
+                    c.Plan = plan;
+                }
+                var (h, a2) = c.Sides(g);
+                bool home = g.Home == team;
+                for (int k = 0; k < reps; k++) { s += Pts(ShiftEngine.Play(data, h, a2, new Random(k * 7919 + g.Id)), home); n++; }
+            }
+            c.Plan = null;
+            return s / n * 82;
+        }
+        var res = new Result(Run(false, false), Run(true, false), Run(false, true), Run(true, true));
+        c.Lineups[team] = auto;
+        return res;
     }
 }

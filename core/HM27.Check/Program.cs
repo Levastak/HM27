@@ -88,6 +88,22 @@ if (args.Length > 1 && args[1] == "news")
 }
 if (args.Length > 1 && args[1] == "tactics") { TacticsCheck.Run(data, true, args.Length > 2 ? int.Parse(args[2]) : 12); return 0; }
 if (args.Length > 1 && args[1] == "orders") { OrdersCheck.Run(data, true, args.Length > 2 ? int.Parse(args[2]) : 30); return 0; }
+if (args.Length > 1 && args[1] == "botfix")
+{
+    foreach (var t in (args.Length > 3 ? args[3] : "MIN,SJS,COL,PHI").Split(','))
+    {
+        var r = SmartBotFixed.Run(data, t, args.Length > 2 ? int.Parse(args[2]) : 20);
+        Console.WriteLine($"{t}: очков на 82 — автомат {r.Auto:F1}, звенья помощника {r.Lines:F1} ({r.Lines - r.Auto:+0.0}), план на матч {r.Plans:F1} ({r.Plans - r.Auto:+0.0}), всё {r.Smart:F1} ({r.Smart - r.Auto:+0.0})");
+    }
+    return 0;
+}
+if (args.Length > 1 && args[1] == "bot")
+{
+    int n = args.Length > 2 ? int.Parse(args[2]) : 6;
+    var r = SmartBot.Run(data, n, true, args.Length > 3 ? args[3] : "SJS");
+    Console.WriteLine($"Очков за сезон: автомат {r.Auto:F1}, умный {r.Smart:F1} ({r.Smart - r.Auto:+0.0}), только звенья {r.Lines:F1} ({r.Lines - r.Auto:+0.0}), только план на матч {r.Plans:F1} ({r.Plans - r.Auto:+0.0})");
+    return 0;
+}
 if (args.Length > 1 && args[1] == "settings") { SettingsCheck(args.Length > 2 ? int.Parse(args[2]) : 25); return fails.Count == 0 ? 0 : 1; }
 if (args.Length > 1 && args[1] == "steps") { StepsCheck(); return fails.Count == 0 ? 0 : 1; }
 if (args.Length > 1 && args[1] == "scout")
@@ -472,6 +488,13 @@ Check("Плей-офф", playoffsOk, $"15 серий и чемпион в каж
             double f0 = Fin(a0), f1 = Fin(a1), fr0 = Fresh(a0), fr1 = Fresh(a1);
             Check("Тренировки", f1 > f0 && fr1 < fr0,
                 $"120 дней, тяжёлая нагрузка + атака + индивидуально «завершение» у {young.Count} молодых: завершение {f0:+0.00;-0.00} → {f1:+0.00;-0.00}, свежесть полевых {fr0:0} → {fr1:0}");
+        }
+        {
+            // умный бот: хорошая политика решений против автомата на тех же матчах — заметный, но не огромный плюс, не из одного действия
+            var res = new[] { "MIN", "PHI" }.Select(t => (t, r: SmartBotFixed.Run(data, t, 15))).ToList();
+            bool ok = res.All(x => x.r.Smart - x.r.Auto is >= 3 and <= 16 && Math.Max(x.r.Lines - x.r.Auto, x.r.Plans - x.r.Auto) <= 0.85 * (x.r.Smart - x.r.Auto) + 1);
+            Check("Умный бот", ok, string.Join("; ", res.Select(x => $"{x.t}: автомат {x.r.Auto:F0}, звенья помощника {x.r.Lines - x.r.Auto:+0.0}, план на матч {x.r.Plans - x.r.Auto:+0.0}, всё {x.r.Smart - x.r.Auto:+0.0} очка на 82")) +
+                " (те же матчи, без сыгранности и настроя; цель — 6–12, не больше 16)");
         }
         var rc = RolesCheck.Run(data, false, 0);
         Check("Роли звеньев", rc.atkOz >= 0.5 && rc.defDz >= 0.5 && rc.shutShare >= 0.4,

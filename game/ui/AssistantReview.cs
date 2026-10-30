@@ -23,12 +23,14 @@ public static class AssistantReview
 
         v.AddChild(Ui.V(2,
             Ui.L("Вариант помощника", 26, Ui.Text, Ui.CondBold),
-            Note("Лучшие по способностям и свежести. Сыгранность, настроение и минуты молодых помощник не учитывает — решаете вы.", 12)));
+            Note(rv.By == null ? "Лучшие по способностям и свежести." :
+                $"{rv.By.Name}: оценка игроков — {Staff.Level(rv.By.Judge)}, {Staff.StyleText(rv.By)}. Это его взгляд на силу игроков — он может ошибаться. " +
+                "Сыгранность, настроение и минуты молодых он не учитывает — решаете вы.", 12)));
 
         double ability = rv.Gf - rv.Ga, fam = rv.FamGf - rv.FamGa, net = ability + fam;
         bool same = rv.Changes.Count == 0;
         var tiles = Ui.H(10,
-            Tile("По способностям", ability, "гола за матч"),
+            Tile("По его оценке", ability, "гола за матч"),
             Tile("Сыгранность сейчас", fam, rv.Moved + rv.Changes.Count(x => x.StartsWith("В состав")) > 0 ? "новые звенья сыграются за 15–20 матчей" : "звенья те же"),
             Tile("Итого в ближайших матчах", net, net >= 0 ? "выгоднее текущего" : "пока хуже текущего", true));
         v.AddChild(tiles);

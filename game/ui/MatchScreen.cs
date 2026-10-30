@@ -238,12 +238,12 @@ public partial class MatchScreen : Control
             if (adv != null)
             {
                 var tip = Ui.H(8, Ui.Icon("lightbulb", 13, Ui.Gold),
-                    Ui.Expand(Ui.L($"Скаут: {Tactics.PoleName(lv, adv.V).ToLowerInvariant()} — {Ui.Signed(adv.Gain, "0.00")} гола за матч. {Cap(adv.Why)}" + (adv.Learn < 0.95 ? $" Схема выучена на {adv.Learn * 100:0}% — это уже учтено." : ""), 11, Ui.Muted).Also(Wrap)),
+                    Ui.Expand(Ui.L($"{rep.By?.Name ?? "Помощник"} ({adv.Conf}): {Tactics.PoleName(lv, adv.V).ToLowerInvariant()} — около {Ui.Signed(adv.Gain, "0.00")} гола за матч. {Cap(adv.Why)}" + (adv.Learn < 0.95 ? $" Схема выучена на {adv.Learn * 100:0}% — это он учёл." : ""), 11, Ui.Muted).Also(Wrap)),
                     Ui.B("Принять", () => { var p = EnsurePlan(); p.Sys[li] = adv.V; PlanChanged(); }, false, 11));
                 sys.AddChild(tip);
             }
         }
-        if (rep.Advice.Count == 0) sys.AddChild(Ui.L("Скаут не видит, что менять: система клуба против них подходит.", 11, Ui.Muted));
+        if (rep.Advice.Count == 0) sys.AddChild(Ui.L($"{rep.By?.Name ?? "Помощник"} не видит, что менять: система клуба против них подходит.", 11, Ui.Muted));
         if (plan != null && !plan.Sys.SequenceEqual(club))
             sys.AddChild(Ui.B("Вернуть систему клуба", () => { plan.Sys = (int[])club.Clone(); PlanChanged(); }, false, 11));
         v.AddChild(Widget.Make("Система на матч", sys));
@@ -254,7 +254,7 @@ public partial class MatchScreen : Control
         var ol = C.Lineups[opp];
         var fwds = ol.F.SelectMany(x => x).Where(id => id != 0).Distinct().ToList();
         var defs = ol.D.SelectMany(x => x).Where(id => id != 0).Distinct().ToList();
-        Control Pick(string label, string hint, List<int> pool, int cur, int sug, double gain, Action<int> set)
+        Control Pick(string label, string hint, List<int> pool, int cur, int sug, double gain, string conf, Action<int> set)
         {
             var ob = new OptionButton { FocusMode = FocusModeEnum.None };
             ob.AddItem("никого", 0);
@@ -263,10 +263,10 @@ public partial class MatchScreen : Control
             ob.Selected = sel;
             ob.ItemSelected += idx => set(idx == 0 ? 0 : pool[(int)idx - 1]);
             return Ui.V(2, Ui.H(10, Ui.L(label, 13, Ui.Text, Ui.Semi).Also(l => l.CustomMinimumSize = new Vector2(150, 0)), ob),
-                Ui.L(hint + (sug != 0 ? $" Скаут советует: {C.Short(sug)}, около {Ui.Signed(gain, "0.00")} гола за матч." : ""), 11, Ui.Muted).Also(Wrap));
+                Ui.L(hint + (sug != 0 ? $" {rep.By?.Name ?? "Помощник"} советует {C.Short(sug)}: около {Ui.Signed(gain, "0.00")} гола за матч, {conf}." : ""), 11, Ui.Muted).Also(Wrap));
         }
-        tasks.AddChild(Pick("Плотная опека", "Его атака ниже, бросает реже; у нас чуть больше удалений.", fwds, plan?.Shadow ?? 0, rep.ShadowPick, rep.ShadowGain, id => { EnsurePlan().Shadow = id; PlanChanged(); }));
-        tasks.AddChild(Pick("Давить на защитника", "Под давлением он ошибается; наши устают чуть быстрее.", defs, plan?.PressD ?? 0, rep.PressPick, rep.PressGain, id => { EnsurePlan().PressD = id; PlanChanged(); }));
+        tasks.AddChild(Pick("Плотная опека", "Его атака ниже, бросает реже; у нас чуть больше удалений.", fwds, plan?.Shadow ?? 0, rep.ShadowPick, rep.ShadowGain, rep.ShadowConf, id => { EnsurePlan().Shadow = id; PlanChanged(); }));
+        tasks.AddChild(Pick("Давить на защитника", "Под давлением он ошибается; наши устают чуть быстрее.", defs, plan?.PressD ?? 0, rep.PressPick, rep.PressGain, rep.PressConf, id => { EnsurePlan().PressD = id; PlanChanged(); }));
         v.AddChild(Widget.Make("Задания на соперника", tasks));
 
         var go = Ui.B("Начать матч", StartMatch, true, 18);

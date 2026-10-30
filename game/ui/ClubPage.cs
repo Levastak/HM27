@@ -85,6 +85,8 @@ public partial class ClubPage : Control
         F("В лазарете", $"{C.Injured.Count(id => C.Data.PlayerById[id].Team == t.Abbr)}");
         F("Темп игры", l.TempoAuto ? "По сопернику" : l.Tempo switch { -1 => "Закрытый", 1 => "Открытый", _ => "Обычный" });
         F("Система игры", SysText(l));
+        if (Staff.Decider(C, t.Abbr) is { } coach)
+            F(t.Abbr == C.UserTeam ? "Помощник" : "Главный тренер", $"{coach.Name} — {Staff.StyleText(coach)}");
         var v2 = Ui.V(10, Ui.L(t.Name, 34, Ui.Text, Ui.CondBold), g);
         if (t.Abbr != C.UserTeam)
         {

@@ -159,7 +159,9 @@ public sealed class Career
         // травмированные на старте (по реальным данным): помощник знает, куда их вернуть — как в составе здорового клуба
         {
             var ul = c.Lineups[c.UserTeam];
+            HM27.Core.Staff.Of(c);
             Tactics.Init(c);
+            AiCoach.Init(c);
             // свой клуб: темп и снятие вратаря по совету помощника на каждый матч (тренер может решить сам)
             ul.TempoAuto = true; ul.Pull = Coach.ASSIST;
             var full = Lineup.FromTeam(data, data.TeamByAbbr[c.UserTeam], new HashSet<int>());
@@ -211,10 +213,12 @@ public sealed class Career
             double dOff = MatchEngine.OffIndex(Data, l, DlBase) - BaseOff[abbr], dDef = MatchEngine.DefIndex(Data, l, DlBase) - BaseDef[abbr];
             return (MatchEngine.K_FOR * dOff + dDef, -(MatchEngine.K_AGAINST * dOff + dDef));
         }
+        // в глазах помощника (его оценка игроков может ошибаться), против звеньев «как в НХЛ»
         var def = Lineup.FromTeam(Data, Data.TeamByAbbr[abbr], Injured.ToHashSet());
-        var (a1, d1) = TeamStrength.Live(this, l, l.G1 != 0 ? l.G1 : def.G1, DlBase);
-        var (a0, d0) = TeamStrength.Live(this, def, def.G1, DlBase);
-        return (gpg * (Math.Exp(a1) - Math.Exp(a0)), gpg * (Math.Exp(d1) - Math.Exp(d0)));
+        def.FRole = l.FRole; def.DRole = l.DRole;
+        var who = HM27.Core.Staff.Decider(this, abbr);
+        var (f1, g1) = LineOpt.Eval(this, abbr, l, who); var (f0, g0) = LineOpt.Eval(this, abbr, def, who);
+        return (f1 - f0, g1 - g0);
     }
 
     /// <summary>Сила клуба сейчас (атака, оборона в лог-голах): из игроков текущего состава, без формы; в старых сохранениях — модель.</summary>
@@ -284,6 +288,12 @@ public sealed class Career
     // ------------------------------------------------------------------ сыгранность
     /// <summary>Минуты вместе на льду для пар партнёров (тройки — между собой, пары защиты — между собой); ключ — ShiftEngine.PairKey.</summary>
     public Dictionary<long, float> Chem { get; set; }
+    /// <summary>Когда главный тренер ИИ последний раз правил звенья.</summary>
+    public Dictionary<string, DateOnly> AiTuned { get; set; } = new();
+    /// <summary>Система, которой клуб игрока играл в последнем матче (ИИ отвечает на неё в серии плей-офф).</summary>
+    public int[] LastUserSys { get; set; }
+    /// <summary>Тренеры: главные тренеры клубов ИИ и помощник своего клуба (Staff).</summary>
+    public List<StaffMember> Staff { get; set; }
     /// <summary>План тренировок своего клуба (Training); null — обычная общая подготовка.</summary>
     public TrainingPlan Training { get; set; }
     /// <summary>Матчи, перед которыми тренер на пресс-конференции «обещал доказать» (Press).</summary>
@@ -402,7 +412,14 @@ public sealed class Career
             var me = g.Home == UserTeam ? h : a;
             me.Plan = (int[])Plan.Sys?.Clone(); me.Shadow = Plan.Shadow; me.PressD = Plan.PressD;
         }
-        if (BottomUp) Tactics.Prepare(this, h, a);
+        if (BottomUp)
+        {
+            Tactics.Prepare(this, h, a);
+            // тренеры ИИ: план под соперника (гибкие)
+            var hp = h.Plan; var ap = a.Plan;
+            AiCoach.Plan(this, g, h, a); AiCoach.Plan(this, g, a, h);
+            if (h.Plan != hp || a.Plan != ap) Tactics.Prepare(this, h, a);
+        }
         Coach.Prepare(this, g, h, a);
         return (h, a);
     }
@@ -440,11 +457,11 @@ public sealed class Career
             }
             else
             {
-                // ИИ ставит звенья как в НХЛ, с поправкой на травмы (вернувшиеся из лазарета — снова в составе)
-                var keep = Lineups[t];
-                var l = Lineup.FromTeam(Data, Data.TeamByAbbr[t], inj);
-                l.CopySettings(keep);
-                Lineups[t] = l;
+                // ИИ: свои звенья (места выбывших запомнены, вернувшиеся — на место), раз в неделю тренер их правит
+                var l = Lineups[t];
+                l.Restore(Data, t, inj);
+                l.Repair(Data, t, inj, hold: true);
+                AiCoach.BeforeMatch(this, t, l);
             }
         }
         return Sides(g);
@@ -499,6 +516,7 @@ public sealed class Career
     void Complete(ScheduledGame g, MatchSide h, MatchSide a, MatchResult r)
     {
         if (Plan?.Game == g.Id) Plan = null;
+        if (g.Home == UserTeam || g.Away == UserTeam) { var us = g.Home == UserTeam ? h : a; LastUserSys = (int[])(us.Plan ?? us.Lineup.Sys)?.Clone(); }
         g.Result = r;
         AddChem(r);
         bool mine = g.Home == UserTeam || g.Away == UserTeam;
@@ -552,6 +570,7 @@ public sealed class Career
         InboxWriter.Periodic(this);
         Trust.Daily(this);
         HM27.Core.Training.Daily(this);
+        AiCoach.Daily(this);
         Morale.Daily(this);
         Tactics.Daily(this);
         Decisions.Daily(this);

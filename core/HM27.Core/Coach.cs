@@ -50,16 +50,26 @@ public static class Coach
         return 2 * pw + (o.PTie - (pw - reg));   // победа — 2, поражение в ОТ/по буллитам — 1
     }
 
-    /// <summary>Темп по сопернику: какой из трёх даёт больше очков (с учётом темпа соперника) и сколько.</summary>
-    public static (int tempo, double gain) Tempo(Career c, ScheduledGame g, MatchSide h, MatchSide a, bool home)
+    public readonly record struct TempoPick(int tempo, double gain, string conf);
+
+    /// <summary>
+    /// Темп по сопернику — как его видит тренер стороны (помощник у своего клуба, главный тренер у ИИ): выгода каждого темпа
+    /// по прогнозу + его ошибка (тактика) + пристрастие (рисковый любит открытую игру, осторожный — закрытую).
+    /// </summary>
+    public static TempoPick Tempo(Career c, ScheduledGame g, MatchSide h, MatchSide a, bool home)
     {
         var me = home ? h : a;
+        var who = Staff.Decider(c, me.Team.Abbr);
         int keep = me.Tempo;
         double V(int t) { me.Tempo = t; return Value(MatchEngine.Odds(c.Data, h, a, g.Playoff, sharp: c.Sharp), home, g.Playoff); }
-        double v0 = V(0), best = v0; int pick = 0;
-        foreach (int t in new[] { -1, 1 }) { double v = V(t); if (v > best + TEMPO_MIN) { best = v; pick = t; } }
+        double v0 = V(0), best = 0; int pick = 0;
+        foreach (int t in new[] { -1, 1 })
+        {
+            double est = Staff.Estimate(c, who, V(t) - v0, g.Id, 100 + t) / 3 + (who?.Risk ?? 0) * 0.003 * t;   // очки: ошибка в голах/3
+            if (est > best + TEMPO_MIN) { best = est; pick = t; }
+        }
         me.Tempo = keep;
-        return (pick, best - v0);
+        return new TempoPick(pick, best, Staff.Confidence(who, best * 3));
     }
 
     public static string TempoText(int tempo, double gain, string opp, bool playoff) => tempo switch
@@ -132,6 +142,14 @@ public static class Coach
         double ro = (home ? o.LamHome : o.LamAway) / avg, rp = (home ? o.LamAway : o.LamHome) / avg;
         var r = RatesFor(ro, rp);
         var (t1, t2) = Best(r);
+        // тренер не калькулятор: рисковый снимает раньше, осторожный позже, тактика 8 ошибается на минуту с лишним
+        var who = Staff.Decider(c, (home ? h : a).Team.Abbr);
+        if (who != null)
+        {
+            double sd = 6.0 * (20 - who.Tac), sh = 25 * who.Risk;
+            t1 = Math.Clamp(t1 + sh + sd * Staff.Noise(c, who, g.Id, 201), 60, MAX1);
+            t2 = Math.Clamp(t2 + sh + sd * Staff.Noise(c, who, g.Id, 202), 60, MAX2);
+        }
         _avg ??= Best(RatesFor(1, 1));
         return new PullPlan(t1, t2, _avg.Value.t1, _avg.Value.t2, Chain(r, t1, t2).v1, Chain(r, ShiftEngine.PULL1, ShiftEngine.PULL2).v1, ro, rp);
     }
@@ -159,7 +177,9 @@ public static class Coach
     public sealed class Review
     {
         public Lineup Lineup;
-        /// <summary>Голы за матч: забиваем и пропускаем по способностям (против текущего состава).</summary>
+        /// <summary>Чья это оценка (помощник своего клуба).</summary>
+        public StaffMember By;
+        /// <summary>Голы за матч по оценке помощника: забиваем и пропускаем (против текущего состава).</summary>
         public double Gf, Ga;
         /// <summary>То же от сыгранности: новые звенья сыграны хуже.</summary>
         public double FamGf, FamGa;
@@ -178,65 +198,14 @@ public static class Coach
     }
 
     /// <summary>
-    /// Вариант помощника: от текущего состава — перестановки и замены, пока они добавляют голов по способностям
-    /// (истинные характеристики без формы — так клуб знает своих). Нападающих в защиту и наоборот не ставит, вратарей не трогает,
-    /// а сыгранность, обиды и минуты молодых не считает — их показывает Assess.
+    /// Вариант помощника: от текущего состава — перестановки и замены, пока они добавляют голов в его глазах
+    /// (Staff.View: его оценка игроков с ошибкой и пристрастиями, усталость, половина формы). Нападающих в защиту и наоборот
+    /// не ставит, вратарей не трогает, сыгранность, обиды и минуты молодых не считает — их показывает Assess.
     /// </summary>
     public static Review Propose(Career c, string abbr)
     {
         var l = Baseline(c, abbr);
-        var inj = c.Injured.ToHashSet();
-        var bench = c.Roster(abbr).Where(p => !p.IsGoalie && !inj.Contains(p.Id) && !l.Skaters.Contains(p.Id)).ToList();
-        double gpg = c.Data.League.GoalsPerGame * MatchEngine.REG_SHARE;
-        // роли звеньев: атакующее звено начинает в зоне атаки, оборонительное — в своей и против лучших; их атака (оборона)
-        // весит больше (~10%: столько дают зоны вбрасываний и расстановка в движке)
-        var sc = TeamStrength.Coef(c.Data);
-        var od = c.Roster(abbr).ToDictionary(p => p.Id, p => Tactics.OffDef(c, p.Id));
-        double Role(Lineup x)
-        {
-            double b = 0;
-            void Add(int[] ids, double min, int role)
-            {
-                if (role == 0) return;
-                foreach (var id in ids)
-                    if (od.TryGetValue(id, out var v)) b += ROLE_W * min / 60 * TeamStrength.SPREAD * (role == 1 ? sc.A1 * v.off : -sc.D1 * v.def);
-            }
-            for (int i = 0; i < x.F.Count; i++) Add(x.F[i], i < x.FMin.Length ? x.FMin[i] : 0, x.RoleF(i));
-            for (int i = 0; i < x.D.Count; i++) Add(x.D[i], i < x.DMin.Length ? x.DMin[i] : 0, x.RoleD(i));
-            return gpg * b;
-        }
-        double J(Lineup x) { var (at, df) = TeamStrength.Live(c, x, x.G1, c.DlBase); return gpg * (Math.Exp(at) - Math.Exp(df)) + Role(x); }
-        var slotsF = new List<(int i, int s)>(); for (int i = 0; i < l.F.Count; i++) for (int s = 0; s < l.F[i].Length; s++) slotsF.Add((i, s));
-        var slotsD = new List<(int i, int s)>(); for (int i = 0; i < l.D.Count; i++) for (int s = 0; s < l.D[i].Length; s++) slotsD.Add((i, s));
-        double cur = J(l);
-        for (int it = 0; it < 16; it++)
-        {
-            double best = cur + 0.002; Action apply = null;
-            void Try(Action doIt, Action undo, Action commit) { doIt(); double v = J(l); undo(); if (v > best) { best = v; apply = commit; } }
-            foreach (var (lines, slots, isD) in new[] { (l.F, slotsF, false), (l.D, slotsD, true) })
-            {
-                for (int x = 0; x < slots.Count; x++)
-                    for (int y = x + 1; y < slots.Count; y++)
-                    {
-                        var (i1, s1) = slots[x]; var (i2, s2) = slots[y];
-                        if (i1 == i2 && isD) continue;   // внутри пары — всё равно
-                        void Sw() { (lines[i1][s1], lines[i2][s2]) = (lines[i2][s2], lines[i1][s1]); }
-                        Try(Sw, Sw, Sw);
-                    }
-                foreach (var p in bench.Where(p => p.IsDefense == isD).ToList())
-                    foreach (var (i1, s1) in slots)
-                    {
-                        int old = lines[i1][s1];
-                        Try(() => lines[i1][s1] = p.Id, () => lines[i1][s1] = old, () =>
-                        {
-                            lines[i1][s1] = p.Id; bench.Remove(p);
-                            if (c.Data.PlayerById.TryGetValue(old, out var op)) bench.Add(op);
-                        });
-                    }
-            }
-            if (apply == null) break;
-            apply(); cur = J(l);
-        }
+        LineOpt.Improve(c, abbr, l, Staff.Decider(c, abbr), 0.002, 16);
         // спецбригады: выбывшие из состава — заменить по одному месту
         var dressed = l.Skaters.ToHashSet();
         foreach (var u in new[] { l.Pp1, l.Pp2, l.Pk1, l.Pk2 }) for (int k = 0; k < u.Length; k++) if (!dressed.Contains(u[k])) u[k] = 0;
@@ -248,13 +217,12 @@ public static class Coach
     public static Review Assess(Career c, string abbr, Lineup l)
     {
         var cur = Baseline(c, abbr);
-        var rv = new Review { Lineup = l };
-        double gpg = c.Data.League.GoalsPerGame * MatchEngine.REG_SHARE;
-        var (a1, d1) = TeamStrength.Live(c, l, l.G1 != 0 ? l.G1 : cur.G1, c.DlBase);
-        var (a0, d0) = TeamStrength.Live(c, cur, cur.G1, c.DlBase);
-        rv.Gf = gpg * (Math.Exp(a1) - Math.Exp(a0)); rv.Ga = gpg * (Math.Exp(d1) - Math.Exp(d0));
-        var (f1, g1) = FamGoals(c, l); var (f0, g0) = FamGoals(c, cur);
-        rv.FamGf = f1 - f0; rv.FamGa = g1 - g0;
+        var rv = new Review { Lineup = l, By = Staff.Decider(c, abbr) };
+        // по оценке помощника — не по истинной силе: он может ошибаться
+        var (g1, a1) = LineOpt.Eval(c, abbr, l, rv.By); var (g0, a0) = LineOpt.Eval(c, abbr, cur, rv.By);
+        rv.Gf = g1 - g0; rv.Ga = a1 - a0;
+        var (f1, fa1) = FamGoals(c, l); var (f0, fa0) = FamGoals(c, cur);
+        rv.FamGf = f1 - f0; rv.FamGa = fa1 - fa0;
 
         string Where(Lineup x, int id)
         {
@@ -456,6 +424,7 @@ public static class LiveAdvice
         var list = new List<Item>();
         void Refresh() { Tactics.Prepare(c, sim.HomeSide, sim.AwaySide); sim.Apply(); }
         var curSys = (int[])(me.Plan ?? me.Lineup.Sys ?? new int[Tactics.Levers.Length]).Clone();
+        var who = Staff.Decider(c, me.Team.Abbr);
 
         // 1) правила тренера
         var (bt, bs) = home ? lg.HB : lg.AB;
@@ -491,12 +460,12 @@ public static class LiveAdvice
             {
                 if (v == curSys[i]) continue;
                 var s = (int[])curSys.Clone(); s[i] = v;
-                double gain = Eval(s) - cur;
+                double gain = Staff.Estimate(c, who, Eval(s) - cur, lg.G.Id * 100 + sim.Clock / 60, 70 + i * 10 + v) + (i == 0 && who != null && who.Press == v ? 0.02 : 0);
                 if (gain < 0.03) continue;
                 int li = i, vv = v; var lv = Tactics.Levers[i];
                 me.Plan = s; var notes = Tactics.Of(c, me, op).Notes; me.Plan = keep;
                 list.Add(new($"{lv.Name}: {Tactics.PoleName(lv, v).ToLowerInvariant()}",
-                    (notes.FirstOrDefault() ?? "против их нынешней игры так выгоднее") + $" — около {gain:+0.00} гола за матч",
+                    (notes.FirstOrDefault() ?? "против их нынешней игры так выгоднее") + $" — около {gain:+0.00} гола за матч, {Staff.Confidence(who, gain)}",
                     () => { var s2 = (int[])(me.Plan ?? me.Lineup.Sys ?? new int[Tactics.Levers.Length]).Clone(); s2[li] = vv; me.Plan = s2; sim.Note(home, $"{lv.Name.ToLowerInvariant()} — {Tactics.PoleName(lv, vv).ToLowerInvariant()}"); Refresh(); }));
                 break;
             }
@@ -544,5 +513,96 @@ public static class LiveAdvice
     {
         var r = Rules.Of(l).FirstOrDefault(x => x.On && x.Then == then && Rules.Holds(sim, home, x.When));
         return r != null ? "правило: " + Rules.WhenText(r.When).ToLowerInvariant() : "по правилам тренера условие больше не выполняется — возвращаем план на матч";
+    }
+}
+
+
+/// <summary>
+/// Звенья глазами тренера (помощник своего клуба и главные тренеры ИИ): вклад игрока на месте = минуты × (атака − штраф места,
+/// оборона − штраф места) с весами силы клуба (TeamStrength: A1, D1), атакующему звену атака весит больше, оборонительному — оборона.
+/// Модель линейная, как сама сила клуба, — перебор перестановок мгновенный. Игроки — как их видит тренер (Staff.View).
+/// </summary>
+public static class LineOpt
+{
+    const double ROLE_W = 0.1;
+
+    sealed class Ctx
+    {
+        public Dictionary<int, (double off, double def)> View; public Dictionary<int, PlayerData> P;
+        public double WA, WD;
+    }
+
+    static Ctx Make(Career c, string abbr, StaffMember who)
+    {
+        var sc = TeamStrength.Coef(c.Data);
+        double gpg = c.Data.League.GoalsPerGame * MatchEngine.REG_SHARE;
+        var ps = c.Roster(abbr).Where(p => !p.IsGoalie).ToList();
+        return new Ctx
+        {
+            View = ps.ToDictionary(p => p.Id, p => Staff.View(c, who, p)), P = ps.ToDictionary(p => p.Id),
+            WA = gpg * TeamStrength.SPREAD * sc.A1, WD = -gpg * TeamStrength.SPREAD * sc.D1,
+        };
+    }
+
+    static (double gf, double ga) Slot(Ctx x, Lineup l, int id, int line, int s, bool d)
+    {
+        if (id == 0 || !x.View.TryGetValue(id, out var v)) return (0, 0);
+        char sl = d ? 'D' : s == 0 ? 'L' : s == 1 ? 'C' : 'R';
+        var (po, pd) = Lineup.SlotPenalty(x.P[id], sl);
+        double min = (d ? (line < l.DMin.Length ? l.DMin[line] : 0) : (line < l.FMin.Length ? l.FMin[line] : 0)) / 60.0;
+        int role = d ? l.RoleD(line) : l.RoleF(line);
+        return (min * x.WA * (role == 1 ? 1 + ROLE_W : 1) * TeamStrength.Damp(v.off - po), -min * x.WD * (role == 2 ? 1 + ROLE_W : 1) * TeamStrength.Damp(v.def - pd));
+    }
+
+    /// <summary>Голы за матч в глазах тренера: забиваем (+) и пропускаем (−, меньше — лучше) — для сравнения составов.</summary>
+    public static (double gf, double ga) Eval(Career c, string abbr, Lineup l, StaffMember who)
+    {
+        var x = Make(c, abbr, who);
+        double gf = 0, ga = 0;
+        for (int i = 0; i < l.F.Count; i++) for (int s = 0; s < l.F[i].Length; s++) { var v = Slot(x, l, l.F[i][s], i, s, false); gf += v.gf; ga += v.ga; }
+        for (int i = 0; i < l.D.Count; i++) for (int s = 0; s < l.D[i].Length; s++) { var v = Slot(x, l, l.D[i][s], i, s, true); gf += v.gf; ga += v.ga; }
+        return (gf, ga);
+    }
+
+    /// <summary>Перестановки и замены со скамейки, пока ход даёт не меньше minGain гола за матч; не больше maxMoves ходов. Возвращает число ходов.</summary>
+    public static int Improve(Career c, string abbr, Lineup l, StaffMember who, double minGain, int maxMoves)
+    {
+        var x = Make(c, abbr, who);
+        var inj = c.Injured.ToHashSet();
+        double V(int id, int line, int s, bool d) { var v = Slot(x, l, id, line, s, d); return v.gf - v.ga; }
+        int moves = 0;
+        for (; moves < maxMoves; moves++)
+        {
+            double best = minGain; Action apply = null;
+            foreach (bool d in new[] { false, true })
+            {
+                var lines = d ? l.D : l.F;
+                var slots = new List<(int i, int s)>();
+                for (int i = 0; i < lines.Count; i++) for (int s = 0; s < lines[i].Length; s++) slots.Add((i, s));
+                for (int a = 0; a < slots.Count; a++)
+                    for (int b = a + 1; b < slots.Count; b++)
+                    {
+                        var (i1, s1) = slots[a]; var (i2, s2) = slots[b];
+                        if (d && i1 == i2) continue;
+                        int p1 = lines[i1][s1], p2 = lines[i2][s2];
+                        double delta = V(p2, i1, s1, d) + V(p1, i2, s2, d) - V(p1, i1, s1, d) - V(p2, i2, s2, d);
+                        if (delta > best) { best = delta; apply = () => { lines[i1][s1] = p2; lines[i2][s2] = p1; }; }
+                    }
+                var dressed = l.Skaters.ToHashSet();
+                foreach (var (id, p) in x.P)
+                {
+                    if (dressed.Contains(id) || inj.Contains(id) || p.IsDefense != d) continue;
+                    foreach (var (i1, s1) in slots)
+                    {
+                        int cur = lines[i1][s1];
+                        double delta = V(id, i1, s1, d) - V(cur, i1, s1, d);
+                        if (delta > best) { best = delta; int nid = id; apply = () => lines[i1][s1] = nid; }
+                    }
+                }
+            }
+            if (apply == null) break;
+            apply();
+        }
+        return moves;
     }
 }

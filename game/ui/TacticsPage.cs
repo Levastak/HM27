@@ -16,6 +16,9 @@ public partial class TacticsPage : Control
     Career C => P.C;
     Lineup L => C.Lineups[C.UserTeam];
     static int _sel;
+    /// <summary>Всё на странице — глазами помощника: пригодность он оценивает со своей ошибкой.</summary>
+    Func<PlayerData, string, double> Eye => _eye ??= Staff.AttrView(C, Staff.Assistant(C));
+    Func<PlayerData, string, double> _eye;
 
     public TacticsPage(string arg = null)
     {
@@ -49,11 +52,11 @@ public partial class TacticsPage : Control
         var v = Ui.V(10);
         v.AddChild(Ui.V(0, Ui.L("Система игры", 22, Ui.Text, Ui.CondBold),
             Ui.L("Середина — обычный хоккей, его знают все. Края дают больше, если подходят игрокам, и требуют выучки.", 11, Ui.Dim).Also(Wrap)));
-        var views = Tactics.Breakdown(C, L);
+        var views = Tactics.Breakdown(C, L, Eye);
         for (int i = 0; i < Tactics.Levers.Length; i++) v.AddChild(LeverCard(i, views[i]));
         var suggest = Ui.B("Система под состав", () =>
         {
-            var s = Tactics.Suggest(C, L);
+            var s = Tactics.Suggest(C, L, who: Staff.Assistant(C));
             for (int i = 0; i < s.Length; i++) if (s[i] != L.SysOf(i)) Tactics.Set(L, i, s[i]);
             Changed();
         }, false, 13);
@@ -90,7 +93,7 @@ public partial class TacticsPage : Control
         var fits = Ui.H(10);
         foreach (int side in new[] { -1, 1 })
         {
-            double f = Tactics.Fit(C, L, lever, side);
+            double f = Tactics.Fit(C, L, lever, side, Eye);
             fits.AddChild(Ui.Expand(Ui.V(1,
                 Ui.L((side < 0 ? lever.Minus.Short : lever.Plus.Short) + ": " + FitWord(f), 11, FitColor(f)),
                 FitBar(f))));
@@ -154,15 +157,19 @@ public partial class TacticsPage : Control
     {
         var v = Ui.V(12);
         double gpg = C.Data.League.GoalsPerGame * 0.95;
-        var views = Tactics.Breakdown(C, L);
+        var views = Tactics.Breakdown(C, L, Eye);
         double F = views.Sum(x => x.F), A = views.Sum(x => x.A);
         double gf = gpg * (Math.Exp(F) - 1), ga = gpg * (Math.Exp(A) - 1);
+        if (Staff.Assistant(C) is { } asst)
+            v.AddChild(Card(Ui.V(2, Ui.H(8, Ui.Icon("user", 14, Ui.Gold), Ui.L($"Помощник: {asst.Name}", 14, Ui.Text, Ui.Semi)),
+                Ui.L($"Тактика — {Staff.Level(asst.Tac)}, оценка игроков — {Staff.Level(asst.Judge)}; {Staff.StyleText(asst)}", 11, Ui.Muted).Also(Wrap),
+                Ui.L("Его советы — его взгляд: сильный помощник ошибается реже, у каждого свои пристрастия.", 11, Ui.Dim).Also(Wrap))));
         v.AddChild(Ui.L("Что даёт система", 18, Ui.Text, Ui.Cond));
         v.AddChild(Ui.H(16,
             Big("Итого за матч", gf - ga, true),
             Big("Забиваем", gf, false),
             Big("Пропускаем", ga, false, true)));
-        v.AddChild(Ui.L("Голов за матч против обычной системы — с этим составом против среднего соперника, с нынешней выучкой.", 11, Ui.Dim).Also(Wrap));
+        v.AddChild(Ui.L("Голов за матч против обычной системы по оценке помощника — с этим составом против среднего соперника, с нынешней выучкой.", 11, Ui.Dim).Also(Wrap));
 
         // против следующего соперника — с его системой и составом
         var next = C.NextGame(C.UserTeam);
@@ -175,7 +182,8 @@ public partial class TacticsPage : Control
             var ol = C.Lineups[opp.Abbr];
             var box = Ui.V(4);
             double nf = gpg * (Math.Exp(me.Sys?.For ?? 0) - 1), na = gpg * (Math.Exp(me.Sys?.Against ?? 0) - 1);
-            box.AddChild(Ui.H(8, Ui.Expand(Ui.L($"Против «{opp.Name}»", 14, Ui.Text, Ui.Semi)), Ui.L(Ui.Signed(nf - na), 18, Col(nf - na), Ui.CondBold)));
+            double est = Staff.Estimate(C, Staff.Assistant(C), nf - na, next.Id, 77);
+            box.AddChild(Ui.H(8, Ui.Expand(Ui.L($"Против «{opp.Name}»", 14, Ui.Text, Ui.Semi)), Ui.L(Ui.Signed(est), 18, Col(est), Ui.CondBold)));
             box.AddChild(Ui.L("Их система: " + string.Join(", ", Enumerable.Range(0, Tactics.Levers.Length).Select(i => Tactics.PoleName(Tactics.Levers[i], ol.SysOf(i)).ToLowerInvariant())), 11, Ui.Muted).Also(Wrap));
             foreach (var n in me.Sys?.Notes ?? new List<string>()) box.AddChild(Ui.H(6, Ui.Icon("triangle-alert", 13, Ui.Otl), Ui.L(n, 12, Ui.Text).Also(Wrap)));
             if ((me.Sys?.Notes.Count ?? 0) == 0) box.AddChild(Ui.L("Особых контрприёмов у соперника нет.", 12, Ui.Muted));
@@ -185,10 +193,10 @@ public partial class TacticsPage : Control
         // кому подходит выбранный рычаг
         var lever = Tactics.Levers[_sel];
         int sv = L.SysOf(_sel);
-        int side = sv != 0 ? sv : (Tactics.Fit(C, L, lever, 1) >= Tactics.Fit(C, L, lever, -1) ? 1 : -1);
+        int side = sv != 0 ? sv : (Tactics.Fit(C, L, lever, 1, Eye) >= Tactics.Fit(C, L, lever, -1, Eye) ? 1 : -1);
         var pole = Tactics.PoleOf(lever, side);
         var dressed = L.Skaters.Select(id => C.Data.PlayerById[id]).ToList();
-        var ranked = dressed.Select(p => (p, f: Tactics.PlayerFit(C, p, lever, side))).Where(x => !double.IsNaN(x.f)).OrderByDescending(x => x.f).ToList();
+        var ranked = dressed.Select(p => (p, f: Tactics.PlayerFit(C, p, lever, side, Eye))).Where(x => !double.IsNaN(x.f)).OrderByDescending(x => x.f).ToList();
         var who = Ui.V(3);
         who.AddChild(Ui.L($"Кому подходит «{pole.Name}»", 14, Ui.Text, Ui.Semi));
         who.AddChild(Ui.L("Нужно: " + string.Join(", ", pole.Fit.Select(x => HM27.Core.Attrs.Skater.First(a => a.Key == x.k).Name.ToLowerInvariant())), 11, Ui.Muted).Also(Wrap));

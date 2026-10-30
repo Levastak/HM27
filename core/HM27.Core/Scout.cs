@@ -8,7 +8,7 @@ namespace HM27.Core;
 public static class Scout
 {
     public sealed record Threat(int Id, string Why);
-    public sealed record Advice(int Lever, int V, double Gain, double Learn, string Why);
+    public sealed record Advice(int Lever, int V, double Gain, double Learn, string Why, string Conf);
 
     public sealed class Report
     {
@@ -22,6 +22,9 @@ public static class Scout
         public int PressPick; public string PressWhy; public double PressGain;
         /// <summary>Сколько даёт план (система на матч + задания) против текущей системы клуба, голов за матч (свои − чужие).</summary>
         public double Now;
+        /// <summary>Кто готовил советы (помощник своего клуба) — его оценка, не истина.</summary>
+        public StaffMember By;
+        public string ShadowConf, PressConf;
     }
 
     static double Gpg(Career c) => c.Data.League.GoalsPerGame * 0.95;
@@ -71,20 +74,22 @@ public static class Scout
         double cur = Eval(baseSys);
         var clubSys = my.Lineup.Sys ?? new int[Tactics.Levers.Length];
         rep.Now = cur - Eval(clubSys);
+        var who = rep.By = Staff.Decider(c, me);
         for (int i = 0; i < Tactics.Levers.Length; i++)
         {
-            double best = cur; int bv = baseSys[i];
+            double best = 0.01; int bv = baseSys[i];
             foreach (int v in new[] { -1, 0, 1 })
             {
                 if (v == baseSys[i]) continue;
                 var s = (int[])baseSys.Clone(); s[i] = v;
-                double x = Eval(s);
-                if (x > best + 0.01) { best = x; bv = v; }
+                // выгода в глазах помощника: его ошибка и любимый форчек
+                double x = Staff.Estimate(c, who, Eval(s) - cur, g.Id, 50 + i * 10 + v) + (i == 0 && who != null && who.Press == v ? 0.02 : 0);
+                if (x > best) { best = x; bv = v; }
             }
             if (bv == baseSys[i]) continue;
             var lv = Tactics.Levers[i];
             double learn = bv == 0 ? 1 : my.Lineup.Learned(lv.Key + (bv < 0 ? "-" : "+"));
-            rep.Advice.Add(new Advice(i, bv, best - cur, learn, Why(c, my, op, i, bv)));
+            rep.Advice.Add(new Advice(i, bv, best, learn, Why(c, my, op, i, bv), Staff.Confidence(who, best)));
         }
         rep.Advice = rep.Advice.OrderByDescending(x => x.Gain).ToList();
 
@@ -97,6 +102,7 @@ public static class Scout
             double share = ol.MinutesOf(fw[0].id) / 60.0;
             rep.ShadowGain = lamOp * share * TeamStrength.SPREAD * sc.A1 * ShiftEngine.LINE_K * ShiftEngine.SHADOW_OFF
                              - 0.2 * 2.8 * (ShiftEngine.SHADOW_PEN - 1);   // цена: больше наших удалений
+            rep.ShadowGain = Staff.Estimate(c, who, rep.ShadowGain, g.Id, 31); rep.ShadowConf = Staff.Confidence(who, rep.ShadowGain);
             rep.ShadowWhy = $"его атака ниже, бросает реже; у нас чуть больше удалений";
         }
         var ds = ol.D.Take(2).SelectMany(x => x).Where(id => id != 0 && c.Data.PlayerById.ContainsKey(id))
@@ -106,6 +112,7 @@ public static class Scout
             rep.PressPick = ds[0].id;
             double share = ol.MinutesOf(ds[0].id) / 60.0;
             rep.PressGain = lamMy * share * TeamStrength.SPREAD * -sc.D1 * ShiftEngine.PRESS_DEF - 0.01;   // цена: усталость
+            rep.PressGain = Staff.Estimate(c, who, rep.PressGain, g.Id, 32); rep.PressConf = Staff.Confidence(who, rep.PressGain);
             rep.PressWhy = "хуже всех в их первых парах отдаёт шайбу — под давлением ошибается";
         }
         return rep;
