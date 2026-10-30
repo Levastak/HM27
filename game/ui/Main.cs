@@ -158,7 +158,7 @@ public partial class Main : Control
         var (page, sub) = tab switch
         {
             "lines" => ("lines", (string)null), "calendar" => ("schedule", null), "table" => ("comp", "table"), "stats" => ("comp", "stats"),
-            "playoffs" => ("comp", "playoffs"), "squad" => ("squad", null), "inbox" => ("inbox", null), "player" => ("player", null), "club" => ("club", null), "medical" => ("medical", null), "room" => ("room", null), "tactics" => ("tactics", "system"),
+            "playoffs" => ("comp", "playoffs"), "squad" => ("squad", null), "inbox" => ("inbox", null), "player" => ("player", null), "club" => ("club", null), "medical" => ("medical", null), "room" => ("room", null), "tactics" => ("tactics", "system"), "training" => ("training", "week"),
             _ => ("home", null),
         };
         sub = forced ?? sub;

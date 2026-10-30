@@ -82,6 +82,8 @@ public sealed class PlayerState
     public float Morale { get; set; } = 60;
     /// <summary>Обида на роль: копится, когда минут меньше ожидаемого, тает сама.</summary>
     public float Grief { get; set; }
+    /// <summary>Доверие к тренеру 0–100 (только свой клуб; 0 — ещё не задано, см. Trust).</summary>
+    public float Trust { get; set; }
     /// <summary>Играет через боль до этой даты: слабее и чаще травмируется.</summary>
     public DateOnly? HurtUntil { get; set; }
     /// <summary>Истинный уровень 1–20.</summary>
@@ -519,7 +521,7 @@ public static class Development
             foreach (var d in Attrs.For(p))
             {
                 double cv = PlayerModel.Curve(c.Data, Attrs.CurveGroup(d.Key), age);
-                double g = hurt ? 0 : Math.Max(cv, 0) * talent * cond * nearPa;
+                double g = hurt ? 0 : Math.Max(cv, 0) * talent * cond * nearPa * (weekly ? Training.Growth(c, p, d.Key) : 1 + 0.5 * (Training.Growth(c, p, d.Key) - 1));   // летом план тренировок — вполсилы
                 double dec = Math.Min(cv, 0) * (1.15 - 0.03 * (s.Prof - 10));
                 sumCa += (g + dec) * share;
                 double dv = (g + dec) * share + noise * N(rng);

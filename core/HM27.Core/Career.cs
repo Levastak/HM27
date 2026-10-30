@@ -284,6 +284,10 @@ public sealed class Career
     // ------------------------------------------------------------------ сыгранность
     /// <summary>Минуты вместе на льду для пар партнёров (тройки — между собой, пары защиты — между собой); ключ — ShiftEngine.PairKey.</summary>
     public Dictionary<long, float> Chem { get; set; }
+    /// <summary>План тренировок своего клуба (Training); null — обычная общая подготовка.</summary>
+    public TrainingPlan Training { get; set; }
+    /// <summary>Матчи, перед которыми тренер на пресс-конференции «обещал доказать» (Press).</summary>
+    public List<int> Boasts { get; set; } = new();
     /// <summary>План тренера на ближайший свой матч (Career.Sides); после матча — сброс.</summary>
     public MatchPlan Plan { get; set; }
     /// <summary>Сыгранность 0–1 = 1 − e^(−(база + минуты вместе) / FAM_M0). База — общие тренировки и матчи одного клуба;
@@ -318,6 +322,19 @@ public sealed class Career
                 for (int i = 0; i < unit.Length; i++)
                     for (int j = i + 1; j < unit.Length; j++)
                         if (unit[i] != 0 && unit[j] != 0) Chem[ShiftEngine.PairKey(unit[i], unit[j])] = (float)FAM_START;
+        }
+    }
+
+    /// <summary>Сыгранность с тренировок: минуты вместе для пар внутри звеньев (Training, упор «сыгранность»).</summary>
+    public void TrainChem(IEnumerable<int[]> units, float minutes)
+    {
+        EnsureChem();
+        foreach (var u in units)
+        {
+            if (u == null) continue;
+            for (int i = 0; i < u.Length; i++)
+                for (int j = i + 1; j < u.Length; j++)
+                    if (u[i] != 0 && u[j] != 0) { var k = ShiftEngine.PairKey(u[i], u[j]); Chem[k] = Chem.GetValueOrDefault(k) + minutes; }
         }
     }
 
@@ -491,6 +508,7 @@ public sealed class Career
         Fatigue.AfterGame(this, g);
         Morale.AfterGame(this, g);
         if (mine) Orders.AfterGame(this, UserTeam, g.Home == UserTeam ? g.Result.HomeDressed : g.Result.AwayDressed);
+        if (mine) Press.AfterGame(this, g);
         Tactics.AfterGame(this, g);
         if (!mine) { r.Events = new(); r.Box = new(); }   // хронику и протокол храним только для своих матчей — сохранение не раздувается
         foreach (var (side, abbr) in new[] { (h, g.Home), (a, g.Away) })
@@ -532,6 +550,8 @@ public sealed class Career
         if (Today.DayOfWeek == DayOfWeek.Monday) Development.Week(this);   // развитие, форма, знание — раз в неделю
         if (Phase == Phase.Playoffs) SchedulePlayoffDay();
         InboxWriter.Periodic(this);
+        Trust.Daily(this);
+        HM27.Core.Training.Daily(this);
         Morale.Daily(this);
         Tactics.Daily(this);
         Decisions.Daily(this);

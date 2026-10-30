@@ -34,20 +34,27 @@ public static class InjuryModel
                 // риск растёт с временем на льду медленнее минут (у лидеров на минуту меньше силовой борьбы): × (мин / 16,7)^0,5; плюс усталость
                 double min = r.Box.TryGetValue(id, out var bx) && bx.Toi > 0 ? bx.Toi / 60.0 : c.Lineups.TryGetValue(team, out var ln) ? ln.MinutesOf(id) : 16.7;
                 double rate = (p.IsGoalie ? GOALIE_RATE : SKATER_RATE * (0.7 + 0.6 * p.Rating("hit") / 99.0) * Math.Pow(Math.Max(min, 3) / 16.7, 0.5))
-                              * Fatigue.InjuryMult(c.Players.GetValueOrDefault(id))
+                              * Fatigue.InjuryMult(c.Players.GetValueOrDefault(id)) * Training.InjuryMult(c, p)
                               * (c.Players.TryGetValue(id, out var hs) && hs.HurtUntil is { } hu && hu >= c.Today ? Career.HURT_INJ : 1);
                 if (rng.NextDouble() >= rate) continue;
                 double u = rng.NextDouble();
                 int days = u < 0.40 ? rng.Next(2, 8) : u < 0.74 ? rng.Next(8, 26) : u < 0.925 ? rng.Next(26, 61) : rng.Next(61, 151);
+                // играл через боль: травма обострилась — дольше, и раздевалка запомнит, что тренер рискнул
+                bool aggravated = c.Players.TryGetValue(id, out var hs2) && hs2.HurtUntil is { } hu2 && hu2 >= c.Today;
+                if (aggravated) { days = (int)(days * 1.5) + 3; hs2.HurtUntil = null; }
                 var kind = Kinds[rng.Next(Kinds.Length)];
                 if (kind == "болезнь") days = Math.Min(days, 6);
                 c.Injuries.Add(new Injury { Id = id, From = g.Date, Until = g.Date.AddDays(days), Kind = kind });
                 Development.SeriousInjury(c, p, days, rng);
                 c.Injured.Add(id);
                 if (team == c.UserTeam)
-                    InboxWriter.Add(c, "Медицинский отдел", $"Травма: {p.NameRu}",
-                        $"{p.NameRu} получил травму в матче {Ui(g, c)}: {kind}.\nПрогноз: {Days(days)} (ориентировочно до {c.Today.AddDays(days).Day}.{c.Today.AddDays(days).Month:00}).\n\n" +
+                {
+                    InboxWriter.Add(c, "Медицинский отдел", aggravated ? $"Травма обострилась: {p.NameRu}" : $"Травма: {p.NameRu}",
+                        (aggravated ? $"{p.NameRu} играл через боль — и травма обострилась ({kind}).\n" : $"{p.NameRu} получил травму в матче {Ui(g, c)}: {kind}.\n") +
+                        $"Прогноз: {Days(days)} (ориентировочно до {c.Today.AddDays(days).Day}.{c.Today.AddDays(days).Month:00}).\n\n" +
                         "Помощник уже заменил его в составе. Проверьте звенья перед следующим матчем.", "medical", $"player:{id}");
+                    if (aggravated) Trust.RoomSees(c, id, -2, $"{p.LastRu} выпустили недолеченным, и теперь он выбыл надолго");
+                }
             }
     }
 

@@ -284,6 +284,9 @@ public static class Tactics
         foreach (var l in c.Lineups.Values) Grow(l, LEARN_DAY);
     }
 
+    /// <summary>Тренировка системы (Training): выучка сверх обычной.</summary>
+    public static void Train(Lineup l, double d) => Grow(l, d);
+
     static void Grow(Lineup l, double d)
     {
         if (l.Sys == null) return;

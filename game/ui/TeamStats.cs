@@ -221,6 +221,8 @@ public partial class RoomPage : Control
     Career C => P.C;
     public RoomPage() { SizeFlagsHorizontal = SizeFlags.ExpandFill; SizeFlagsVertical = SizeFlags.ExpandFill; }
 
+    public static Color TrustColor(float t) => t >= 65 ? Ui.Win : t >= 45 ? Ui.Text : t >= 28 ? Ui.Otl : Ui.Loss;
+
     public static Color MoodColor(float m) => m >= 80 ? Ui.Win : m >= 67 ? new Color("8BD3A0") : m >= 47 ? Ui.Text : m >= 32 ? Ui.Otl : Ui.Loss;
 
     public static Control MoodCell(Career c, int id)
@@ -261,6 +263,10 @@ public partial class RoomPage : Control
         tiles.AddChild(PlayerViz.Tile("trending-up", "Довольны", $"{happy}", Ui.Win, Ui.Plural(happy, "игрок", "игрока", "игроков")));
         tiles.AddChild(PlayerViz.Tile("trending-down", "Недовольны", $"{sad}", sad > 0 ? Ui.Otl : Ui.Text, sad == 0 ? "никто" : "могут прийти поговорить"));
         tiles.AddChild(PlayerViz.Tile("handshake", "Обещания", $"{C.Promises.Count}", Ui.Text, C.Promises.Count == 0 ? "нет действующих" : "сверка в срок — по фактам"));
+        var leaders = Trust.Leaders(C);
+        float lt = leaders.Count == 0 ? Trust.BASE : leaders.Average(p => Trust.Of(C, p.Id));
+        tiles.AddChild(PlayerViz.Tile("users", "Лидеры о тренере", Trust.Word(lt), TrustColor(lt), string.Join(", ", leaders.Select(p => p.LastRu)),
+            "Доверие самых авторитетных игроков: они видят, как тренер держит слово и обращается с другими"));
         v.AddChild(tiles);
 
         var rows = roster.OrderBy(p => C.Players[p.Id].Morale).ToList();
@@ -271,10 +277,14 @@ public partial class RoomPage : Control
             new() { Title = "Статус в клубе", Width = 130, Align = HorizontalAlignment.Left, Tip = "Чего он ждёт от роли: по месту среди партнёров по позиции", Cell = p => Ui.L(Morale.StatusWord(Morale.Status(C, p), p), 12, Ui.Muted), Sort = p => Morale.Status(C, p), Desc = false },
             new() { Title = "В составе", Width = 92, Align = HorizontalAlignment.Left, Cell = p => Ui.L(P.Role(p.Id, C.UserTeam), 12, Ui.Muted) },
             new() { Title = "Настрой", Width = 150, Align = HorizontalAlignment.Left, Cell = p => MoodCell(C, p.Id), Sort = p => C.Players[p.Id].Morale, Desc = false },
+            new() { Title = "Доверие", Width = 120, Align = HorizontalAlignment.Left, Tip = "Доверие к тренеру: растёт от сдержанных обещаний и честных разговоров, падает от нарушенных и публичной критики. Тому, кто доверяет, легче принять меньшую роль",
+                Cell = p => { float t = Trust.Of(C, p.Id); return Ui.L(Trust.Word(t), 12, TrustColor(t), t < 35 ? Ui.Semi : null); }, Sort = p => Trust.Of(C, p.Id), Desc = false },
             new() { Title = "Почему", Width = 0, Align = HorizontalAlignment.Left, Cell = p => Ui.L(Reason(p, C.Players[p.Id]), 12, C.Players[p.Id].Grief >= 4 ? Ui.Otl : Ui.Muted) },
         };
         var grid = new Grid<PlayerData>(cols, rows, p => Shell.I.Go("player", null, p.Id.ToString()), null, 4);
         v.AddChild(Widget.Make("Игроки", grid.Root, null, null, 0));
+        v.AddChild(Ui.L("Доверие к тренеру меняется медленно: его дают сдержанные обещания, честные разговоры и победы, отнимают нарушенное слово, публичная критика и решения, которые раздевалка сочтёт несправедливыми. " +
+                        "Как игрок отреагирует на ответ, зависит от характера — и немного от случая.", 12, Ui.Dim).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart));
         v.AddChild(Ui.L("Настрой двигают роль и минуты (звезда ждёт больше времени, чем игрок ротации), результаты, свои оценки и ваши решения — разговоры и обещания. " +
                         "Сам по себе он медленно возвращается к норме характера. Влияние на игру небольшое: как у формы.", 12, Ui.Dim).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart));
     }

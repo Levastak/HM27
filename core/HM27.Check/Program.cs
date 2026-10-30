@@ -434,6 +434,11 @@ Check("Плей-офф", playoffsOk, $"15 серий и чемпион в каж
         int dec = c.Messages.Count(m => m.Options != null), open = c.Messages.Count(m => m.Pending && m.Due < c.Today);
         Check("Настрой и решения", mm is >= 52 and <= 72 && sd is >= 4 and <= 20 && open == 0 && dec >= 3,
             $"настрой лиги после плей-офф (без матчей тянется к норме): среднее {mm:F1}, разброс {sd:F1}; решений у клуба игрока за сезон {dec}, просроченных без ответа {open}");
+        var tr = c.Roster(c.UserTeam).Where(p => c.Players.ContainsKey(p.Id)).Select(p => (double)Trust.Of(c, p.Id)).ToList();
+        double tm = tr.Average(), tsd = Math.Sqrt(tr.Average(x => (x - tm) * (x - tm)));
+        int press = c.Messages.Count(m => m.Action?.StartsWith("press:") == true);
+        Check("Доверие и пресса", tm is >= 40 and <= 75 && tsd >= 1 && press is >= 3 and <= 25,
+            $"доверие к тренеру в клубе игрока к концу сезона: среднее {tm:F1}, разброс {tsd:F1}; пресс-конференций за сезон {press} (ответы по умолчанию)");
     }
     int userGames = c.Games.Count(g => g.Home == "MIN" || g.Away == "MIN");
     var mine = c.Games.First(g => g.Home == "MIN" || g.Away == "MIN");
@@ -447,6 +452,27 @@ Check("Плей-офф", playoffsOk, $"15 серий и чемпион в каж
         var oc = OrdersCheck.Run(data, false, 40);
         Check("Указания игрокам", oc.dGood - oc.dBad >= 0.04 && oc.sniper > -0.02,
             $"«подключаться в атаку» подходящему защитнику {oc.dGood:+0.000;-0.000} гола за матч, неподходящему {oc.dBad:+0.000;-0.000}; «бросать чаще» лучшему бросающему {oc.sniper:+0.000;-0.000}, худшему {oc.poor:+0.000;-0.000}");
+        {
+            // тренировки: тяжёлая нагрузка с упором на атаку и индивидуальной работой молодых — быстрее растут, но устают
+            Career Run(bool train)
+            {
+                var ct = Career.New(data, "MIN", 1313);
+                if (train)
+                {
+                    var plan = Training.Of(ct); plan.Load = 1; plan.Focus = "attack";
+                    foreach (var p in ct.Roster("MIN").Where(p => !p.IsGoalie).OrderBy(p => p.Age(ct.Today) ?? 30).Take(Training.SLOTS)) plan.Individual[p.Id] = "fin";
+                }
+                for (int i = 0; i < 120; i++) ct.SimDay();
+                return ct;
+            }
+            var a0 = Run(false); var a1 = Run(true);
+            var young = a1.Training.Individual.Keys.ToList();
+            double Fin(Career cc) => young.Average(id => cc.Players[id].A.GetValueOrDefault("fin") - cc.Players[id].A0.GetValueOrDefault("fin", cc.Players[id].A.GetValueOrDefault("fin")));
+            double Fresh(Career cc) => cc.Roster("MIN").Where(p => !p.IsGoalie).Average(p => cc.Players[p.Id].Fresh);
+            double f0 = Fin(a0), f1 = Fin(a1), fr0 = Fresh(a0), fr1 = Fresh(a1);
+            Check("Тренировки", f1 > f0 && fr1 < fr0,
+                $"120 дней, тяжёлая нагрузка + атака + индивидуально «завершение» у {young.Count} молодых: завершение {f0:+0.00;-0.00} → {f1:+0.00;-0.00}, свежесть полевых {fr0:0} → {fr1:0}");
+        }
         var rc = RolesCheck.Run(data, false, 0);
         Check("Роли звеньев", rc.atkOz >= 0.5 && rc.defDz >= 0.5 && rc.shutShare >= 0.4,
             $"атакующие тройки начинают в зоне атаки {100 * rc.atkOz:0}% вбрасываний, оборонительные в своей — {100 * rc.defDz:0}%; оборонительная тройка против лучшей тройки соперника {100 * rc.shutShare:0}% времени");

@@ -47,9 +47,9 @@ public partial class Shell : Control
         }),
         new Section("training", "Тренировки", new[]
         {
-            new Item("Неделя", "dumbbell", null, null, "Этап «Тренер»: нагрузка и упор недели", Soon: true),
-            new Item("Индивидуальные", "target", null, null, "Этап «Тренер»", Soon: true),
-            new Item("Развитие молодых", "trending-up", null, null, "Этап «Тренер»", Soon: true),
+            new Item("Неделя", "dumbbell", "training", "week", "Нагрузка и упор недели"),
+            new Item("Индивидуальные", "target", "training", "individual", "Одна характеристика — вдвое быстрее"),
+            new Item("Развитие молодых", "trending-up", "training", "youth", "Что помогает и что мешает расти"),
         }),
         new Section("calendar", "Календарь", new[]
         {
@@ -88,6 +88,7 @@ public partial class Shell : Control
     {
         "home" or "inbox" => "portal",
         "squad" or "lines" or "medical" or "room" or "tactics" => "team",
+        "training" => "training",
         "schedule" => "calendar",
         "club" => n.Arg == null || n.Arg == C.UserTeam ? "club" : null,
         "comp" => "league",
@@ -179,6 +180,7 @@ public partial class Shell : Control
             "medical" => new MedicalPage(),
             "room" => new RoomPage(),
             "tactics" => _cur.Sub == "rules" ? new RulesPage() : new TacticsPage(_cur.Arg),
+            "training" => new TrainingPage(_cur.Sub),
             _ => new HomePage(),
         };
         _page.AddChild(view);
@@ -471,6 +473,7 @@ public partial class Shell : Control
             "medical" => ("Лазарет", rec),
             "room" => ("Раздевалка", rec),
             "tactics" => (_cur.Sub == "rules" ? "Правила матча" : "Тактика", rec),
+            "training" => (_cur.Sub == "individual" ? "Индивидуальная работа" : _cur.Sub == "youth" ? "Развитие молодых" : "Тренировки", rec),
             _ => (t.Name, rec),
         };
     }

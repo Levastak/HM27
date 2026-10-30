@@ -71,7 +71,7 @@ public static class Morale
                     {
                         double toi = r.Box.TryGetValue(p.Id, out var b) && b.Toi > 0 ? b.Toi / 60.0 : c.Lineups[team].MinutesOf(p.Id);
                         double exp = ExpectedToi(st, p);
-                        if (exp > 0 && toi < exp * 0.85) { double d = (exp - toi) / exp; s.Grief += (float)(3 * d); Add(s, -1.6 * d); }
+                        if (exp > 0 && toi < exp * 0.85) { double d = (exp - toi) / exp * Trust.GriefMult(s); s.Grief += (float)(3 * d); Add(s, -1.6 * d); }
                         else Add(s, 0.2);
                     }
                 }
@@ -80,6 +80,7 @@ public static class Morale
                     // здоров, но не играет: звезде и ключевым — обидно, ротация к этому готова
                     double hurt = p.IsGoalie ? 1.2 : st switch { 0 => 3.0, 1 => 2.2, 2 => 1.2, _ => 0.3 };
                     if (p.IsGoalie && GoalieStartShare(c, team, p.Id) >= 0.6) hurt = 0;   // отдых основного — норма
+                    hurt *= Trust.GriefMult(s);
                     s.Grief += (float)hurt; Add(s, -hurt);
                 }
             }
@@ -99,7 +100,7 @@ public static class Morale
         double sum = 0; int n = 0;
         foreach (var (id, s) in c.Players)
         {
-            float target = BASE + (s.Temp - 10) * 0.6f + (s.Prof - 10) * 0.4f;
+            float target = BASE + (s.Temp - 10) * 0.6f + (s.Prof - 10) * 0.4f + (float)Trust.MoraleShift(s);
             s.Morale += (target - s.Morale) * 0.03f;
             s.Grief *= 0.93f;
             sum += s.Morale; n++;

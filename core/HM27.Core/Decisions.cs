@@ -45,6 +45,7 @@ public static class Decisions
         {
             "talk:minutes" => Minutes(c, m, o.Id),
             "injury:hurt" => Hurt(c, m, o.Id),
+            _ when m.Action?.StartsWith("press:") == true => Press.Answer(c, m, o.Id),
             _ => null,
         };
         m.Reply = (auto ? "Ответа не было — решили по умолчанию. " : "") + reply;
@@ -59,6 +60,7 @@ public static class Decisions
         if (c.Phase == Phase.Finished) return;
         MinutesTrigger(c);
         HurtTrigger(c);
+        Press.Daily(c);
     }
 
     // ================================================================ «Мало играю»
@@ -122,18 +124,29 @@ public static class Decisions
                 int st = Morale.Status(c, p);
                 double target = p.IsGoalie ? 0.55 : Math.Max(Morale.ExpectedToi(st, p) * 0.9, RecentToi(c, p, 6, out _, out _) + 2);
                 c.Promises.Add(new Promise { Player = p.Id, Kind = p.IsGoalie ? "starts" : "minutes", Since = c.Today, Due = c.Today.AddDays(14), Target = target });
-                Morale.AddTo(c, p.Id, 14); s.Grief = 0;
+                Morale.AddTo(c, p.Id, 14); s.Grief = 0; Trust.Add(c, p.Id, 3);
                 return p.IsGoalie
                     ? $"{first} ушёл довольным. Обещание: начинать больше половины матчей в ближайшие две недели. Поставьте его основным в «Звеньях»."
                     : $"{first} ушёл довольным. Обещание: не меньше {target:0} минут за матч в ближайшие две недели — поставьте его выше в «Звеньях».";
             case "earn":
-                bool pro = s.Prof >= 14;
-                Morale.AddTo(c, p.Id, pro ? 5 : -7); s.Grief *= pro ? 0.5f : 0.8f;
-                return pro ? $"{first} кивнул: «Понял. Покажу». Профессионал — принял как вызов." : $"{first} ушёл молча. Похоже, он ждал другого ответа.";
+            {
+                // профессионал примет как вызов; остальные — как отказ; доверие и случай сдвигают реакцию
+                double x = (s.Prof - 12) * 0.35 + (Trust.Of(c, p.Id) - Trust.BASE) / 20 + Trust.Luck(c, p.Id, 1);
+                bool took = x > 0;
+                Morale.AddTo(c, p.Id, took ? 5 : -7); s.Grief *= took ? 0.5f : 0.8f;
+                Trust.Add(c, p.Id, took ? 4 : -4);
+                return took ? $"{first} кивнул: «Понял. Покажу». Принял как вызов." : $"{first} ушёл молча. Похоже, он ждал другого ответа — доверия к тренеру стало меньше.";
+            }
             default:
+            {
                 bool winning = c.Table[c.UserTeam].PtsPct >= 0.6;
-                Morale.AddTo(c, p.Id, winning ? -3 : -10);
-                return winning ? $"{first} не в восторге, но команда выигрывает — спорить не стал." : $"{first} расстроен: «Тогда мне, наверное, стоит подумать о будущем». Настрой заметно упал.";
+                double x = (winning ? 1 : -0.5) + (s.Loy - 10) * 0.15 - (s.Amb - 10) * 0.2 + Trust.Luck(c, p.Id, 2);
+                bool ok = x > 0;
+                Morale.AddTo(c, p.Id, ok ? -3 : -10);
+                Trust.Add(c, p.Id, ok ? 2 : -6);
+                return ok ? $"{first} не в восторге, но спорить не стал: «Ладно. Команда важнее». За честность — уважение."
+                          : $"{first} расстроен: «Тогда мне, наверное, стоит подумать о будущем». Настрой заметно упал.";
+            }
         }
     }
 
@@ -154,7 +167,10 @@ public static class Decisions
                 kept = toi.Average() >= pr.Target * 0.95 || c.Injured.Contains(p.Id);
             }
             Morale.AddTo(c, p.Id, kept ? 8 : -22);
+            Trust.Add(c, p.Id, kept ? 12 : -22);
             if (!kept && c.Players.TryGetValue(p.Id, out var s)) s.Grief += 8;
+            // раздевалка видит: сдержанное слово — плюс у лидеров, нарушенное — минус и разговор капитана
+            Trust.RoomSees(c, p.Id, kept ? 1.5 : -4, kept ? null : $"тренер не сдержал слово, данное {p.LastRu}");
             var m = InboxWriter.Add(c, p.NameRu, kept ? $"{p.LastRu} доволен: обещание выполнено" : $"{p.LastRu}: «Вы обещали»",
                 kept ? $"Две недели назад вы пообещали {p.NameRu.Split(' ')[0]} больше времени — и сдержали слово. Он это запомнил."
                      : $"Две недели назад вы пообещали {p.NameRu.Split(' ')[0]} больше времени. Обещание не выполнено, и он этого не скрывает. Доверие к тренеру упало.",
@@ -209,6 +225,7 @@ public static class Decisions
             return $"{first} в составе. До {s.HurtUntil.Value.Day}.{s.HurtUntil.Value.Month:00} играет через боль: чуть слабее обычного и с риском новой травмы.";
         }
         Morale.AddTo(c, p.Id, s.Amb >= 15 ? -4 : 0);
+        Trust.Add(c, p.Id, s.Amb >= 15 ? -2 : 2);
         return s.Amb >= 15 ? $"{first} недоволен — рвался в бой. Но врачи на вашей стороне." : $"{first} согласился: лучше вернуться здоровым.";
     }
 }
