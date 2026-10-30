@@ -109,6 +109,7 @@ public partial class Main : Control
         {
             case "menu": ShowMenu(); break;
             case "clubs": ShowClubSelect(); break;
+            case "lab": Show(new Lab.DesignLab(Career, args.GetValueOrDefault("dir", "A") == "A", args.GetValueOrDefault("tab", "lines"))); break;
             case "match":
                 Career.SimToUserGame();
                 var g = Career.UserGameToday();
