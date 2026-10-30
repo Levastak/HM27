@@ -386,9 +386,10 @@ public partial class LineCard : Control
         var keys = p.IsGoalie ? new[] { "rfx", "gpos", "reb", "scr" } : new[] { "fin", "pwr", "net", "pas", "hnd", "fo", "dfn", "tka", "blk", "hit", "spd", "vis", "pp", "pk" };
         var best = keys.Select(k => (k, v: PlayerModel.Visible(C, p, k))).OrderByDescending(x => x.v).First();
         string an = Ds.AttrShort(best.k);
-        DrawCircle(new Vector2(tx + 3, 60), 3, Ds.Attr(best.v));
+        int shown = Ds.ShowI(best.v);
+        DrawCircle(new Vector2(tx + 3, 60), 3, Ds.Attr(shown));
         float aw = Txt(Ui.Regular, 11, tx + 11, 53, Paint.Trim(Ui.Regular, an, 11, tw - 32), Ui.Muted);
-        Txt(Ui.Semi, 11, tx + 15 + aw, 53, Math.Round(best.v).ToString(), Ds.Attr(best.v));
+        Txt(Ui.Semi, 11, tx + 15 + aw, 53, shown.ToString(), Ds.Attr(shown));
         // место и роль или предупреждение
         string off = Kind switch
         {

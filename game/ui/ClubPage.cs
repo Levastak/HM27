@@ -36,13 +36,11 @@ public partial class ClubPage : Control
         // ---------- плитки матчей
         v.AddChild(Fixtures(t));
 
-        // ---------- история клуба
-        v.AddChild(Widget.Make("История клуба", BioWidgets.ClubHistory(C, t)));
-
-        // ---------- график места и лидеры
+        // ---------- график места, история и лидеры — одним рядом, чтобы страница помещалась без прокрутки
         var row = Ui.H(12);
         row.AddChild(Ui.Expand(Widget.Make($"Место в конференции по ходу сезона", PositionChart(t))));
-        var right = Ui.V(12); right.CustomMinimumSize = new Vector2(420, 0);
+        row.AddChild(Ui.Expand(Widget.Make("История клуба", BioWidgets.ClubHistory(C, t))));
+        var right = Ui.V(12); right.CustomMinimumSize = new Vector2(360, 0);
         right.AddChild(Leaders(t));
         row.AddChild(right);
         v.AddChild(row);
@@ -87,7 +85,7 @@ public partial class ClubPage : Control
         F("Темп игры", l.TempoAuto ? "По сопернику" : l.Tempo switch { -1 => "Закрытый", 1 => "Открытый", _ => "Обычный" });
         F("Система игры", SysText(l));
         if (Staff.Decider(C, t.Abbr) is { } coach)
-            F(t.Abbr == C.UserTeam ? "Помощник" : "Главный тренер", $"{coach.Name} — {Staff.StyleText(coach)}");
+            F(t.Abbr == C.UserTeam ? "Помощник" : "Главный тренер", coach.Name);
         var v2 = Ui.V(10, Ui.L(t.Name, 26, Ui.Text, Ds.Display), g);
         if (t.Abbr != C.UserTeam)
         {
@@ -156,7 +154,8 @@ public partial class ClubPage : Control
             v.AddChild(Ui.L(days == 0 ? "сегодня" : days == 1 ? "завтра" : $"через {days} {Ui.Plural(days, "день", "дня", "дней")}", 12, Ui.AccentBright, null, HorizontalAlignment.Center));
         }
         v.AddChild(Ui.L(Ui.DateShort(g.Date), 11, Ui.Dim, null, HorizontalAlignment.Center));
-        var p = new PanelContainer { CustomMinimumSize = new Vector2(112, 0), MouseDefaultCursorShape = CursorShape.PointingHand, MouseFilter = MouseFilterEnum.Stop };
+        foreach (var l in v.GetChildren().OfType<Label>()) { l.ClipText = true; l.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis; }
+        var p = new PanelContainer { CustomMinimumSize = new Vector2(96, 0), MouseDefaultCursorShape = CursorShape.PointingHand, MouseFilter = MouseFilterEnum.Stop };
         p.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         var sb = Ui.Box(Ui.Panel2, 10, null, 6); sb.BorderColor = edge; sb.BorderWidthTop = 3;
         p.AddThemeStyleboxOverride("panel", sb);

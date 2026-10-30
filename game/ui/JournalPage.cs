@@ -40,7 +40,7 @@ public partial class JournalPage : Control
     Control LeverList(List<JournalEntry> entries)
     {
         var v = Ui.V(8);
-        v.AddChild(Ui.V(0, Ui.L("Что сработало", 20, Ui.Text, Ds.Display),
+        v.AddChild(Ui.V(0,
             Ui.L($"Наши матчи: {entries.Count}. Сравнение — с остальными нашими матчами.", 11, Ui.Dim).Also(Wrap)));
         foreach (var (phase, levers) in Tactics.Phases)
         {

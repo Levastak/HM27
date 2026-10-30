@@ -117,7 +117,7 @@ public partial class TrainingPage : Control
     // ------------------------------------------------------------------ индивидуальные
     void Individual(VBoxContainer v)
     {
-        v.AddChild(Ui.V(2, Ui.L("Индивидуальная работа", 20, Ui.Text, Ds.Display),
+        v.AddChild(Ui.V(2,
             Ui.L($"Одна характеристика растёт вдвое быстрее, остальные — чуть медленнее. Мест — {Training.SLOTS}: тренеры не разорвутся. Расти может только тот, у кого есть запас до потенциала.", 12, Ui.Muted).Also(Wrap)));
         v.AddChild(Ui.L($"Занято {T.Individual.Count} из {Training.SLOTS}", 14, T.Individual.Count >= Training.SLOTS ? Ui.Gold : Ui.Text, Ui.Semi));
         var rows = C.Roster(C.UserTeam).Where(p => C.Players.ContainsKey(p.Id)).OrderBy(p => T.Individual.ContainsKey(p.Id) ? 0 : 1).ThenBy(p => p.Age(C.Today) ?? 30).ToList();
@@ -141,7 +141,7 @@ public partial class TrainingPage : Control
         string cur = T.Individual.GetValueOrDefault(p.Id);
         for (int i = 0; i < defs.Length; i++)
         {
-            ob.AddItem($"{defs[i].Name} ({PlayerModel.Visible(C, p, defs[i].Key):0})", i + 1);
+            ob.AddItem($"{defs[i].Name} ({Ds.ShowI(PlayerModel.Visible(C, p, defs[i].Key))})", i + 1);
             if (defs[i].Key == cur) ob.Selected = i + 1;
         }
         if (cur == null) ob.Selected = 0;
@@ -159,7 +159,7 @@ public partial class TrainingPage : Control
     // ------------------------------------------------------------------ развитие молодых
     void Youth(VBoxContainer v)
     {
-        v.AddChild(Ui.V(2, Ui.L("Развитие молодых", 20, Ui.Text, Ds.Display),
+        v.AddChild(Ui.V(2,
             Ui.L("Потенциал — потолок, а не обещание: до него доходит примерно каждый четвёртый. Растут от игрового времени и роли, характера, удачи сезона, своих оценок и тренировок; мешают травмы и скамейка.", 12, Ui.Muted).Also(Wrap)));
         var rows = C.Roster(C.UserTeam).Where(p => C.Players.ContainsKey(p.Id) && (p.Age(C.Today) ?? 30) <= 23).OrderBy(p => p.Age(C.Today)).ToList();
         if (rows.Count == 0) { v.AddChild(Ui.L("В клубе нет игроков моложе 24 лет.", 14, Ui.Muted)); return; }

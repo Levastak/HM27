@@ -162,13 +162,13 @@ public static class Ui
     /// <summary>Характеристика по шкале 1–20 (модель игрока).</summary>
     public static Label AttrV(double v, int size = 13)
     {
-        int i = Math.Clamp((int)Math.Round(v), 1, 20);
+        int i = Ds.ShowI(v);   // модель 1–20 относительно НХЛ → шкала показа (Ds.Show)
         return L(i.ToString(), size, AttrColor(i), Bold, HorizontalAlignment.Center);
     }
 
     public static Label Attr(int pct, int size = 13)
     {
-        int v = Attr20(pct);
+        int v = Ds.ShowI(Attr20(pct));
         return L(v.ToString(), size, AttrColor(v), Bold, HorizontalAlignment.Center);
     }
 

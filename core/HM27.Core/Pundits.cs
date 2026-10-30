@@ -9,14 +9,15 @@ public static class Pundits
     /// <summary>Статус клуба по месту в лиге по силе и возрасту ядра (8 лучших полевых).</summary>
     public static (string label, string note) Status(int rank, double coreAge) => Label(Band(rank), coreAge);
 
-    /// <summary>Ступень статуса по месту: 0 — элита (1–4), 1 — претендент (5–10), 2 — середина (11–20), 3 — низ (21+).</summary>
-    public static int Band(int rank) => rank <= 4 ? 0 : rank <= 10 ? 1 : rank <= 20 ? 2 : 3;
+    /// <summary>Ступень статуса по месту: 0 — элита (1–4), 1 — претендент (5–10), 2 — борьба за плей-офф (11–20), 3 — середняк (21–26), 4 — низ (27+).</summary>
+    public static int Band(int rank) => rank <= 4 ? 0 : rank <= 10 ? 1 : rank <= 20 ? 2 : rank <= 26 ? 3 : 4;
 
     public static (string label, string note) Label(int band, double coreAge) => band switch
     {
         0 => ("Элита", "Главные претенденты на Кубок Стэнли"),
         1 => ("Претендент", "Сильный состав, рассчитывает на глубокий плей-офф"),
         2 => coreAge <= 25.5 ? ("На подъёме", "Молодое ядро, борется за плей-офф") : ("Борьба за плей-офф", "Плей-офф решится в последних матчах"),
+        3 => coreAge <= 25.5 ? ("На подъёме", "Молодое ядро, плей-офф — если всё сложится") : ("Середняк", "Чуть слабее конкурентов, плей-офф — под вопросом"),
         _ => coreAge <= 25.5 ? ("Перестройка", "Ставка на молодёжь, результат — потом") : ("Аутсайдер", "Состав слабее большинства соперников"),
     };
 
@@ -26,12 +27,12 @@ public static class Pundits
     /// </summary>
     static int Revise(int band, int rank)
     {
-        for (int k = 0; k < 3; k++)
+        for (int k = 0; k < 4; k++)
         {
-            int up = band switch { 1 => 2, 2 => 8, 3 => 18, _ => 0 }, down = band switch { 0 => 7, 1 => 13, 2 => 23, _ => 99 };
+            int up = band switch { 1 => 2, 2 => 8, 3 => 18, 4 => 24, _ => 0 }, down = band switch { 0 => 7, 1 => 13, 2 => 23, 3 => 29, _ => 99 };
             if (rank <= up) band--; else if (rank >= down) band++; else break;
         }
-        return Math.Clamp(band, 0, 3);
+        return Math.Clamp(band, 0, 4);
     }
 
     /// <summary>Прогноз прессы до сезона: место в дивизионе по составу (данные базы).</summary>
@@ -75,7 +76,13 @@ public static class Pundits
         int games = c.Table.Values.Sum(r => r.Gp);
         if (ReferenceEquals(_vc, c) && _vd == c.Today && _vg == games && _vv != null) return _vv;
         var d = c.Data;
-        var est = d.Teams.ToDictionary(t => t.Abbr, t => TeamStrength.Estimate(d, t));
+        // травмы с начала сезона — по доле сезона, которую игроки ещё пропустят (сроки травм известны прессе)
+        double Missed(TeamData t)
+        {
+            var left = t.Injured.Select(id => c.Injuries.FirstOrDefault(i => i.Id == id)).Where(i => i != null && i.Until >= c.Today).Select(i => (i.Until.DayNumber - c.Today.DayNumber) / 180.0).ToList();
+            return left.Count == 0 ? 0 : Math.Min(1, left.Average());
+        }
+        var est = d.Teams.ToDictionary(t => t.Abbr, t => TeamStrength.Estimate(d, t, Missed(t)));
         double Z(IEnumerable<double> all, double x) { var l = all.ToList(); double m = l.Average(), sd = Math.Sqrt(l.Average(v => (v - m) * (v - m))); return sd < 1e-9 ? 0 : (x - m) / sd; }
         StandingRow R(string a) => c.Table.TryGetValue(a, out var r) ? r : new StandingRow { Team = a };
         double W(string a) { int gp = R(a).Gp; return gp / (gp + 40.0); }

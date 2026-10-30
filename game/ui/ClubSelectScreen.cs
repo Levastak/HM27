@@ -68,7 +68,7 @@ public partial class ClubSelectScreen : Control
         p.MouseExited += () => { if (_selected != t.Abbr) p.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 14, Ds.Edge, 10)); };
         p.MouseFilter = MouseFilterEnum.Stop;
         p.MouseDefaultCursorShape = CursorShape.PointingHand;
-        p.GuiInput += e => { if (e is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Left) { Select(t.Abbr); if (mb.DoubleClick) Main.I.NewCareer(t.Abbr); } };
+        p.GuiInput += e => { if (e is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Left) { Select(t.Abbr); if (mb.DoubleClick) Main.I.NewCareer(t.Abbr, Main.I.DefaultName(t.Abbr)); } };
         return p;
     }
 
@@ -121,7 +121,9 @@ public partial class ClubSelectScreen : Control
             foreach (var p in young) v.AddChild(PlayerLine(p, inj.Contains(p.Id), on, true));
         }
         v.AddChild(Ui.Spacer());
-        var go = Ui.B($"Начать карьеру за «{t.City}»", () => Main.I.NewCareer(abbr), true, 17);
+        var nameEdit = new LineEdit { Text = Main.I.DefaultName(abbr), CustomMinimumSize = new Vector2(0, 40), PlaceholderText = "Название карьеры" };
+        v.AddChild(Ui.V(6, Ui.L("Название карьеры", 13, Ui.Muted), nameEdit));
+        var go = Ui.B($"Начать карьеру за «{t.City}»", () => Main.I.NewCareer(abbr, nameEdit.Text), true, 17);
         go.CustomMinimumSize = new Vector2(0, 52);
         StyleBoxFlat Gs(Color c) { var x = Ui.Box(c, 16, null, 22); x.ShadowColor = new Color(glow, 0.45f); x.ShadowSize = 18; return x; }
         var gc = glow.Darkened(0.1f);

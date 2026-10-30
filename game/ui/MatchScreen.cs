@@ -44,7 +44,8 @@ public partial class MatchScreen : Control
     VBoxContainer Frame()
     {
         Ui.Clear(this);
-        AddChild(new IceBg(Broadcast.Fill(Home), Broadcast.Fill(Away)));
+        var (fa, fh) = MatchColors.Fill(Away, Home);
+        AddChild(new IceBg(fh, fa));
         var root = Ui.V(0);
         root.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(root);
@@ -118,17 +119,41 @@ public partial class MatchScreen : Control
         if (!mine) { ShowNeutralPreview(body, o, hs, aws); return; }
         bool home = _g.Home == C.UserTeam;
         var rep = Scout.For(C, _g);
-        var row = Ui.H(14);
-        row.AddChild(Ui.Expand(ScoutColumn(rep, home ? aws : hs)));
-        var mid = PlanColumn(rep, o, home);
-        mid.CustomMinimumSize = new Vector2(560, 0);
-        row.AddChild(mid);
-        var right = TeamColumn(home ? Home : Away, home ? hs : aws, home);
-        right.AddChild(EndgameWidget(hs, aws, home));
-        right.AddChild(RulesWidget());
-        row.AddChild(Ui.Expand(right));
-        body.AddChild(Ui.Scroll(row));
+        // экран «до матча» помещается без прокрутки: слева прогноз и старт, справа вкладки — план, задания, соперник, концовка, наш состав
+        var plan = PlanColumn(rep, o, home);
+        var parts = plan.GetChildren().OfType<Control>().ToList();
+        foreach (var x in parts) plan.RemoveChild(x);
+        var row = Ui.Expand(Ui.H(16), true, true);
+        body.AddChild(row);
+        var left = Ui.V(14); left.CustomMinimumSize = new Vector2(400, 0);
+        left.AddChild(parts[0]);
+        foreach (var x in parts.Skip(3)) left.AddChild(x);
+        var team = TeamColumn(home ? Home : Away, home ? hs : aws, home);
+        left.AddChild(Ui.Expand(Ui.Scroll(team), true, true));
+        row.AddChild(left);
+        var tabs = new (string name, Func<Control> build)[]
+        {
+            ("План на матч", () => parts[1]),
+            ("Задания", () => parts[2]),
+            ("Соперник", () => ScoutColumn(rep, home ? aws : hs)),
+            ("Концовка и правила", () => Ui.H(16, Ui.Expand(EndgameWidget(hs, aws, home)), Ui.Expand(RulesWidget()))),
+        };
+        _pvTab = Math.Clamp(_pvTab, 0, tabs.Length - 1);
+        var right = Ui.Expand(Ui.V(14), true, true);
+        var content = Ui.Expand(new MarginContainer(), true, true);
+        var pages = tabs.Select(t => Ui.Scroll(t.build())).ToList();
+        foreach (var pg in pages) content.AddChild(pg);
+        void ShowTab(int k)
+        {
+            _pvTab = k;
+            for (int i = 0; i < pages.Count; i++) pages[i].Visible = i == k;
+        }
+        right.AddChild(new Segmented(tabs.Select(t => t.name).ToArray(), _pvTab, ShowTab));
+        right.AddChild(content);
+        row.AddChild(right);
+        ShowTab(_pvTab);
     }
+    static int _pvTab;
 
     /// <summary>Темп и снятие вратаря на этот матч: выбор помощника (словами) и шанс отыграться (это важно знать в цифрах).</summary>
     Control EndgameWidget(MatchSide hs, MatchSide aws, bool home)
@@ -230,7 +255,7 @@ public partial class MatchScreen : Control
         var fc = Ui.V(6,
             Ui.H(8, Ui.Expand(Ui.L(Pundits.Forecast(C.Data, _g, o), 14, Ui.Text, Ui.Semi).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart)),
                 Ui.L($"{100 * pw:0}%", 30, Ui.Gold, Ui.CondBlack)),
-            SplitBar(pw, Ui.Club, new Color(C.Team(home ? _g.Away : _g.Home).Colors[0])),
+            SplitBar(pw, home ? MatchColors.Of(C, _g).home : MatchColors.Of(C, _g).away, home ? MatchColors.Of(C, _g).away : MatchColors.Of(C, _g).home),
             Ui.L("шанс на победу по прогнозу — уже с вашим планом", 11, Ui.Dim));
         v.AddChild(Widget.Make("Прогноз", fc));
 
@@ -1220,9 +1245,7 @@ public partial class MomentumChart : Control
     public MomentumChart(List<MatchEvent> ev, ScheduledGame g, Career c)
     {
         _ev = ev; _g = g;
-        Color Vis(Color x) { for (int i = 0; i < 6 && x.Luminance < 0.35f; i++) x = x.Lightened(0.15f); return x; }
-        _ca = Vis(new Color(c.Team(g.Away).Colors[0])); _ch = Vis(new Color(c.Team(g.Home).Colors[0]));
-        if (_ca.IsEqualApprox(_ch)) _ch = Vis(new Color(c.Team(g.Home).Colors.Count > 1 ? c.Team(g.Home).Colors[1] : "#CCCCCC"));
+        (_ca, _ch) = MatchColors.Of(c, g);
         _end = Math.Max(3600, ev.Count > 0 ? ev.Max(e => e.T) + 30 : 3600);
     }
 

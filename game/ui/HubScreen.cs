@@ -249,10 +249,18 @@ public partial class HubScreen : Control
     // ------------------------------------------------------------------ календарь
     Control Calendar() => Calendar(_calTeam ?? C.UserTeam);
 
+    static bool _calList;   // false — сетка месяца, true — список
+
     Control Calendar(string team)
     {
         var v = Ui.V(12);
-        v.AddChild(Ui.L(team == C.UserTeam ? "Календарь клуба" : $"Календарь: {C.Team(team).Name}", 20, Ui.Text, Ds.Display));
+        if (team != C.UserTeam) v.AddChild(Ui.L($"Календарь: {C.Team(team).Name}", 20, Ui.Text, Ds.Display));
+        v.AddChild(new Segmented(new[] { "Месяц", "Список" }, _calList ? 1 : 0, k => { _calList = k == 1; CallDeferred(nameof(Build)); }) { SizeFlagsHorizontal = SizeFlags.ShrinkBegin });
+        if (!_calList)
+        {
+            v.AddChild(Ui.Card(new CalendarGrid(C, team), Ui.Panel, 16, Ds.Edge));
+            return Ui.Scroll(v);
+        }
         var t = new Table(new[] { "Дата", "", "Соперник", "Результат", "" }, new[] { 140, 30, 0, 170, 50 });
         int lastMonth = 0;
         foreach (var g in C.TeamGames(team).OrderBy(g => g.Date))

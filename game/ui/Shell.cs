@@ -34,6 +34,8 @@ public partial class Shell : Control
         {
             new Item("Обзор", "house", "home", null, "Главное за день: решения, матч, новости"),
             new Item("Входящие", "inbox", "inbox", null, "Письма, решения и новости лиги"),
+            new Item("Трибуна", "megaphone", "stands", null, "Настроение болельщиков и все их посты"),
+            new Item("Гонка за призами", "trophy", "races", null, "Претенденты на призы сезона и призы месяца"),
         }),
         new Section("team", "Команда", new[]
         {
@@ -110,6 +112,8 @@ public partial class Shell : Control
     public Shell() { _cur = new Nav("home", null, null); }
 
     IceBg _bg;
+    PanelContainer _searchRes;
+    VBoxContainer _searchList;
     string _open;   // раскрытый раздел в боковой панели (по умолчанию — раздел текущей страницы)
 
     public override void _Ready()
@@ -134,6 +138,12 @@ public partial class Shell : Control
         main.AddChild(_subBar);
         _page = Ui.Expand(new MarginContainer(), true, true);
         main.AddChild(_page);
+        // результаты поиска — слой поверх страницы (не отдельное окно: окно забирало ввод после первой буквы)
+        _searchRes = new PanelContainer { Visible = false, ZIndex = 50, CustomMinimumSize = new Vector2(360, 0) };
+        _searchRes.AddThemeStyleboxOverride("panel", Ui.Box(new Color("111823"), 14, Ds.Edge, 6).Also(x => { x.ShadowColor = new Color(0, 0, 0, 0.5f); x.ShadowSize = 20; }));
+        _searchList = Ui.V(2);
+        _searchRes.AddChild(_searchList);
+        AddChild(_searchRes);
         Render();
     }
 
@@ -191,9 +201,17 @@ public partial class Shell : Control
             "room" => new RoomPage(),
             "tactics" => _cur.Sub == "rules" ? new RulesPage() : _cur.Sub == "journal" ? new JournalPage(_cur.Arg) : new TacticsPage(_cur.Arg),
             "training" => new TrainingPage(_cur.Sub),
+            "stands" => new StandsPage(),
+            "races" => new RacesPage(),
             _ => new HomePage(),
         };
         _page.AddChild(view);
+        // переход: страница проявляется и чуть поднимается
+        view.Modulate = new Color(1, 1, 1, 0);
+        var tw = CreateTween().SetParallel();
+        tw.TweenProperty(view, "modulate:a", 1.0, 0.18).SetTrans(Tween.TransitionType.Cubic).SetEase(Tween.EaseType.Out);
+        _page.AddThemeConstantOverride("margin_top", 10);
+        tw.TweenMethod(Callable.From<int>(v => _page.AddThemeConstantOverride("margin_top", v)), 10, 0, 0.22).SetTrans(Tween.TransitionType.Cubic).SetEase(Tween.EaseType.Out);
     }
 
     static Control Embedded(string tab) => new HubScreen(tab, embedded: true);
@@ -233,7 +251,7 @@ public partial class Shell : Control
         }
         v.AddChild(Ui.Spacer());
         // поиск и настройки
-        v.AddChild(Ui.H(4, TopIcon("search", "Поиск игрока или клуба", b => OpenSearch(b)), TopIcon("settings", "Сохранить, настройки, главное меню", b => OpenSettings(b)), Ui.Spacer(),
+        v.AddChild(Ui.H(4, TopIcon("settings", "Сохранения, настройки, главное меню", b => OpenSettings(b)), Ui.Spacer(),
             Logo.Make(18).Also(l => { l.SizeFlagsVertical = SizeFlags.ShrinkCenter; l.Modulate = new Color(1, 1, 1, 0.45f); })));
         v.AddChild(Ui.Spacer(false, 10));
         string phase = C.Phase switch { Phase.Regular => "регулярный чемпионат", Phase.Playoffs => "плей-офф", _ => "сезон завершён" };
@@ -276,19 +294,6 @@ public partial class Shell : Control
         return b;
     }
 
-    void OpenSearch(Control anchor)
-    {
-        var pop = new PopupPanel();
-        pop.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Side, 3, Ui.Blue, 8));
-        var box = SearchBox();
-        pop.AddChild(box);
-        AddChild(pop);
-        pop.PopupHide += () => pop.QueueFree();
-        var gp = anchor.GetScreenPosition();
-        pop.Popup(new Rect2I((int)gp.X, (int)(gp.Y - 64), 300, 10));
-        box.CallDeferred(Control.MethodName.GrabFocus);
-    }
-
     void OpenSettings(Control anchor)
     {
         var pop = new PopupPanel();
@@ -308,14 +313,33 @@ public partial class Shell : Control
             b.Pressed += () => { pop.Hide(); a(); };
             v.AddChild(b);
         }
-        Row("save", "Сохранить", "Карьера сохраняется и сама после каждого дня", () => Main.I.Save());
+        Row("save", "Сохранить", $"«{Main.I.CurrentName}» · сохраняется и сама после каждого дня", () => Main.I.Save());
+        Row("notebook-pen", "Сохранить как…", "Копия карьеры под новым названием", () => SaveAsDialog());
+        Row("inbox", "Карьеры", "Загрузить другую карьеру, переименовать, удалить", () => { Main.I.Save(); Main.I.ShowSaves(); });
         Row("user", Names.English ? "Имена: English" : "Имена: по-русски", "Как писать игроков и клубы", () => { Names.English = !Names.English; Main.SaveSettings(); Render(); });
         Row("star", StarScale.Relative ? "Звёзды: относительно клуба" : "Звёзды: по шкале лиги", "Шкала способностей и потенциала", () => { StarScale.Relative = !StarScale.Relative; Main.SaveSettings(); Render(); });
         Row("log-out", "Главное меню", "Сохранить и выйти в меню", () => { Main.I.Save(); Main.I.ShowMenu(); });
         AddChild(pop);
         pop.PopupHide += () => pop.QueueFree();
         var gp = anchor.GetScreenPosition();
-        pop.Popup(new Rect2I((int)gp.X, (int)(gp.Y - 210), 310, 10));
+        pop.Popup(new Rect2I((int)gp.X, (int)(gp.Y - 320), 310, 10));
+    }
+
+    /// <summary>«Сохранить как»: название новой копии карьеры.</summary>
+    void SaveAsDialog()
+    {
+        var pop = new PopupPanel();
+        pop.AddThemeStyleboxOverride("panel", Ui.Box(new Color("111823"), 16, Ds.Edge, 18));
+        var edit = new LineEdit { Text = Main.I.CurrentName + " (копия)", CustomMinimumSize = new Vector2(340, 40), SelectAllOnFocus = true };
+        void Go() { Main.I.SaveAs(edit.Text); pop.Hide(); BuildTop(); }
+        edit.TextSubmitted += _ => Go();
+        var v = Ui.V(12, Ui.L("Сохранить как", 18, Ui.Text, Ui.Semi), Ui.L("Дальше карьера будет сохраняться в эту копию, прежняя останется как есть.", 12, Ui.Muted).Also(l => { l.AutowrapMode = TextServer.AutowrapMode.WordSmart; l.CustomMinimumSize = new Vector2(340, 0); }),
+            edit, Ui.H(8, Ui.Spacer(), Ui.B("Отмена", () => pop.Hide(), size: 13), Ui.B("Сохранить", Go, true, 14)));
+        pop.AddChild(v);
+        AddChild(pop);
+        pop.PopupHide += () => pop.QueueFree();
+        pop.PopupCentered(new Vector2I(380, 10));
+        edit.CallDeferred(Control.MethodName.GrabFocus);
     }
 
     Control SectionButton(Section sec, bool on)
@@ -399,6 +423,16 @@ public partial class Shell : Control
         return p;
     }
 
+    /// <summary>Для снимков экрана: ввести запрос в поиск.</summary>
+    public void DebugSearch(string q)
+    {
+        var box = _band.FindChildren("*", "LineEdit", true, false).OfType<LineEdit>().FirstOrDefault();
+        if (box == null) return;
+        box.GrabFocus();
+        box.Text = q;
+        box.EmitSignal(LineEdit.SignalName.TextChanged, q);
+    }
+
     /// <summary>Для снимков экрана: раскрыть раздел в боковой панели.</summary>
     public void DebugOpen(string key) { _open = key; BuildTop(); }
 
@@ -473,6 +507,8 @@ public partial class Shell : Control
         var tv = Ui.V(4, Ui.L(title, 26, Ui.Text, Ds.Display), Ui.L(sub, 13, Ui.Muted));
         tv.Alignment = BoxContainer.AlignmentMode.Center;
         h.AddChild(Ui.Expand(tv));
+        h.AddChild(SearchBox());
+        h.AddChild(Ui.Spacer(false, 6));
         h.AddChild(DayStrip());
     }
 
@@ -500,6 +536,8 @@ public partial class Shell : Control
             "club" => (t.Name, rec),
             "medical" => ("Лазарет", rec),
             "room" => ("Раздевалка", rec),
+            "stands" => ("Трибуна", rec),
+            "races" => ("Гонка за призами", "Сезон в игре: лидеры и преследователи"),
             "tactics" => (_cur.Sub == "rules" ? "Правила матча" : _cur.Sub == "journal" ? "Что сработало" : "Тактика", rec),
             "training" => (_cur.Sub == "individual" ? "Индивидуальная работа" : _cur.Sub == "youth" ? "Развитие молодых" : "Тренировки", rec),
             _ => (t.Name, rec),
@@ -520,39 +558,39 @@ public partial class Shell : Control
 
     Control SearchBox()
     {
-        var box = new LineEdit { PlaceholderText = "Игрок или клуб", CustomMinimumSize = new Vector2(280, 36), ClearButtonEnabled = true };
+        var box = new LineEdit { PlaceholderText = "Игрок или клуб", CustomMinimumSize = new Vector2(230, 40), ClearButtonEnabled = true };
         box.SizeFlagsVertical = SizeFlags.ShrinkCenter;
-        var sb = Ui.Box(Ui.Panel, 14, Ui.Line, 10);
-        sb.ContentMarginLeft = 32;
+        var sb = Ui.Box(new Color(1, 1, 1, 0.05f), 20, Ds.Edge, 10);
+        sb.ContentMarginLeft = 34;
         box.AddThemeStyleboxOverride("normal", sb);
-        box.AddThemeStyleboxOverride("focus", Ui.Box(Ui.Panel, 14, Ui.Blue, 10).Also(s => s.ContentMarginLeft = 32));
+        box.AddThemeStyleboxOverride("focus", Ui.Box(new Color(1, 1, 1, 0.08f), 20, Ui.Blue, 10).Also(s => s.ContentMarginLeft = 34));
         box.AddThemeColorOverride("font_placeholder_color", Ui.Dim);
-        box.AddChild(Ui.Icon("search", 16, Ui.Muted).Also(i => i.Position = new Vector2(10, 9)));
-        var popup = new PopupPanel();
-        popup.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 14, Ui.Line, 6));
-        var list = Ui.V(2);
-        popup.AddChild(list);
-        box.AddChild(popup);
+        box.AddChild(Ui.Icon("search", 16, Ui.Muted).Also(i => i.Position = new Vector2(12, 12)));
+        void Hide() { if (_searchRes != null) _searchRes.Visible = false; }
         box.TextChanged += q =>
         {
-            Ui.Clear(list);
+            Ui.Clear(_searchList);
             q = q.Trim().ToLowerInvariant();
-            if (q.Length < 2) { popup.Hide(); return; }
-            var teams = C.Data.Teams.Where(t => t.Name.ToLowerInvariant().Contains(q) || t.NameEn.ToLowerInvariant().Contains(q) || t.Abbr.ToLowerInvariant() == q).Take(4);
-            var players = C.Data.Players.Where(p => (p.NameRu ?? "").ToLowerInvariant().Contains(q) || (p.Name ?? "").ToLowerInvariant().Contains(q)).OrderByDescending(p => p.Ovr).Take(10);
-            foreach (var t in teams) list.AddChild(SearchRow(new TeamBadge(t, 20), t.Name, $"{t.Division} дивизион", () => { popup.Hide(); box.Text = ""; Go("club", null, t.Abbr); }));
-            foreach (var p in players) list.AddChild(SearchRow(new TeamBadge(C.Team(p.Team), 20), p.NameRu, $"{Ui.PosRu(p.Pos)} · {C.Team(p.Team).City}", () => { popup.Hide(); box.Text = ""; Go("player", null, p.Id.ToString()); }));
-            if (list.GetChildCount() == 0) list.AddChild(Ui.L("Ничего не найдено", 13, Ui.Muted));
-            var gp = box.GetScreenPosition();
-            popup.Popup(new Rect2I((int)gp.X, (int)(gp.Y + box.Size.Y + 4), 340, 10));
-            box.CallDeferred(Control.MethodName.GrabFocus);
+            if (q.Length < 2) { Hide(); return; }
+            var teams = C.Data.Teams.Where(t => t.Name.ToLowerInvariant().Contains(q) || (t.NameEn ?? "").ToLowerInvariant().Contains(q) || t.City.ToLowerInvariant().Contains(q) || t.Abbr.ToLowerInvariant() == q).Take(4);
+            var players = C.Data.Players.Where(p => (p.NameRu ?? "").ToLowerInvariant().Contains(q) || (p.Name ?? "").ToLowerInvariant().Contains(q)).OrderByDescending(p => p.CaEst).Take(10);
+            foreach (var t in teams) _searchList.AddChild(SearchRow(new TeamBadge(t, 22), t.Name, $"{t.Division} дивизион", () => { Hide(); box.Text = ""; Go("club", null, t.Abbr); }));
+            foreach (var p in players) _searchList.AddChild(SearchRow(new FaceDot(C, p, 30, false, true), p.NameRu, $"{Ui.PosRu(p.Pos)} · {C.Team(p.Team).City}", () => { Hide(); box.Text = ""; Go("player", null, p.Id.ToString()); }));
+            if (_searchList.GetChildCount() == 0) _searchList.AddChild(Ui.Margin(Ui.L("Ничего не найдено", 13, Ui.Muted), 10, 8, 10, 8));
+            var at = box.GlobalPosition - GlobalPosition;
+            _searchRes.Position = new Vector2(Math.Min(at.X, Size.X - 370), at.Y + box.Size.Y + 6);
+            _searchRes.Size = new Vector2(360, 0);
+            _searchRes.Visible = true;
         };
+        // щелчок по результату успевает сработать до того, как список скроется
+        box.FocusExited += () => GetTree().CreateTimer(0.2).Timeout += Hide;
+        box.GuiInput += e => { if (e is InputEventKey { Pressed: true, Keycode: Key.Escape }) { Hide(); box.ReleaseFocus(); } };
         return box;
     }
 
     static Control SearchRow(Control icon, string name, string sub, Action a)
     {
-        var b = new Button { Flat = true, FocusMode = FocusModeEnum.None, CustomMinimumSize = new Vector2(320, 36), MouseDefaultCursorShape = CursorShape.PointingHand };
+        var b = new Button { Flat = true, FocusMode = FocusModeEnum.None, CustomMinimumSize = new Vector2(340, 40), MouseDefaultCursorShape = CursorShape.PointingHand };
         b.AddThemeStyleboxOverride("hover", Ui.Box(Ui.Panel2, 10, null, 6));
         var h = Ui.H(8, icon, Ui.L(name, 13, Ui.Text, Ui.Semi), Ui.L(sub, 11, Ui.Muted));
         h.MouseFilter = MouseFilterEnum.Ignore;

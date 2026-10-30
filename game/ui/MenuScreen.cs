@@ -51,9 +51,11 @@ public partial class MenuScreen : Control
             var (team, date) = main.SaveInfo();
             string sub = team != null && main.Data.TeamByAbbr.TryGetValue(team, out var t)
                 ? $"{t.Name}{(date.HasValue ? ", " + Ui.Date(date.Value, false) : "")}" : null;
-            col.AddChild(Item("Продолжить карьеру", sub, main.LoadCareer, true));
+            var lm = main.Latest();
+            col.AddChild(Item("Продолжить карьеру", lm != null ? $"{lm.Name}{(date.HasValue ? " · " + Ui.Date(date.Value, false) : "")}" : sub, main.LoadCareer, true));
         }
         col.AddChild(Item("Новая карьера", main.HasSave ? null : "Выберите клуб НХЛ сезона 2026-27", main.ShowClubSelect, !main.HasSave));
+        if (main.HasSave) { int n = main.Saves().Count; col.AddChild(Item("Загрузить карьеру", $"{n} {Ui.Plural(n, "сохранение", "сохранения", "сохранений")}", main.ShowSaves, false)); }
         col.AddChild(Item("Об игре", null, ShowAbout, false));
         col.AddChild(Item("Выход", null, () => GetTree().Quit(), false));
         col.AddChild(Ui.Spacer(false, 28));

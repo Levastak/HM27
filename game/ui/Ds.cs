@@ -73,8 +73,15 @@ public static class Ds
     public static Color Tier(int ovr) => ovr >= 85 ? Elite : ovr >= 75 ? GoldT : ovr >= 65 ? Silver : Bronze;
     public static string TierName(int ovr) => ovr >= 85 ? "элита" : ovr >= 75 ? "золото" : ovr >= 65 ? "серебро" : "бронза";
 
-    /// <summary>Характеристика 1–20: пять ступеней от тусклого к яркому, верх — золото.</summary>
-    public static Color Attr(double v) => v >= 18 ? GoldT : v >= 15 ? new Color("5BE0A0") : v >= 11 ? new Color("E6EDF5") : v >= 7 ? new Color("8E99AB") : new Color("5B6577");
+    /// <summary>
+    /// Шкала показа характеристик — общая для всего хоккея, как в FM: модель хранит 1–20 относительно НХЛ (1 — худший в лиге),
+    /// на экране худший игрок НХЛ ≈ 6, средний ≈ 13, лучший — 20. Ниже 6 — уровень АХЛ, юниоров и любителей (для будущих лиг).
+    /// </summary>
+    public static double Show(double raw) => Math.Clamp(6 + (raw - 1) * 14.0 / 19.0, 1, 20);
+    public static int ShowI(double raw) => (int)Math.Round(Show(raw));
+
+    /// <summary>Цвет характеристики по шкале показа (1–20): пять ступеней от тусклого к яркому, верх — золото.</summary>
+    public static Color Attr(double shown) => shown >= 18 ? GoldT : shown >= 15 ? new Color("5BE0A0") : shown >= 11 ? new Color("E6EDF5") : shown >= 8 ? new Color("8E99AB") : new Color("5B6577");
     public static Color FreshCol(double f) => f >= 85 ? new Color("5BE0A0") : f >= 70 ? GoldT : new Color("FF5A5F");
     public static Color FamCol(double f) => f >= 0.8 ? new Color("5BE0A0") : f >= 0.7 ? new Color("E6EDF5") : GoldT;
 
@@ -277,7 +284,9 @@ public static class Face
     }
 
     /// <summary>Фото игрока внутри poly (голова в верхней части рамки); без фото — инициалы на цвете клуба.</summary>
-    public static void Player(CanvasItem ci, PlayerData p, TeamData t, Rect2 box, Vector2[] poly, Font font = null, bool initials = true)
+    /// <summary>fill: подложка в цвете клуба под фото (для кругов); фото НХЛ уже вырезаны (прозрачный фон), поэтому на постерах,
+    /// полосе гола и трёх звёздах подложку не рисуем — игрок стоит прямо на графике.</summary>
+    public static void Player(CanvasItem ci, PlayerData p, TeamData t, Rect2 box, Vector2[] poly, Font font = null, bool initials = true, bool fill = true)
     {
         var tex = LogoCache.I?.Photo(p);
         if (tex != null)
@@ -290,7 +299,7 @@ public static class Face
             var place = close
                 ? new Rect2(box.Position + new Vector2((box.Size.X - sz.X) / 2, -sz.Y * 0.07f), sz)
                 : new Rect2(box.Position + new Vector2((box.Size.X - sz.X) / 2, box.Size.Y - sz.Y + sz.Y * 0.04f), sz);
-            ci.DrawColoredPolygon(poly, new Color(t.Colors[0]).Lerp(Ds.Bg, 0.6f));
+            if (fill) ci.DrawColoredPolygon(poly, new Color(t.Colors[0]).Lerp(Ds.Bg, 0.6f));
             TexInPoly(ci, tex, place, poly);
             return;
         }

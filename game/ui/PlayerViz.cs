@@ -55,7 +55,7 @@ public static class PlayerViz
     public static Control Radar(Career c, PlayerData p)
     {
         var axes = p.IsGoalie ? GoalieAxes : SkaterAxes;
-        var vals = axes.Select(a => (a.name, a.keys.Average(k => PlayerModel.Visible(c, p, k)), a.keys.Average(k => GroupAvg(c.Data, p, k)))).ToList();
+        var vals = axes.Select(a => (a.name, Ds.Show(a.keys.Average(k => PlayerModel.Visible(c, p, k))), Ds.Show(a.keys.Average(k => GroupAvg(c.Data, p, k))))).ToList();
         string who = p.IsGoalie ? "вратарь" : p.IsDefense ? "защитник" : "нападающий";
         var v = Ui.V(4, new RadarChart(vals));
         v.AddChild(Ui.H(14, Legend("Игрок", Ui.Blue), Legend($"Средний {who} НХЛ", Ui.Muted, true)).Also(h => h.Alignment = BoxContainer.AlignmentMode.Center));
@@ -294,7 +294,7 @@ public partial class RadarChart : Control
     Vector2 Pt(int i, double v, Vector2 c, float r)
     {
         float a = -Mathf.Pi / 2 + i * Mathf.Tau / _axes.Count;
-        float k = (float)(Math.Clamp(v, 0, 20) / 20.0);
+        float k = (float)Math.Clamp((v - 4) / 16.0, 0, 1);   // шкала показа: худший в НХЛ ≈ 6 — ближе к центру
         return c + new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * r * k;
     }
 

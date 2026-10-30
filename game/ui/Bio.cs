@@ -59,7 +59,10 @@ public static class Links
     /// <summary>Строка из ссылок через разделитель (звенья, авторы гола).</summary>
     public static Control Row(IEnumerable<Control> items, string sep = " — ", int size = 12, Color? sepColor = null)
     {
-        var h = Ui.H(0);
+        // перенос по строкам: длинный список имён не раздвигает страницу вбок
+        var h = new HFlowContainer();
+        h.AddThemeConstantOverride("h_separation", 0);
+        h.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
         bool first = true;
         foreach (var it in items)
         {

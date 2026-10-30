@@ -79,9 +79,10 @@ public partial class Scorebug : Control
         float total = slab * 2 + box * 2 + gap * 3 + 10 + clockW;
         float x = (w - total) / 2;
         var (a, h) = Parse();
+        var (fa, fh) = MatchColors.Fill(_away, _home);
         void Team(TeamData t, float x0, bool left)
         {
-            var c = Broadcast.Fill(t);
+            var c = t == _home ? fh : fa;
             var poly = left
                 ? new[] { new Vector2(x0 + sk, y), new Vector2(x0 + slab, y), new Vector2(x0 + slab, y + hgt), new Vector2(x0, y + hgt) }
                 : new[] { new Vector2(x0, y), new Vector2(x0 + slab - sk, y), new Vector2(x0 + slab, y + hgt), new Vector2(x0, y + hgt) };
@@ -147,7 +148,7 @@ public partial class MatchIntro : Control
         DrawRect(new Rect2(0, 0, w, h), new Color(Ds.Ink, 0.92f * a));
         float slide = Broadcast.EaseOut((_t - 0.05f) / 0.55f);
         float mid = w / 2, sk = h * 0.16f;
-        var ca = Broadcast.Fill(_away); var ch = Broadcast.Fill(_home);
+        var (ca, ch) = MatchColors.Fill(_away, _home);
         // гости слева, хозяева справа (как на табло)
         float dl = -(1 - slide) * w * 0.6f, dr = (1 - slide) * w * 0.6f;
         var left = new[] { new Vector2(dl, oy), new Vector2(mid + sk + dl, oy), new Vector2(mid - sk + dl, h + oy), new Vector2(dl, h + oy) };
@@ -235,7 +236,7 @@ public partial class GoalBanner : Control
             // фото в косом срезе справа
             float pw = hgt * 1.1f, px = x0 + w - pw - sk * 0.2f;
             var pp = new[] { new Vector2(px + sk * 0.6f, y), new Vector2(px + pw + sk * 0.6f, y), new Vector2(px + pw, y + hgt), new Vector2(px, y + hgt) };
-            Face.Player(this, _p, _t, new Rect2(px, y, pw + sk * 0.6f, hgt), pp, Ds.Tv);
+            Face.Player(this, _p, _t, new Rect2(px, y, pw + sk * 0.6f, hgt), pp, Ds.Tv, true, false);
             DrawLine(pp[0], pp[3], new Color(1, 1, 1, 0.85f), 3);
             var parts = _p.NameRu.Split(' ', 2);
             float maxW = px - nx - 24;
@@ -262,7 +263,7 @@ public static class FinalBoard
         return new Paint(new Vector2(0, 170), q =>
         {
             float w = q.Size.X, h = q.Size.Y, mid = w / 2, sk = 40, r0 = Ds.R_L;
-            var ca = Broadcast.Fill(at); var ch = Broadcast.Fill(ht);
+            var (ca, ch) = MatchColors.Fill(at, ht);
             // две половины в цветах клубов, между ними счёт на чёрном
             var sb = new StyleBoxFlat { BgColor = Ds.Ink }; sb.SetCornerRadiusAll((int)r0);
             q.DrawStyleBox(sb, new Rect2(0, 0, w, h));
@@ -327,7 +328,7 @@ public static class FinalBoard
                 Broadcast.Stripes(q, new Rect2(0, 0, w, hh), 14, 0.03f);
                 float pw = hh * 0.95f, px = w - pw - sk * 0.4f;
                 var pp = new[] { new Vector2(px + sk * 0.7f, 0), new Vector2(w, 0), new Vector2(w - sk, hh), new Vector2(px, hh) };
-                Face.Player(q, p, t, new Rect2(px, 0, w - px, hh), pp, Ds.Tv, false);
+                Face.Player(q, p, t, new Rect2(px, 0, w - px, hh), pp, Ds.Tv, false, false);
                 q.DrawLine(pp[0], pp[3], new Color(1, 1, 1, 0.8f), 2, true);
                 var fg = Ui.ReadableOn(col.Darkened(0.4f));
                 // звёзды

@@ -132,7 +132,7 @@ public static class PlayerCard
             double a = PlayerModel.Visible(c, p, k);
             var h = Ui.H(10);
             h.AddChild(Ui.Expand(Ui.L(name, 14)));
-            h.AddChild(Ui.Bar(a / 20.0, Ui.AttrColor((int)Math.Round(a)), 160, 6));
+            h.AddChild(Ui.Bar(Ds.Show(a) / 20.0, Ui.AttrColor(Ds.ShowI(a)), 160, 6));
             h.AddChild(Ui.AttrV(a, 14));
             v.AddChild(h);
         }

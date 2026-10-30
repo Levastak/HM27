@@ -152,6 +152,62 @@ def fix_namesakes(db, path=os.path.join(os.path.dirname(os.path.abspath(__file__
                 L[k] = [ids.get("F", x) if x == old else x for x in L.get(k, [])]
 
 
+# Характеристики из трекинга EDGE (самый сильный бросок, максимальная скорость, рывки): у новичков их считают по нескольким
+# матчам, максимум по малой выборке занижен, а погрешность в расчёте стоит как у полной (±0,4). Сжимаем к ожидаемому для
+# позиции и уровня игрока с весом n / (n + EDGE_K) по матчам в НХЛ и поднимаем погрешность. Повторный запуск не сжимает
+# дважды: исходное значение хранится в fx.edge_raw.
+EDGE_KEYS = ("pwr", "spd")   # максимумы за сезон — смещены вниз при малой выборке (рывки — среднее, их не трогаем)
+EDGE_K = 30.0
+
+
+def small_sample(db):
+    sk = [p for p in db["players"] if p["pos"] != "G" and p.get("a")]
+    def grp(p):
+        return "D" if p["pos"] == "D" else "F"
+    raw = {}
+    for p in sk:
+        fx = p.setdefault("fx", {})
+        if "edge_raw" in fx:   # уже сжато прошлым запуском — берём исходные значения
+            for k, v in fx["edge_raw"].items():
+                if k in p["a"]:
+                    p["a"][k] = list(v)
+        raw[p["id"]] = {k: list(p["a"][k]) for k in EDGE_KEYS if k in p["a"]}
+    # средние по группе и наклон по уровню — по игрокам с полной выборкой
+    stats = {}
+    for g in ("F", "D"):
+        full = [p for p in sk if grp(p) == g and (p.get("fx") or {}).get("gp", 0) >= 150]
+        for k in EDGE_KEYS:
+            xs = [(p["lvl"][0], p["a"][k][0]) for p in full if k in p["a"]]
+            if len(xs) < 20:
+                continue
+            ml = sum(x for x, _ in xs) / len(xs); mv = sum(y for _, y in xs) / len(xs)
+            cov = sum((x - ml) * (y - mv) for x, y in xs); var = sum((x - ml) ** 2 for x, _ in xs) or 1
+            stats[(g, k)] = (mv, ml, cov / var)
+    n_adj = 0
+    for p in sk:
+        n = float((p.get("fx") or {}).get("gp", 0) or 0)
+        if n >= 400:
+            continue
+        w = n / (n + EDGE_K)
+        changed = {}
+        for k in EDGE_KEYS:
+            st = stats.get((grp(p), k))
+            if k not in p["a"] or st is None:
+                continue
+            mv, ml, b = st
+            prior = mv + b * (p["lvl"][0] - ml)
+            v, se = p["a"][k]
+            nv = w * v + (1 - w) * prior
+            nse = max(se, 2.5 * math.sqrt(EDGE_K / (n + EDGE_K)))
+            if abs(nv - v) >= 0.05 or nse > se:
+                changed[k] = raw[p["id"]][k]
+                p["a"][k] = [round(nv, 2), round(nse, 2)]
+        if changed:
+            p["fx"]["edge_raw"] = changed
+            n_adj += 1
+    print(f"EDGE с малой выборкой: сжато у {n_adj} игроков")
+
+
 def main(db_path="game/data/hm27-data.json", model_path="data/derived.json.gz", curves_path="data/age_curves.json", leaders_path="data/leaders.json"):
     db = json.load(open(db_path, encoding="utf-8"))
     leaders = {}
@@ -204,6 +260,7 @@ def main(db_path="game/data/hm27-data.json", model_path="data/derived.json.gz", 
             fallback += 1
         # для сортировок и звёзд: ovr = КА − 80 (звёзды = ovr / 20: КА 190 → 5★, 160 → 4★, 120 → 2★)
         p.setdefault("r", {})["ovr"] = int(max(10, min(100, round(p["ca"][0] - 80))))
+    small_sample(db)
     # номинации клубов на Мастертон и Кинг Клэнси (data/character.json): счётчики → профессионализм и лидерство в ядре
     ch_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "character.json")
     if os.path.exists(ch_path):

@@ -4,6 +4,14 @@ namespace HM27.Core;
 public sealed record Journalist(string Kind, string Name, string Outlet, string Bio, string Color);
 
 /// <summary>Пост болельщика: ник, текст, настроение (−1 злой … +1 счастливый), клуб.</summary>
+/// <summary>Настроение трибун после своего матча — для графика на странице «Трибуна».</summary>
+public sealed class FanPoint
+{
+    public DateOnly Date { get; set; }
+    public int Game { get; set; }
+    public float Mood { get; set; }
+}
+
 public sealed class FanPost
 {
     public DateOnly Date { get; set; }
@@ -91,6 +99,7 @@ public static class Voices
         }
         if (g.Playoff) d *= 1.6;
         c.FanMood = (float)Math.Clamp(c.FanMood + d + (50 - c.FanMood) * 0.04, 3, 99);
+        c.FanTrend.Add(new FanPoint { Date = c.Today, Game = g.Id, Mood = c.FanMood });
 
         var rng = new Random(unchecked(c.Seed * 7577 + g.Id * 13));
         var team = c.Team(me);
@@ -128,7 +137,7 @@ public static class Voices
         int n = Math.Min(lines.Count, 2 + rng.Next(2));
         foreach (var (text, m) in lines.Take(n))
             c.Fans.Add(new FanPost { Date = c.Today, Team = me, Handle = Handle(rng, nick, team.City), Text = text, Mood = m, Likes = 5 + rng.Next(m == 0 ? 60 : 400) });
-        if (c.Fans.Count > 120) c.Fans.RemoveRange(0, c.Fans.Count - 120);
+        if (c.Fans.Count > 400) c.Fans.RemoveRange(0, c.Fans.Count - 400);
     }
 
     static string Pick(Random r, params string[] xs) => xs[r.Next(xs.Length)];

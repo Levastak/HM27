@@ -171,22 +171,22 @@ public static partial class News
 
     // ================================================================ игроки месяца и гонка за призами
     /// <summary>Гонка за призами сейчас: (приз, лидеры — игрок и строка цифр).</summary>
-    public static List<(string award, string what, List<(int id, string line)> top)> Races(Career c)
+    public static List<(string award, string what, List<(int id, string line)> top)> Races(Career c, int n = 3)
     {
         var res = new List<(string, string, List<(int, string)>)>();
         var sk = c.Skaters.Where(kv => kv.Value.Gp > 0 && c.Data.PlayerById.ContainsKey(kv.Key)).ToList();
         var teamPts = c.Table.ToDictionary(kv => kv.Key, kv => kv.Value.PtsPct);
         string T(int id) => c.Data.PlayerById[id].Team;
-        res.Add(("Харт Трофи", "самому ценному игроку", sk.OrderByDescending(kv => kv.Value.Pts * (0.8 + 0.6 * teamPts.GetValueOrDefault(T(kv.Key), 0.5))).Take(3)
+        res.Add(("Харт Трофи", "самому ценному игроку", sk.OrderByDescending(kv => kv.Value.Pts * (0.8 + 0.6 * teamPts.GetValueOrDefault(T(kv.Key), 0.5))).Take(n)
             .Select(kv => (kv.Key, $"{kv.Value.G}+{kv.Value.A}, {c.Team(T(kv.Key)).City}")).ToList()));
-        res.Add(("Арт Росс", "лучшему бомбардиру", sk.OrderByDescending(kv => kv.Value.Pts).ThenByDescending(kv => kv.Value.G).Take(3).Select(kv => (kv.Key, $"{kv.Value.Pts} ({kv.Value.G}+{kv.Value.A})")).ToList()));
-        res.Add(("Морис Ришар", "лучшему снайперу", sk.OrderByDescending(kv => kv.Value.G).Take(3).Select(kv => (kv.Key, N(kv.Value.G, "гол", "гола", "голов"))).ToList()));
-        res.Add(("Норрис Трофи", "лучшему защитнику", sk.Where(kv => c.Data.PlayerById[kv.Key].IsDefense).OrderByDescending(kv => kv.Value.Pts + 0.3 * kv.Value.Pm).Take(3)
+        res.Add(("Арт Росс", "лучшему бомбардиру", sk.OrderByDescending(kv => kv.Value.Pts).ThenByDescending(kv => kv.Value.G).Take(n).Select(kv => (kv.Key, $"{kv.Value.Pts} ({kv.Value.G}+{kv.Value.A})")).ToList()));
+        res.Add(("Морис Ришар", "лучшему снайперу", sk.OrderByDescending(kv => kv.Value.G).Take(n).Select(kv => (kv.Key, N(kv.Value.G, "гол", "гола", "голов"))).ToList()));
+        res.Add(("Норрис Трофи", "лучшему защитнику", sk.Where(kv => c.Data.PlayerById[kv.Key].IsDefense).OrderByDescending(kv => kv.Value.Pts + 0.3 * kv.Value.Pm).Take(n)
             .Select(kv => (kv.Key, $"{kv.Value.G}+{kv.Value.A}, {(kv.Value.Pm > 0 ? "+" : "")}{kv.Value.Pm}")).ToList()));
         int minGp = Math.Max(5, c.Table.Values.Max(r => r.Gp) / 3);
-        res.Add(("Везина Трофи", "лучшему вратарю", c.Goalies.Where(kv => kv.Value.Gp >= minGp && c.Data.PlayerById.ContainsKey(kv.Key)).OrderByDescending(kv => kv.Value.Gsax).Take(3)
+        res.Add(("Везина Трофи", "лучшему вратарю", c.Goalies.Where(kv => kv.Value.Gp >= minGp && c.Data.PlayerById.ContainsKey(kv.Key)).OrderByDescending(kv => kv.Value.Gsax).Take(n)
             .Select(kv => (kv.Key, $"{kv.Value.SvPct.ToString(".000", System.Globalization.CultureInfo.InvariantCulture)}, {(kv.Value.Gsax >= 0 ? "+" : "")}{F1(kv.Value.Gsax)} сверх ожидаемых")).ToList()));
-        res.Add(("Колдер Трофи", "лучшему новичку", sk.Where(kv => Rookie(c, c.Data.PlayerById[kv.Key])).OrderByDescending(kv => kv.Value.Pts).Take(3)
+        res.Add(("Колдер Трофи", "лучшему новичку", sk.Where(kv => Rookie(c, c.Data.PlayerById[kv.Key])).OrderByDescending(kv => kv.Value.Pts).Take(n)
             .Select(kv => (kv.Key, $"{kv.Value.G}+{kv.Value.A}, {c.Team(T(kv.Key)).City}")).ToList()));
         return res;
     }

@@ -208,7 +208,7 @@ public partial class PlayerPage : Control
                 int fs = 230; float tw = Ds.Tv.GetStringSize(num, HorizontalAlignment.Left, -1, fs).X;
                 q.Text(Ds.Tv, fs, w * 0.5f - tw / 2 - 14, -40, num, new Color(c2.Luminance > 0.85f ? Colors.White : c2, 0.33f));
             }
-            Face.Player(q, p, t, new Rect2(30, 6, w - 70, h - 6), poly, Ds.Tv, false);
+            Face.Player(q, p, t, new Rect2(30, 6, w - 70, h - 6), poly, Ds.Tv, false, false);
             Face.Logo(q, t, new Rect2(16, h - 54, 42, 42));
             q.DrawLine(new Vector2(w, 0), new Vector2(w - sk, h), new Color(1, 1, 1, 0.7f), 2, true);
         });
@@ -353,8 +353,9 @@ public partial class PlayerPage : Control
                 col.AddChild(Ui.Rule());
                 foreach (var d in defs.Where(d => d.Group == grp))
                 {
-                    var (lo, hi) = PlayerModel.Range(C, p, d.Key);
-                    int av = (int)Math.Round(PlayerModel.Visible(C, p, d.Key));
+                    var (lo0, hi0) = PlayerModel.Range(C, p, d.Key);
+                    int lo = Ds.ShowI(lo0), hi = Ds.ShowI(hi0);
+                    int av = Ds.ShowI(PlayerModel.Visible(C, p, d.Key));
                     bool est = !p.A.ContainsKey(d.Key) || p.AttrSe(d.Key) >= 2.5;
                     string arrow = "";
                     Color arrowCol = Ui.Muted;
@@ -363,7 +364,7 @@ public partial class PlayerPage : Control
                         if (a1 - a0 >= 0.5f) { arrow = "▲"; arrowCol = Ui.Win; }
                         else if (a1 - a0 <= -0.5f) { arrow = "▼"; arrowCol = Ui.Loss; }
                     }
-                    string data = p.A.TryGetValue(d.Key, out var e) ? $"По данным: {e[0]:0.0} ± {e[1]:0.0}" : "Нет данных — оценка по уровню игрока";
+                    string data = p.A.TryGetValue(d.Key, out var e) ? $"По данным: {Ds.Show(e[0]):0.0} ± {e[1] * 14 / 19:0.0}" : "Нет данных — оценка по уровню игрока";
                     var row = new PanelContainer { TooltipText = $"{d.Tip}\n{data}{(lo != hi ? $"\nСкауты: {lo}–{hi}" : "")}", MouseFilter = MouseFilterEnum.Stop };
                     var sb = Ui.Box(key.Contains(d.Key) ? new Color(Ui.AccentBright, 0.16f) : new Color(0, 0, 0, 0), 2, null, 6);
                     sb.ContentMarginTop = sb.ContentMarginBottom = 3;
@@ -378,7 +379,7 @@ public partial class PlayerPage : Control
             h.AddChild(col);
         }
         var v = Ui.V(10, h);
-        v.AddChild(Ui.L("Шкала 1–20, средний игрок НХЛ ≈ 11. Диапазон — клуб знает игрока не до конца: скауты и время в клубе сужают его. " +
+        v.AddChild(Ui.L("Шкала 1–20 общая для хоккея: худший игрок НХЛ ≈ 6, средний ≈ 13, лучшие — 18–20. Диапазон — клуб знает игрока не до конца: скауты и время в клубе сужают его. " +
                         "▲▼ — изменения с начала сезона. «~» — мало данных. Подсвечены важные для лучшей роли.", 11, Ui.Dim)
             .Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart));
         return v;

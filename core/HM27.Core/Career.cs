@@ -300,6 +300,7 @@ public sealed class Career
     /// <summary>Новости: настроение трибун 0–100 и посты болельщиков, рейтинг силы прошлой недели, призы, погони, кресла тренеров.</summary>
     public float FanMood { get; set; } = 50;
     public List<FanPost> Fans { get; set; } = new();
+    public List<FanPoint> FanTrend { get; set; } = new();
     public Dictionary<string, int> PowerWeek { get; set; } = new();
     public List<Honor> Honors { get; set; } = new();
     public HashSet<string> Chases { get; set; } = new();

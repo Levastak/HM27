@@ -10,7 +10,6 @@ namespace HM27.UI;
 public partial class Main : Control
 {
     public const string Version = "0.4.0";
-    const string SavePath = "user://career.json";
 
     public static Main I { get; private set; }
     public GameData Data { get; private set; }
@@ -74,8 +73,8 @@ public partial class Main : Control
             var g = c.UserGameToday();
             if (g != null) { c.Play(g); c.SimDay(); }
             Save();
-            LoadCareer();
-            foreach (var tab in new[] { "overview", "lines", "calendar", "table", "stats", "playoffs", "squad", "inbox", "club", "medical" }) ShowHub(tab, tab == "club" ? "MIN" : null);
+            LoadSlot(CurrentSlot);
+            foreach (var tab in new[] { "overview", "lines", "calendar", "table", "stats", "playoffs", "squad", "inbox", "club", "medical", "stands", "races" }) ShowHub(tab, tab == "club" ? "MIN" : null);
             ShowHub("player", Data.Roster("MIN").First(p => !p.IsGoalie).Id.ToString());
             ShowHub("player", Data.Roster("MIN").First(p => p.IsGoalie).Id.ToString());
             var last = Career.LastGame("MIN");
@@ -83,7 +82,8 @@ public partial class Main : Control
             ShowClubSelect();
             ShowMenu();
             var row = Career.Table["MIN"];
-            result = $"SMOKE OK: {OS.GetName()} {Engine.GetArchitectureName()}, {Data.Players.Count} игроков, {Ui.Date(Career.Today)}, MIN {row.W}-{row.L}-{row.Otl}, сохранение {FileAccess.GetFileAsBytes(SavePath).Length / 1024} КБ (без сжатия {ReadSave().Length / 1024} КБ)";
+            result = $"SMOKE OK: {OS.GetName()} {Engine.GetArchitectureName()}, {Data.Players.Count} игроков, {Ui.Date(Career.Today)}, MIN {row.W}-{row.L}-{row.Otl}, сохранение {CurrentSaveBytes / 1024} КБ (без сжатия {ReadCurrent().Length / 1024} КБ), карьер: {Saves().Count}";
+            DeleteSlot(CurrentSlot);   // проверочная карьера не остаётся в списке
         }
         catch (Exception e)
         {
@@ -97,7 +97,7 @@ public partial class Main : Control
     void DebugStart(string screen, System.Collections.Generic.Dictionary<string, string> args)
     {
         var team = args.GetValueOrDefault("team", "MIN");
-        if (screen != "menu" && screen != "clubs")
+        if (screen != "menu" && screen != "clubs" && screen != "saves")
         {
             Career = Career.New(Data, team, 27);
             ApplyAccent();
@@ -109,6 +109,7 @@ public partial class Main : Control
         {
             case "menu": ShowMenu(); break;
             case "clubs": ShowClubSelect(); break;
+            case "saves": ShowSaves(); break;
             case "lab": Show(new Lab.DesignLab(Career, args.GetValueOrDefault("dir", "A") == "A", args.GetValueOrDefault("tab", "lines"))); break;
             case "match":
                 Career.SimToUserGame();
@@ -127,6 +128,8 @@ public partial class Main : Control
         }
         if (args.TryGetValue("popup", out var popup) && popup == "assistant")
             GetTree().CreateTimer(0.3).Timeout += () => AssistantReview.Open(_screen, Career, Career.UserTeam, l => { });
+        if (args.TryGetValue("search", out var sq))
+            GetTree().CreateTimer(0.3).Timeout += () => Shell.I?.DebugSearch(sq);
         if (args.TryGetValue("open", out var open))
             GetTree().CreateTimer(0.3).Timeout += () => (_screen as Shell)?.DebugOpen(open);
         if (args.TryGetValue("shot", out var shot)) Shooter.Arm(this, shot, int.Parse(args.GetValueOrDefault("frames", "12")));
@@ -134,6 +137,8 @@ public partial class Main : Control
 
     void Show(Control c)
     {
+        // эмблемы и фото растрированы крупно — мелкие копии берутся из мип-карт, иначе на 16–24 px они рябят и мылятся
+        TextureFilter = TextureFilterEnum.LinearWithMipmaps;
         if (_screen != null) { RemoveChild(_screen); _screen.QueueFree(); }
         _screen = c;
         c.SetAnchorsPreset(LayoutPreset.FullRect);
@@ -162,7 +167,7 @@ public partial class Main : Control
         var (page, sub) = tab switch
         {
             "lines" => ("lines", (string)null), "calendar" => ("schedule", null), "table" => ("comp", "table"), "stats" => ("comp", "stats"),
-            "playoffs" => ("comp", "playoffs"), "squad" => ("squad", null), "inbox" => ("inbox", null), "player" => ("player", null), "club" => ("club", null), "medical" => ("medical", null), "room" => ("room", null), "tactics" => ("tactics", "system"), "training" => ("training", "week"),
+            "playoffs" => ("comp", "playoffs"), "squad" => ("squad", null), "inbox" => ("inbox", null), "player" => ("player", null), "club" => ("club", null), "medical" => ("medical", null), "room" => ("room", null), "tactics" => ("tactics", "system"), "training" => ("training", "week"), "stands" => ("stands", null), "races" => ("races", null),
             _ => ("home", null),
         };
         sub = forced ?? sub;
@@ -179,34 +184,104 @@ public partial class Main : Control
         GetTree().ChangeSceneToFile("res://Match3D/RinkPreview.tscn");
     }
 
-    public void NewCareer(string team)
+    // ------------------------------------------------------------------ сохранения
+    // Несколько карьер: user://saves/<слот>.hm27 (JSON карьеры, gzip) и <слот>.meta.json (название, клуб, дата в игре, время сохранения).
+    // Текущий слот перезаписывается после каждого дня (автосохранение); «Сохранить как» — новый слот с новым названием.
+    const string SaveDir = "user://saves";
+    const string OldSavePath = "user://career.json";
+    public string CurrentSlot { get; private set; }
+
+    public sealed class SaveMeta
+    {
+        public string Slot { get; set; }
+        public string Name { get; set; }
+        public string Team { get; set; }
+        public string Date { get; set; }
+        public string Record { get; set; }
+        public string SavedAt { get; set; }
+        public string Version { get; set; }
+    }
+
+    static string DataPath(string slot) => $"{SaveDir}/{slot}.hm27";
+    static string MetaPath(string slot) => $"{SaveDir}/{slot}.meta.json";
+    static string NewSlotId() => "c" + DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
+
+    public void NewCareer(string team, string name = null)
     {
         Career = Career.New(Data, team, (int)(Time.GetUnixTimeFromSystem() % 1_000_000));
         ApplyAccent();
+        CurrentSlot = NewSlotId();
+        _slotName = string.IsNullOrWhiteSpace(name) ? DefaultName(team) : name.Trim();
         Save();
         ShowHub();
     }
 
-    public bool HasSave => FileAccess.FileExists(SavePath);
+    string _slotName;
+    public string CurrentName => _slotName;
+    public string DefaultName(string team) => Data.TeamByAbbr.TryGetValue(team, out var t) ? $"{t.Name} 2026-27" : team;
 
-    /// <summary>Клуб и дата сохранённой карьеры — для главного меню, без разбора всего файла.</summary>
-    public (string team, DateOnly? date) SaveInfo()
+    public bool HasSave { get { Migrate(); return Saves().Count > 0; } }
+
+    /// <summary>Все карьеры, свежие сверху.</summary>
+    public List<SaveMeta> Saves()
     {
-        try
+        var res = new List<SaveMeta>();
+        if (!DirAccess.DirExistsAbsolute(SaveDir)) return res;
+        foreach (var f in DirAccess.GetFilesAt(SaveDir))
         {
-            var head = ReadSave();
-            var t = System.Text.RegularExpressions.Regex.Match(head, "\"UserTeam\"\\s*:\\s*\"(\\w+)\"");
-            var d = System.Text.RegularExpressions.Regex.Match(head, "\"Today\"\\s*:\\s*\"([0-9-]+)\"");
-            return (t.Success ? t.Groups[1].Value : null, d.Success ? DateOnly.Parse(d.Groups[1].Value) : null);
+            if (!f.EndsWith(".meta.json")) continue;
+            try
+            {
+                var m = System.Text.Json.JsonSerializer.Deserialize<SaveMeta>(FileAccess.GetFileAsString($"{SaveDir}/{f}"));
+                if (m != null && FileAccess.FileExists(DataPath(m.Slot))) res.Add(m);
+            }
+            catch { }
         }
-        catch { return (null, null); }
+        return res.OrderByDescending(m => m.SavedAt).ToList();
     }
 
-    public void LoadCareer()
+    /// <summary>Старая единственная карьера (user://career.json) становится первым слотом.</summary>
+    void Migrate()
+    {
+        if (!FileAccess.FileExists(OldSavePath)) return;
+        DirAccess.MakeDirRecursiveAbsolute(SaveDir);
+        string slot = NewSlotId();
+        var bytes = FileAccess.GetFileAsBytes(OldSavePath);
+        using (var f = FileAccess.Open(DataPath(slot), FileAccess.ModeFlags.Write)) f?.StoreBuffer(bytes);
+        var text = Unzip(bytes);
+        var t = System.Text.RegularExpressions.Regex.Match(text, "\"UserTeam\"\\s*:\\s*\"(\\w+)\"");
+        var d = System.Text.RegularExpressions.Regex.Match(text, "\"Today\"\\s*:\\s*\"([0-9-]+)\"");
+        string team = t.Success ? t.Groups[1].Value : "";
+        WriteMeta(new SaveMeta { Slot = slot, Name = DefaultName(team), Team = team, Date = d.Success ? d.Groups[1].Value : "", SavedAt = DateTime.Now.ToString("s"), Version = Version });
+        DirAccess.RemoveAbsolute(OldSavePath);
+    }
+
+    static void WriteMeta(SaveMeta m)
+    {
+        using var f = FileAccess.Open(MetaPath(m.Slot), FileAccess.ModeFlags.Write);
+        f?.StoreString(System.Text.Json.JsonSerializer.Serialize(m, new System.Text.Json.JsonSerializerOptions { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }));
+    }
+
+    /// <summary>Последняя по времени карьера — для «Продолжить».</summary>
+    public SaveMeta Latest() => Saves().FirstOrDefault();
+
+    /// <summary>Клуб и дата последней карьеры — для главного меню.</summary>
+    public (string team, DateOnly? date) SaveInfo()
+    {
+        var m = Latest();
+        return m == null ? (null, null) : (m.Team, DateOnly.TryParse(m.Date, out var d) ? d : null);
+    }
+
+    public void LoadCareer() { var m = Latest(); if (m != null) LoadSlot(m.Slot); }
+
+    public void LoadSlot(string slot)
     {
         try
         {
-            Career = Career.FromJson(ReadSave(), Data);
+            var meta = Saves().FirstOrDefault(m => m.Slot == slot);
+            Career = Career.FromJson(Unzip(FileAccess.GetFileAsBytes(DataPath(slot))), Data);
+            CurrentSlot = slot;
+            _slotName = meta?.Name ?? DefaultName(Career.UserTeam);
             ApplyAccent();
             ShowHub();
         }
@@ -228,18 +303,53 @@ public partial class Main : Control
     public void Save()
     {
         if (Career == null) return;
+        DirAccess.MakeDirRecursiveAbsolute(SaveDir);
+        CurrentSlot ??= NewSlotId();
+        _slotName ??= DefaultName(Career.UserTeam);
         // сохранение сжато gzip: JSON карьеры за сезон — несколько мегабайт, сжатый — в 8–10 раз меньше
         var raw = System.Text.Encoding.UTF8.GetBytes(Career.ToJson());
         using var ms = new System.IO.MemoryStream();
         using (var gz = new System.IO.Compression.GZipStream(ms, System.IO.Compression.CompressionLevel.Optimal, true)) gz.Write(raw, 0, raw.Length);
-        using var f = FileAccess.Open(SavePath, FileAccess.ModeFlags.Write);
-        f?.StoreBuffer(ms.ToArray());
+        using (var f = FileAccess.Open(DataPath(CurrentSlot), FileAccess.ModeFlags.Write)) f?.StoreBuffer(ms.ToArray());
+        var row = Career.Table.GetValueOrDefault(Career.UserTeam);
+        WriteMeta(new SaveMeta { Slot = CurrentSlot, Name = _slotName, Team = Career.UserTeam, Date = Career.Today.ToString("yyyy-MM-dd"),
+            Record = row == null || row.Gp == 0 ? "" : $"{row.W}-{row.L}-{row.Otl}", SavedAt = DateTime.Now.ToString("s"), Version = Version });
     }
 
-    /// <summary>Текст сохранения: сжатое (gzip) или старое несжатое.</summary>
-    static string ReadSave()
+    /// <summary>«Сохранить как»: копия карьеры под новым названием; дальше автосохранение идёт в неё.</summary>
+    public void SaveAs(string name)
     {
-        var bytes = FileAccess.GetFileAsBytes(SavePath);
+        if (Career == null) return;
+        CurrentSlot = NewSlotId();
+        _slotName = string.IsNullOrWhiteSpace(name) ? DefaultName(Career.UserTeam) : name.Trim();
+        Save();
+    }
+
+    public void RenameSlot(string slot, string name)
+    {
+        var m = Saves().FirstOrDefault(x => x.Slot == slot);
+        if (m == null || string.IsNullOrWhiteSpace(name)) return;
+        m.Name = name.Trim();
+        WriteMeta(m);
+        if (slot == CurrentSlot) _slotName = m.Name;
+    }
+
+    public void DeleteSlot(string slot)
+    {
+        DirAccess.RemoveAbsolute(DataPath(slot));
+        DirAccess.RemoveAbsolute(MetaPath(slot));
+        if (slot == CurrentSlot) { CurrentSlot = null; _slotName = null; }
+    }
+
+    public void ShowSaves() => Show(new SavesScreen());
+
+    /// <summary>Размер файла текущего сохранения (для smoke).</summary>
+    public long CurrentSaveBytes => CurrentSlot == null ? 0 : FileAccess.GetFileAsBytes(DataPath(CurrentSlot)).Length;
+    string ReadCurrent() => Unzip(FileAccess.GetFileAsBytes(DataPath(CurrentSlot)));
+
+    /// <summary>Текст сохранения: сжатое (gzip) или старое несжатое.</summary>
+    static string Unzip(byte[] bytes)
+    {
         if (bytes.Length > 2 && bytes[0] == 0x1f && bytes[1] == 0x8b)
         {
             using var gz = new System.IO.Compression.GZipStream(new System.IO.MemoryStream(bytes), System.IO.Compression.CompressionMode.Decompress);

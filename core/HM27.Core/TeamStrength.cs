@@ -77,12 +77,26 @@ public static class TeamStrength
     }
 
     /// <summary>Сила клуба по данным базы (до начала карьеры: выбор клуба) — состав по умолчанию, оценки из данных.</summary>
-    public static (double att, double dfn) Estimate(GameData d, TeamData t)
+    /// <summary>
+    /// Сила клуба по данным базы на сезон — как её видит пресса. Травмированные учитываются по доле сезона, которую они пропустят
+    /// (missed: 0 — все здоровы, 1 — выбыли на весь сезон): травма на месяц почти не меняет прогноз на сезон.
+    /// По умолчанию — травмы на старте карьеры (в среднем ~25 дней из ~180 → 0,15).
+    /// </summary>
+    public const double START_MISSED = 0.15;
+    public static (double att, double dfn) Estimate(GameData d, TeamData t, double missed = START_MISSED)
     {
         var s = Cache.GetValue(d, Fit);
-        var l = Lineup.FromTeam(d, t, new HashSet<int>(t.Injured));
-        var ix = Index(d, l, l.G1, Est, id => MatchEngine.GsaxOf(d, id));
-        return (SPREAD * (s.A0 + s.A1 * ix.off), SPREAD * (s.D0 + s.D1 * ix.def + s.D2 * ix.g));
+        (double att, double dfn) One(HashSet<int> skip)
+        {
+            var l = Lineup.FromTeam(d, t, skip);
+            var ix = Index(d, l, l.G1, Est, id => MatchEngine.GsaxOf(d, id));
+            return (SPREAD * (s.A0 + s.A1 * ix.off), SPREAD * (s.D0 + s.D1 * ix.def + s.D2 * ix.g));
+        }
+        var healthy = One(new HashSet<int>());
+        if (t.Injured.Count == 0 || missed <= 0) return healthy;
+        var hurt = One(new HashSet<int>(t.Injured));
+        missed = Math.Clamp(missed, 0, 1);
+        return (healthy.att + missed * (hurt.att - healthy.att), healthy.dfn + missed * (hurt.dfn - healthy.dfn));
     }
 
     /// <summary>

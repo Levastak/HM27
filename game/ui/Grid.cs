@@ -99,7 +99,8 @@ public sealed class Grid<T>
         foreach (var col in _cols)
         {
             var c = col.Cell(r) ?? new Control();
-            if (!c.HasMeta("link")) c.MouseFilter = Control.MouseFilterEnum.Ignore;   // ссылки внутри строки остаются кликабельными
+            // ссылки и элементы управления (кнопки, списки, поля) внутри строки остаются нажимаемыми
+            if (!c.HasMeta("link") && c is not BaseButton && c is not LineEdit && c is not Godot.Range) c.MouseFilter = Control.MouseFilterEnum.Ignore;
             if (c is Label l) { l.HorizontalAlignment = col.Align; l.ClipText = true; l.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis; }
             Control cell = c;
             if (c is not Label)

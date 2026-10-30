@@ -160,8 +160,11 @@ public partial class HomePage : Control
                     pts.Add(new Vector2(0, h));
                     var poly = pts.ToArray();
                     Face.Glow(q, new Vector2(w * 0.6f, h * 0.45f), h * 0.5f, glow, 0.03f);
-                    Face.Player(q, hero, team, new Rect2(10, 10, w - 10, h - 10), poly, null, false);
-                    q.DrawLine(new Vector2(40, 0), new Vector2(0, h), new Color(1, 1, 1, 0.5f), 2, true);
+                    // подложка в цвете клуба со штриховкой, игрок — вырезанный, стоит прямо на ней
+                    q.DrawPolygon(poly, poly.Select(v2 => new Color(glow.Darkened(0.2f), 0.08f + 0.32f * (v2.X / w))).ToArray());
+                    for (float x = -h; x < w; x += 14) q.DrawLine(new Vector2(Math.Max(x, 0), h - Math.Max(0, -x)), new Vector2(x + h, 0), new Color(1, 1, 1, 0.025f), 5);
+                    Face.Player(q, hero, team, new Rect2(10, 10, w - 10, h - 10), poly, null, false, false);
+                    q.DrawLine(new Vector2(40, 0), new Vector2(0, h), new Color(glow, 0.6f), 2, true);
                     Face.Logo(q, team, new Rect2(w - 58, h - 58, 44, 44));
                 }
                 else Face.Logo(q, team, new Rect2(30, h / 2 - 90, 190, 180), 0.5f);
@@ -253,8 +256,9 @@ public partial class HomePage : Control
             q.Text(Ds.DisplayLight, 17, 0, 2, $"{Math.Round((1 - ph) * 100)}%", Ui.Text);
             q.Text(Ds.DisplayLight, 17, 0, 2, $"{Math.Round(ph * 100)}%", Ui.Text, HorizontalAlignment.Right, w);
             float bx = 64, bw = w - 128, split = (float)(1 - ph);
-            q.DrawLine(new Vector2(bx, 13), new Vector2(bx + bw * split - 2, 13), Ds.ClubBright(at), 5, true);
-            q.DrawLine(new Vector2(bx + bw * split + 2, 13), new Vector2(bx + bw, 13), Ds.ClubBright(ht), 5, true);
+            var (pa, phc) = MatchColors.Of(at, ht);
+            q.DrawLine(new Vector2(bx, 13), new Vector2(bx + bw * split - 2, 13), pa, 5, true);
+            q.DrawLine(new Vector2(bx + bw * split + 2, 13), new Vector2(bx + bw, 13), phc, 5, true);
         }) { TooltipText = "Шансы на победу по оценке аналитиков (с овертаймом и буллитами)", MouseFilter = MouseFilterEnum.Stop });
         v.AddChild(Ui.L(Pundits.Forecast(C.Data, g, o), 13, Ui.Muted).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart));
         var picks = News.Picks(C, g);
@@ -366,7 +370,7 @@ public partial class HomePage : Control
                 Ui.H(6, new ColorRect { Color = mc, CustomMinimumSize = new Vector2(3, 14), SizeFlagsVertical = SizeFlags.ShrinkCenter }, Ui.L(f.Handle, 12, Ui.Blue, Ui.Semi), Ui.Spacer(), Ui.L($"♥ {f.Likes}", 11, Ui.Dim), Ui.L(Ui.DateShort(f.Date), 11, Ui.Dim)),
                 Ui.L(f.Text, 13, Ui.Text).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart)));
         }
-        return Widget.Make("Трибуна", Ui.Margin(v, 14, 10, 14, 12), null, null, 0);
+        return Widget.Make("Трибуна", Ui.Margin(v, 14, 10, 14, 12), "Все посты →", () => Shell.I.Go("stands"), 0);
     }
 
     /// <summary>Рейтинг силы: десятка и мы, со сдвигом за неделю.</summary>
@@ -407,7 +411,7 @@ public partial class HomePage : Control
                 new TeamBadge(C.Team(p.Team), 18).Also(x => x.SizeFlagsVertical = SizeFlags.ShrinkCenter),
                 Ui.Expand(Ui.V(-2, Links.Player(C, p.Id, p.NameRu, 13, ours ? Colors.White : Ui.Text, Ui.Semi), Ui.L(top[0].line, 11, Ui.Muted)))));
         }
-        return Widget.Make("Гонка за призами", Ui.Margin(v, 14, 10, 14, 12), null, null, 0);
+        return Widget.Make("Гонка за призами", Ui.Margin(v, 14, 10, 14, 12), "Все претенденты →", () => Shell.I.Go("races"), 0);
     }
 
     Control Leaders()
@@ -460,11 +464,13 @@ public partial class SquadPage : Control
             var o = C.NextGame(C.UserTeam);
             head.AddChild(Ui.L($"Статус: {Pundits.Status(C, t.Abbr).label}", 12, Ui.Muted));
         }
-        else head.AddChild(Ui.L("Щёлкните игрока — профиль. Заголовок колонки — сортировка.", 12, Ui.Dim));
+        else head.AddChild(Ui.L(_cards ? "Щёлкните игрока — профиль." : "Щёлкните игрока — профиль. Заголовок колонки — сортировка.", 12, Ui.Dim));
+        head.AddChild(new Segmented(new[] { "Карточки", "Таблица" }, _cards ? 0 : 1, k => { _cards = k == 0; Build(); }));
         _box.AddChild(head);
 
         Func<PlayerData, bool> f = _filter switch { 1 => p => p.IsForward, 2 => p => p.IsDefense, 3 => p => p.IsGoalie, _ => p => true };
         var rows = all.Where(f).ToList();
+        if (_cards) { BuildCards(rows); return; }
         bool gk = _filter == 3;
         var age = C.Today;
         var cols = new List<Col<PlayerData>>
@@ -515,6 +521,65 @@ public partial class SquadPage : Control
         panel.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 14, null, 0).Also(s => s.ContentMarginTop = s.ContentMarginBottom = 0));
         panel.AddChild(grid.Root);
         _box.AddChild(panel);
+    }
+
+    static bool _cards = true;
+
+    /// <summary>Состав карточками: по позициям, в порядке звеньев; лицо в кольце рейтинга, место в составе, форма, настрой, свежесть.</summary>
+    void BuildCards(List<PlayerData> rows)
+    {
+        var cards = new List<CanvasItem>();
+        foreach (var (title, filter) in new (string, Func<PlayerData, bool>)[] { ("Нападающие", p => p.IsForward), ("Защитники", p => p.IsDefense), ("Вратари", p => p.IsGoalie) })
+        {
+            var group = rows.Where(filter).OrderBy(p => RoleOrder(p.Id)).ThenByDescending(p => Ds.Ovr(C, p)).ToList();
+            if (group.Count == 0) continue;
+            var flow = new HFlowContainer();
+            flow.AddThemeConstantOverride("h_separation", 12); flow.AddThemeConstantOverride("v_separation", 12);
+            foreach (var p in group) { var c = SquadCard(p); flow.AddChild(c); cards.Add(c); }
+            _box.AddChild(Ui.V(10, Ui.L($"{title} · {group.Count}", 14, Ui.Muted, Ui.Semi), flow));
+        }
+        Ds.Reveal(this, cards, 0.01f);
+    }
+
+    Control SquadCard(PlayerData p)
+    {
+        var t = C.Team(p.Team);
+        int ovr = Ds.Ovr(C, p);
+        string role = P.Role(p.Id, _abbr);
+        bool inj = C.Injured.Contains(p.Id);
+        var st = PlayerModel.State(C, p.Id);
+        var form = PlayerForm.Of(C, p.Id);
+        bool hover = false;
+        var card = new Paint(new Vector2(250, 104), q =>
+        {
+            float w = q.Size.X, h = q.Size.Y;
+            var sb = new StyleBoxFlat { BgColor = new Color(1, 1, 1, hover ? 0.085f : 0.05f), BorderColor = Ds.Edge }; sb.SetCornerRadiusAll(18); sb.SetBorderWidthAll(1);
+            q.DrawStyleBox(sb, new Rect2(0, 0, w, h));
+            var c = new Vector2(46, 44);
+            Face.Player(q, p, t, new Rect2(c.X - 25, c.Y - 25, 50, 50), Face.Circle(c, 25));
+            Face.Ring(q, c, 30, ovr, 3);
+            var parts = p.NameRu.Split(' ', 2);
+            float tx = 90, tw = w - tx - 12;
+            q.Text(Ui.Regular, 11, tx, 12, parts.Length > 1 ? Paint.Trim(Ui.Regular, parts[0], 11, tw) : "", Ui.Muted);
+            string last = parts.Length > 1 ? parts[1] : parts[0];
+            int ls = Paint.Fit(Ui.Semi, last, 16, tw - 26, 12);
+            q.Text(Ui.Semi, ls, tx, 27, Paint.Trim(Ui.Semi, last, ls, tw - 26), inj ? Ui.Loss : Ui.Text);
+            if (p.Num is int n) q.Text(Ds.DisplayLight, 12, w - 40, 14, n.ToString(), Ui.Dim, HorizontalAlignment.Right, 28);
+            q.Text(Ui.Regular, 11, tx, 50, $"{Ds.PosShort(p.Pos)}  ·  {role}", inj ? Ui.Loss : role == "Запас" ? Ui.Dim : Ui.Muted);
+            // форма и настрой словами
+            string fw = form.Games < 3 ? "" : form.Word;
+            var fc = form.Word switch { "Отличная" => Ui.Win, "Хорошая" => new Color("8BD3A0"), "Спад" => Ui.Otl, "Провал" => Ui.Loss, _ => Ui.Muted };
+            float x = tx;
+            if (fw.Length > 0) x += q.Text(Ui.Semi, 11, x, 70, (form.Arrow > 0 ? "↑ " : form.Arrow < 0 ? "↓ " : "") + fw, fc) + 10;
+            if (st != null) q.Text(Ui.Regular, 11, x, 70, Paint.Trim(Ui.Regular, "настрой " + Morale.Word(st.Morale).ToLowerInvariant(), 11, w - x - 12), st.Morale >= 67 ? Ui.Muted : st.Morale >= 47 ? Ui.Dim : Ui.Otl);
+            float fr = st?.Fresh ?? 100;
+            q.DrawLine(new Vector2(14, h - 8), new Vector2(w - 14, h - 8), new Color(1, 1, 1, 0.07f), 2);
+            q.DrawLine(new Vector2(14, h - 8), new Vector2(14 + (w - 28) * fr / 100f, h - 8), Ds.FreshCol(fr), 2);
+        }) { MouseFilter = MouseFilterEnum.Stop, MouseDefaultCursorShape = CursorShape.PointingHand, TooltipText = $"{p.NameRu} — профиль" };
+        card.MouseEntered += () => { hover = true; card.QueueRedraw(); };
+        card.MouseExited += () => { hover = false; card.QueueRedraw(); };
+        card.GuiInput += e => { if (e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left }) Shell.I.Go("player", null, p.Id.ToString()); };
+        return card;
     }
 
     int RoleOrder(int id)

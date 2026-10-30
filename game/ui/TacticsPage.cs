@@ -97,7 +97,7 @@ public partial class TacticsPage : Control
             foreach (var i in levers) v.AddChild(LeverCard(i, views[i]));
         }
         var panel = new PanelContainer { CustomMinimumSize = new Vector2(370, 0) };
-        panel.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 14, null, 12));
+        panel.AddThemeStyleboxOverride("panel", Ds.GlassBoxStyle(Ds.R_L, 14, 0.05f));
         panel.AddChild(Ui.Scroll(v));
         return panel;
     }
@@ -242,7 +242,7 @@ public partial class TacticsPage : Control
         v.AddChild(Card(who));
 
         var panel = new PanelContainer { CustomMinimumSize = new Vector2(380, 0) };
-        panel.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 14, null, 14));
+        panel.AddThemeStyleboxOverride("panel", Ds.GlassBoxStyle(Ds.R_L, 16, 0.05f));
         panel.AddChild(Ui.Scroll(v));
         return panel;
     }
@@ -250,7 +250,7 @@ public partial class TacticsPage : Control
     static Control Card(Control content)
     {
         var p = new PanelContainer();
-        p.AddThemeStyleboxOverride("panel", Ui.Box(new Color(0, 0, 0, 0.18f), 3, Ui.Line, 10));
+        p.AddThemeStyleboxOverride("panel", Ui.Box(new Color(1, 1, 1, 0.035f), 14, Ds.Edge, 12));
         p.AddChild(content);
         return p;
     }
@@ -259,7 +259,7 @@ public partial class TacticsPage : Control
     {
         var name = Links.Player(C, p.Id, C.Short(p.Id), 13);
         name.CustomMinimumSize = new Vector2(120, 0);
-        return Ui.H(8, Ui.L(Ui.PosRu(p.Pos), 11, Ui.Dim).Also(l => l.CustomMinimumSize = new Vector2(22, 0)), name,
+        return Ui.H(8, new FaceDot(C, p, 28, false, false), Ui.L(Ui.PosRu(p.Pos), 11, Ui.Dim).Also(l => l.CustomMinimumSize = new Vector2(22, 0)), name,
             Ui.Expand(FitBar(Math.Clamp(f * 2.5, -2.5, 2.5))), Ui.L(FitWord(f * 2.5), 11, FitColor(f * 2.5)).Also(l => l.CustomMinimumSize = new Vector2(76, 0)));
     }
 }

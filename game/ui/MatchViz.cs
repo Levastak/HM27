@@ -6,24 +6,57 @@ using HM27.Core;
 
 namespace HM27.UI;
 
-/// <summary>Цвета двух клубов в матче, различимые на тёмном фоне и между собой.</summary>
+/// <summary>
+/// Цвета двух клубов в матче — «как на льду»: хозяева в своём основном цвете, гости — в своём, если он заметно отличается,
+/// иначе во втором цвете, иначе в белом (как выездная форма). Так два «красных» клуба не сливаются в графиках, табло и полосах.
+/// </summary>
 public static class MatchColors
 {
-    public static Color Vis(Color x) { for (int i = 0; i < 6 && x.Luminance < 0.35f; i++) x = x.Lightened(0.15f); return x; }
-
-    public static (Color away, Color home) Of(Career c, ScheduledGame g)
+    public static readonly Color Away = new("E6EDF5");
+    /// <summary>Тёмный цвет формы — читаемым на тёмном фоне: поднимаем яркость (HSV), не смешивая с белым, иначе все цвета сходятся в серый;
+    /// насыщенность снижаем, только если ярче уже некуда (чистый синий).</summary>
+    public static Color Vis(Color x)
     {
-        var a = Vis(new Color(c.Team(g.Away).Colors[0]));
-        var h = Vis(new Color(c.Team(g.Home).Colors[0]));
-        if (Diff(a, h) < 0.25f)
+        float h = x.H, s = x.S, v = x.V;
+        for (int i = 0; i < 20 && x.Luminance < 0.35f; i++)
         {
-            var alt = c.Team(g.Home).Colors.Count > 1 ? Vis(new Color(c.Team(g.Home).Colors[1])) : new Color("D8DEE9");
-            h = Diff(a, alt) >= 0.25f ? alt : new Color("D8DEE9");
+            if (v < 1) v = Math.Min(1, v + 0.05f); else s = Math.Max(0, s - 0.08f);
+            x = Color.FromHsv(h, s, v);
         }
-        return (a, h);
+        return x;
     }
 
-    static float Diff(Color a, Color b) => Math.Abs(a.R - b.R) + Math.Abs(a.G - b.G) + Math.Abs(a.B - b.B);
+    /// <summary>Различие цветов 0…~1 (взвешенное по восприятию RGB).</summary>
+    public static float Diff(Color a, Color b)
+    {
+        float rm = (a.R + b.R) / 2, dr = a.R - b.R, dg = a.G - b.G, db = a.B - b.B;
+        return Mathf.Sqrt((2 + rm) * dr * dr + 4 * dg * dg + (3 - rm) * db * db) / 3f;
+    }
+
+    const float MIN = 0.28f;
+
+    /// <summary>Цвета для линий, полос и текста на тёмном фоне.</summary>
+    public static (Color away, Color home) Of(TeamData away, TeamData home)
+    {
+        var h = Vis(new Color(home.Colors[0]));
+        foreach (var c in away.Colors.Take(2).Select(x => Vis(new Color(x))))
+            if (Diff(c, h) >= MIN && c.Luminance < 0.92f) return (c, h);
+        return (Away, h);
+    }
+    public static (Color away, Color home) Of(Career c, ScheduledGame g) => Of(c.Team(g.Away), c.Team(g.Home));
+
+    /// <summary>Заливки плашек (табло, заставка, финал): насыщенные цвета формы, гости — по тому же правилу.</summary>
+    public static (Color away, Color home) Fill(TeamData away, TeamData home)
+    {
+        var h = Broadcast.Fill(home);
+        foreach (var x in away.Colors.Take(2))
+        {
+            var c = new Color(x);
+            if (c.Luminance < 0.05f) c = c.Lightened(0.18f);
+            if (Diff(c, h) >= 0.2f) return (c, h);
+        }
+        return (new Color("D9DFE7"), h);
+    }
 }
 
 /// <summary>
