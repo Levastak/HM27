@@ -289,7 +289,8 @@ public static class ShiftEngine
             double tempo = (1 + MatchEngine.TEMPO_K * home.Tempo) * (1 + MatchEngine.TEMPO_K * away.Tempo);
             foreach (var (t, o) in new[] { (H, A), (A, H) })
             {
-                t.Mult = Math.Exp(playoff ? 0 : t.Home ? HA_LOG : -HA_LOG) * tempo * (playoff ? MatchEngine.PO_TOT : 1);
+                t.Mult = Math.Exp(playoff ? 0 : t.Home ? HA_LOG : -HA_LOG) * tempo * (playoff ? MatchEngine.PO_TOT : 1)
+                    * Math.Exp((t.S.Sys?.For ?? 0) + (o.S.Sys?.Against ?? 0));   // системы игры (Tactics)
                 if (t.S.B2B && !o.S.B2B) t.Mult *= MatchEngine.B2B;
                 if (o.S.B2B && !t.S.B2B) t.Mult /= MatchEngine.B2B;
             }
@@ -315,22 +316,22 @@ public static class ShiftEngine
                     Id = id, P = p, D = isD, Off = dOff, Def = TeamStrength.Damp(def), Fin = a("fin"),
                     FinPart = FIN_SHARE * (a("fin") - 11) * dr, Phi = 5 * spread * sc.A1 * FIN_SHARE * dr,
                     Pp = a("pp"), Pk = a("pk"), BlkW = Math.Exp(0.06 * (a("blk") - 11)),
-                    Drain = DRAIN * (1 + 0.05 * (11 - a("sta"))),
+                    Drain = DRAIN * (1 + 0.05 * (11 - a("sta"))) * (s.Sys?.Drain ?? 1),
                     Thru = tr.Contains("thru"), BlkT = tr.Contains("blk"), Draw = tr.Contains("draw"), Tip = tr.Contains("tip"), Back = tr.Contains("back"),
                     Wrap = tr.Contains("wrap"), Slap = tr.Contains("slap"), NetT = tr.Contains("net") || tr.Contains("reb") || tr.Contains("tip"),
                     Box = new PlayerBox(),
                 };
                 double shootSkill = (a("fin") + a("pwr") + a("lng")) / 3 - 11;
-                sk.W = (isD ? D_SHOT_W : 1) * Math.Exp(SHOOT_K * shootSkill) * (tr.Contains("shoot") ? (isD ? SHOOT_TRAIT + 0.15 : SHOOT_TRAIT) : 1) * (tr.Contains("pass") ? 0.8 : 1) * (tr.Contains("jump") ? 1.2 : 1);
+                sk.W = (isD ? D_SHOT_W * (s.Sys?.DW ?? 1) : 1) * Math.Exp(SHOOT_K * shootSkill) * (tr.Contains("shoot") ? (isD ? SHOOT_TRAIT + 0.15 : SHOOT_TRAIT) : 1) * (tr.Contains("pass") ? 0.8 : 1) * (tr.Contains("jump") ? 1.2 : 1);
                 double pv = (a("pas") + a("vis")) / 2 - 11;
                 sk.Pass = isD ? 0.45 * Math.Exp(0.11 * pv) : Math.Exp(0.22 * pv) * (tr.Contains("pass") ? 1.4 : 1);
                 sk.A2W = (isD ? 0.6 : 1) * Math.Exp(0.15 * pv);
-                sk.PenW = Math.Exp(-0.2 * (a("dis") - 11)) * (isD ? 1.1 : 1) * (tr.Contains("hit") ? 1.2 : 1) * (tr.Contains("fight") ? 1.3 : 1);
+                sk.PenW = Math.Exp(-0.2 * (a("dis") - 11)) * (isD ? 1.1 : 1) * (tr.Contains("hit") ? 1.2 : 1) * (tr.Contains("fight") ? 1.3 : 1) * (s.Sys?.Pen ?? 1);
                 // откуда бросает: «у ворот» — пятак, подправления, добивания; «издали» — дальний бросок
                 var z = ZONE[isD ? 1 : 0];
                 double c0 = Math.Log(z[0]) + 0.12 * (a("net") - 11) + (sk.NetT ? 0.45 : 0) + (tr.Contains("jump") ? 0.5 : 0);
                 double c1 = Math.Log(z[1]) + (tr.Contains("jump") ? 0.3 : 0);
-                double c2 = Math.Log(z[2]) + 0.12 * (a("lng") - 11) + (tr.Contains("far") ? 0.5 : 0);
+                double c2 = Math.Log(z[2]) + 0.12 * (a("lng") - 11) + (tr.Contains("far") ? 0.5 : 0) + Math.Log(s.Sys?.Far ?? 1);
                 double m = Math.Max(c0, Math.Max(c1, c2)), e0 = Math.Exp(c0 - m), e1 = Math.Exp(c1 - m), e2 = Math.Exp(c2 - m), es = e0 + e1 + e2;
                 sk.Zone[0] = e0 / es; sk.Zone[1] = e1 / es; sk.Zone[2] = e2 / es;
                 sk.OtVal = dOff + 0.4 * sk.Def + 0.1 * (a("spd") - 11);
@@ -698,7 +699,7 @@ public static class ShiftEngine
             t.Lc = baseG / 3600 * norm * K_CAL * t.Mult * Math.Exp(att + dfn) * seG * foG;
             // часть силы атаки и обороны — в качестве бросков (реализации), а не в их числе: голы те же, но за сильной обороной
             // вратарь видит броски похуже, а у сильной атаки выше реализация (зеркальная проверка вратарей: % отражённых устойчив)
-            t.Q = seG / seA * foG / foA * ATT_Q * Math.Exp(QS_A * (att - spread * sc.MA) + QS_D * (dfn - spread * sc.MY));
+            t.Q = seG / seA * foG / foA * ATT_Q * (t.S.Sys?.Q ?? 1) * Math.Exp(QS_A * (att - spread * sc.MA) + QS_D * (dfn - spread * sc.MY));
             t.HitRate = t.TkRate = t.GvRate = 0;
             foreach (var sk in t.On) { t.HitRate += sk.HitR; t.TkRate += sk.TkR; t.GvRate += sk.GvR; }
             // ожидаемая отдача попытки при этом составе (без поправки на вратаря и завершение — они в среднем 1)

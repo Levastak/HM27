@@ -65,3 +65,67 @@ static class CoachCheck
             data.Teams.Count, netWorse, upset, famLoss);
     }
 }
+
+/// <summary>Системы игры: что выбрал каждый клуб, пригодность и проверка движком (общие случайные числа).</summary>
+static class TacticsCheck
+{
+    public static (double bothPoles, double fcPlus, double modelErr, int distinct) Run(GameData data, bool verbose, int reps = 12)
+    {
+        var c = Career.New(data, "MIN", 515);
+        var picks = new Dictionary<string, int>();
+        foreach (var t in data.Teams)
+        {
+            var l = c.Lineups[t.Abbr];
+            string sig = string.Join("", l.Sys.Select(v => v < 0 ? "−" : v > 0 ? "+" : "0"));
+            picks[sig] = picks.GetValueOrDefault(sig) + 1;
+            if (verbose)
+                Console.WriteLine($"{t.Abbr}: {sig}  " + string.Join("  ", Enumerable.Range(0, Tactics.Levers.Length).Select(i =>
+                    $"{Tactics.Levers[i].Key} {Tactics.Fit(c, l, Tactics.Levers[i], -1):+0.0;-0.0}/{Tactics.Fit(c, l, Tactics.Levers[i], 1):+0.0;-0.0}")));
+        }
+        if (verbose) Console.WriteLine("Системы клубов: " + string.Join(", ", picks.OrderByDescending(x => x.Value).Select(x => $"{x.Key} ×{x.Value}")));
+        int[] cnt(int lever, int v) => new[] { data.Teams.Count(t => c.Lineups[t.Abbr].SysOf(lever) == v) };
+        double fcM = cnt(0, -1)[0], fcP = cnt(0, 1)[0];
+
+        // движок против модели: клуб играет свои матчи с разными системами (те же случайные числа)
+        double err = 0; int nErr = 0;
+        foreach (var team in reps > 0 ? new[] { "MIN", "SJS", "COL" } : Array.Empty<string>())
+        {
+            var games = c.Games.Where(g => !g.Playoff && (g.Home == team || g.Away == team)).Take(41).ToList();
+            var keep = (int[])c.Lineups[team].Sys.Clone(); var keepL = new Dictionary<string, float>(c.Lineups[team].Learn);
+            (double gf, double ga, double model) Play(int[] sys)
+            {
+                c.Lineups[team].Sys = sys; c.Lineups[team].Learn = new();
+                for (int i = 0; i < sys.Length; i++) if (sys[i] != 0) c.Lineups[team].Learn[Tactics.Levers[i].Key + (sys[i] < 0 ? "-" : "+")] = 1;
+                double gf = 0, ga = 0, model = 0;
+                foreach (var g in games)
+                {
+                    var (h, a) = c.Sides(g);
+                    bool home = g.Home == team;
+                    var o = MatchEngine.Odds(data, h, a, false);
+                    model += home ? o.LamHome - o.LamAway : o.LamAway - o.LamHome;
+                    for (int k = 0; k < reps; k++)
+                    {
+                        var r = ShiftEngine.Play(data, h, a, new Random(k * 7919 + g.Id), false);
+                        gf += home ? r.HomeGoals : r.AwayGoals; ga += home ? r.AwayGoals : r.HomeGoals;
+                    }
+                }
+                int n = games.Count * reps;
+                return (gf / n, ga / n, model / games.Count);
+            }
+            var b = Play(new int[Tactics.Levers.Length]);
+            for (int lv = 0; lv < Tactics.Levers.Length; lv++)
+                foreach (int v in new[] { -1, 1 })
+                {
+                    var sys = new int[Tactics.Levers.Length]; sys[lv] = v;
+                    var x = Play(sys);
+                    double dEng = (x.gf - x.ga) - (b.gf - b.ga), dMod = x.model - b.model;
+                    err += Math.Abs(dEng - dMod); nErr++;
+                    if (verbose) Console.WriteLine($"  {team} {Tactics.PoleName(Tactics.Levers[lv], v),-18} пригодность {Tactics.Fit(c, c.Lineups[team], Tactics.Levers[lv], v),5:+0.0;-0.0}: " +
+                        $"движок {x.gf - b.gf:+0.00;-0.00} / {x.ga - b.ga:+0.00;-0.00} (разница {dEng:+0.00;-0.00}), модель {dMod:+0.00;-0.00}");
+                }
+            c.Lineups[team].Sys = keep; c.Lineups[team].Learn = keepL;
+        }
+        int bothPoles = Enumerable.Range(0, Tactics.Levers.Length).Count(i => cnt(i, -1)[0] >= 3 && cnt(i, 1)[0] >= 3);
+        return (bothPoles, fcP, nErr > 0 ? err / nErr : 0, picks.Count);
+    }
+}

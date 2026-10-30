@@ -42,7 +42,7 @@ public partial class Shell : Control
             new Item("Раздевалка", "heart-pulse", "room", null, "Настрой игроков и команды: кто доволен, кто нет"),
             new Item("Статистика", "chart-column", "squad", "stats", "Очки, броски, время на льду"),
             new Item("Лазарет", "cross", "medical", null, "Травмы и сроки возвращения"),
-            new Item("Тактика", "swords", null, null, "Этап «Тренер»", Soon: true),
+            new Item("Тактика", "swords", "tactics", null, "Система игры: форчек, вход в зону, защитники, броски"),
         }),
         new Section("training", "Тренировки", new[]
         {
@@ -86,7 +86,7 @@ public partial class Shell : Control
     string SectionOf(Nav n) => n.Page switch
     {
         "home" or "inbox" => "portal",
-        "squad" or "lines" or "medical" or "room" => "team",
+        "squad" or "lines" or "medical" or "room" or "tactics" => "team",
         "schedule" => "calendar",
         "club" => n.Arg == null || n.Arg == C.UserTeam ? "club" : null,
         "comp" => "league",
@@ -177,6 +177,7 @@ public partial class Shell : Control
             "club" => _cur.Sub == "schedule" ? Embedded("calendar:" + (_cur.Arg ?? C.UserTeam)) : _cur.Sub == "players" ? new SquadPage(_cur.Arg ?? C.UserTeam) : _cur.Sub == "stats" ? new TeamStatsPage(_cur.Arg ?? C.UserTeam) : new ClubPage(_cur.Arg ?? C.UserTeam),
             "medical" => new MedicalPage(),
             "room" => new RoomPage(),
+            "tactics" => new TacticsPage(_cur.Arg),
             _ => new HomePage(),
         };
         _page.AddChild(view);
@@ -468,6 +469,7 @@ public partial class Shell : Control
             "club" => (t.Name, rec),
             "medical" => ("Лазарет", rec),
             "room" => ("Раздевалка", rec),
+            "tactics" => ("Тактика", rec),
             _ => (t.Name, rec),
         };
     }

@@ -23,6 +23,8 @@ public sealed class MatchSide
     public int Tempo;
     /// <summary>Когда снимать вратаря (секунд до конца) при −1 и −2; null — как обычно в НХЛ.</summary>
     public double? Pull1, Pull2;
+    /// <summary>Система игры на этот матч (Tactics.Of); null — обычная.</summary>
+    public Tactics.Effect Sys;
 }
 
 public sealed class GoalEvent
@@ -169,6 +171,9 @@ public static class MatchEngine
         else if (!neutral) { lh *= HA_MULT; la /= HA_MULT; }
         double tempo = (1 + TEMPO_K * home.Tempo) * (1 + TEMPO_K * away.Tempo);
         lh *= tempo; la *= tempo;
+        // системы игры: свои голы и голы против
+        lh *= Math.Exp((home.Sys?.For ?? 0) + (away.Sys?.Against ?? 0));
+        la *= Math.Exp((away.Sys?.For ?? 0) + (home.Sys?.Against ?? 0));
 
         double phr0 = 0, par0 = 0;
         for (int i = 0; i < 13; i++)

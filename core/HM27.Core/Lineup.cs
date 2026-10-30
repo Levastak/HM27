@@ -24,6 +24,19 @@ public sealed class Lineup
     /// <summary>Старые сохранения: «снимать раньше» → Pull = 1 (не записывается).</summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
     public bool EarlyPull { get => false; set { if (value) Pull = Coach.EARLY; } }
+    /// <summary>Система игры клуба: полюса рычагов Tactics.Levers (−1 / 0 / +1); null — обычная.</summary>
+    public int[] Sys { get; set; }
+    /// <summary>Выучка схем (ключ — рычаг и полюс, «fc+»): 0–1.</summary>
+    public Dictionary<string, float> Learn { get; set; }
+    public double Learned(string key) => Learn != null && Learn.TryGetValue(key, out var v) ? v : 0;
+    public int SysOf(int lever) => Sys != null && lever < Sys.Length ? Sys[lever] : 0;
+
+    /// <summary>Тактические настройки клуба (не звенья): темп, снятие вратаря, отдых вратаря, система и её выучка.</summary>
+    public void CopySettings(Lineup from)
+    {
+        Tempo = from.Tempo; TempoAuto = from.TempoAuto; Pull = from.Pull; BackupOnB2B = from.BackupOnB2B;
+        Sys = (int[])from.Sys?.Clone(); Learn = from.Learn == null ? null : new(from.Learn);
+    }
     public double[] FMin { get; set; } = { 20, 17, 14, 9 };
     public double[] DMin { get; set; } = { 24, 20, 16 };
     /// <summary>Во втором матче за два дня в воротах запасной.</summary>
@@ -140,7 +153,7 @@ public sealed class Lineup
         F = F.Select(a => (int[])a.Clone()).ToList(),
         D = D.Select(a => (int[])a.Clone()).ToList(),
         G1 = G1, G2 = G2, Pp1 = (int[])Pp1.Clone(), Pp2 = (int[])Pp2.Clone(), Pk1 = (int[])Pk1.Clone(), Pk2 = (int[])Pk2.Clone(),
-        Tempo = Tempo, TempoAuto = TempoAuto, Pull = Pull,
+        Tempo = Tempo, TempoAuto = TempoAuto, Pull = Pull, Sys = (int[])Sys?.Clone(), Learn = Learn == null ? null : new(Learn),
         FMin = (double[])FMin.Clone(), DMin = (double[])DMin.Clone(), BackupOnB2B = BackupOnB2B,
     };
 

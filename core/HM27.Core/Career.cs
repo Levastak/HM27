@@ -159,6 +159,7 @@ public sealed class Career
         // травмированные на старте (по реальным данным): помощник знает, куда их вернуть — как в составе здорового клуба
         {
             var ul = c.Lineups[c.UserTeam];
+            Tactics.Init(c);
             // свой клуб: темп и снятие вратаря по совету помощника на каждый матч (тренер может решить сам)
             ul.TempoAuto = true; ul.Pull = Coach.ASSIST;
             var full = Lineup.FromTeam(data, data.TeamByAbbr[c.UserTeam], new HashSet<int>());
@@ -376,6 +377,7 @@ public sealed class Career
     public (MatchSide home, MatchSide away) Sides(ScheduledGame g, bool preview = false)
     {
         var h = Side(g.Home, g.Date, preview, g.Playoff); var a = Side(g.Away, g.Date, preview, g.Playoff);
+        if (BottomUp) Tactics.Prepare(this, h, a);
         Coach.Prepare(this, g, h, a);
         return (h, a);
     }
@@ -399,7 +401,7 @@ public sealed class Career
                 // ИИ ставит звенья как в НХЛ, с поправкой на травмы (вернувшиеся из лазарета — снова в составе)
                 var keep = Lineups[t];
                 var l = Lineup.FromTeam(Data, Data.TeamByAbbr[t], inj);
-                l.Tempo = keep.Tempo; l.TempoAuto = keep.TempoAuto; l.Pull = keep.Pull;
+                l.CopySettings(keep);
                 Lineups[t] = l;
             }
         }
@@ -414,6 +416,7 @@ public sealed class Career
         InjuryModel.AfterGame(this, g, new Random(unchecked(Seed * 104729 + g.Id)));
         Fatigue.AfterGame(this, g);
         Morale.AfterGame(this, g);
+        Tactics.AfterGame(this, g);
         if (!mine) { r.Events = new(); r.Box = new(); }   // хронику и протокол храним только для своих матчей — сохранение не раздувается
         foreach (var (side, abbr) in new[] { (h, g.Home), (a, g.Away) })
             GoalieStreak[abbr] = side.Goalie == Lineups[abbr].G1 ? GoalieStreak.GetValueOrDefault(abbr) + 1 : 0;
@@ -456,6 +459,7 @@ public sealed class Career
         if (Phase == Phase.Playoffs) SchedulePlayoffDay();
         InboxWriter.Periodic(this);
         Morale.Daily(this);
+        Tactics.Daily(this);
         Decisions.Daily(this);
         News.NewDay(this);
     }

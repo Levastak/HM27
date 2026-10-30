@@ -421,7 +421,7 @@ public partial class LinesView : HBoxContainer
 
     void Set(Lineup l)
     {
-        l.Tempo = L.Tempo; l.TempoAuto = L.TempoAuto; l.Pull = L.Pull; l.BackupOnB2B = L.BackupOnB2B;
+        l.CopySettings(L);
         C.Lineups[C.UserTeam] = l;
         Changed();
     }

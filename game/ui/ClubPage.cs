@@ -84,6 +84,7 @@ public partial class ClubPage : Control
         FL("Лучший бомбардир", best.Key != 0 ? Links.Player(C, best.Key, $"{C.Short(best.Key)} ({best.Value.Pts})", 14, null, Ui.Semi) : Ui.L("—", 14, Ui.Text, Ui.Semi));
         F("В лазарете", $"{C.Injured.Count(id => C.Data.PlayerById[id].Team == t.Abbr)}");
         F("Темп игры", l.TempoAuto ? "По сопернику" : l.Tempo switch { -1 => "Закрытый", 1 => "Открытый", _ => "Обычный" });
+        F("Система игры", SysText(l));
         var v2 = Ui.V(10, Ui.L(t.Name, 34, Ui.Text, Ui.CondBold), g);
         if (t.Abbr != C.UserTeam)
         {
@@ -202,6 +203,14 @@ public partial class ClubPage : Control
         }, rows, x => Shell.I.Go("player", null, x.p.Id.ToString()));
         return Widget.Make("Лидеры клуба", grid.Root, "Состав →", () => Shell.I.Go("club", "players", t.Abbr), 0);
     }
+
+    static string SysText(Lineup l)
+    {
+        var parts = Enumerable.Range(0, Tactics.Levers.Length).Where(i => l.SysOf(i) != 0).Select(i => Tactics.PoleName(Tactics.Levers[i], l.SysOf(i)).ToLowerInvariant()).ToList();
+        if (parts.Count == 0) return "обычная";
+        var t = string.Join(", ", parts);
+        return char.ToUpper(t[0]) + t[1..];
+    }
 }
 
 /// <summary>Камера, медленно облетающая арену.</summary>
@@ -250,4 +259,5 @@ public partial class PlaceChart : Control
                 DrawString(Ui.Regular, new Vector2(pts[i].X, sz.Y - 4), Ui.DateShort(_s[i].d).Split(' ')[1], HorizontalAlignment.Left, -1, 10, Ui.Dim);
             }
     }
+
 }

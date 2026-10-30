@@ -86,6 +86,7 @@ if (args.Length > 1 && args[1] == "news")
     Console.WriteLine($"Сумма сейвов сверх ожидаемых по лиге: {nc.Goalies.Values.Sum(g => g.Gsax):0.0} при {nc.Goalies.Values.Sum(g => g.Ga)} пропущенных; xG полевых {nc.Skaters.Values.Sum(s => s.Ixg):0} при {nc.Skaters.Values.Sum(s => s.G)} голах");
     return 0;
 }
+if (args.Length > 1 && args[1] == "tactics") { TacticsCheck.Run(data, true, args.Length > 2 ? int.Parse(args[2]) : 12); return 0; }
 if (args.Length > 1 && args[1] == "coach") { CoachCheck.Run(data, true); return 0; }
 if (args.Length > 1 && args[1] == "engine") { EngineReport.Run(data, args.Length > 2 ? int.Parse(args[2]) : 1); return 0; }
 Console.WriteLine($"База: {data.Teams.Count} клубов, {data.Players.Count} игроков, данные на {data.DataDate}; голов за матч на команду {data.League.GoalsPerGame:F3}");
@@ -438,9 +439,12 @@ Check("Плей-офф", playoffsOk, $"15 серий и чемпион в каж
     {
         // нет одного верного решения: лучший план помощника зависит от соперника, вариант состава не бесплатный
         var cc = CoachCheck.Run(data, false);
-        Check("Нет одного верного решения", cc.PullP90 - cc.PullP10 >= 60 && cc.Closed >= 0.1 && cc.Open >= 0.1 && cc.Normal >= 0.1 && cc.WithFamLoss >= cc.Clubs / 2,
+        var tc = TacticsCheck.Run(data, false, 0);
+        Check("Нет одного верного решения", cc.PullP90 - cc.PullP10 >= 60 && cc.Closed >= 0.1 && cc.Open >= 0.1 && cc.Normal >= 0.1 && cc.WithFamLoss >= cc.Clubs / 2
+            && tc.distinct >= 12 && tc.bothPoles == Tactics.Levers.Length,
             $"снятие при −1 по расчёту: от {Coach.Clock(cc.PullP10)} до {Coach.Clock(cc.PullP90)} (10–90%); темп по сопернику: закрытый {100 * cc.Closed:0}%, обычный {100 * cc.Normal:0}%, открытый {100 * cc.Open:0}%; " +
-            $"вариант состава теряет в сыгранности у {cc.WithFamLoss} из {cc.Clubs} клубов, обижает кого-то у {cc.WithUpset}, хуже текущего с учётом сыгранности у {cc.NetWorse}");
+            $"вариант состава теряет в сыгранности у {cc.WithFamLoss} из {cc.Clubs} клубов, обижает кого-то у {cc.WithUpset}, хуже текущего с учётом сыгранности у {cc.NetWorse}; " +
+            $"систем игры под состав у 32 клубов: {tc.distinct} разных, рычагов, где оба полюса выбраны хотя бы тремя клубами: {tc.bothPoles} из {Tactics.Levers.Length}");
     }
 }
 
