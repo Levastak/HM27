@@ -396,6 +396,23 @@ public sealed class Career
     public MatchResult Play(ScheduledGame g)
     {
         if (g.Played) return g.Result;
+        var (h, a) = PrepareMatch(g);
+        // новые карьеры — движок по сменам; старые сохранения (сила модели) — движок «матч целиком»
+        MatchResult r;
+        if (BottomUp && ShiftEngine.Enabled)
+        {
+            // перерывы: помощники обоих клубов решают по своим правилам (база — план на матч)
+            var hb = (h.Tempo, h.Plan ?? h.Lineup.Sys); var ab = (a.Tempo, a.Plan ?? a.Lineup.Sys);
+            r = ShiftEngine.Play(Data, h, a, RngFor(g), g.Playoff, sim => Rules.Break(this, sim, hb, ab));
+        }
+        else r = MatchEngine.Play(Data, h, a, RngFor(g), g.Playoff);
+        Complete(g, h, a, r);
+        return r;
+    }
+
+    /// <summary>Перед матчем: звенья с учётом травм (свой клуб — места выбывших запомнены, ИИ — как в НХЛ) и стороны с планами.</summary>
+    (MatchSide h, MatchSide a) PrepareMatch(ScheduledGame g)
+    {
         var inj = Injured.ToHashSet();
         foreach (var t in new[] { g.Home, g.Away })
         {
@@ -413,16 +430,57 @@ public sealed class Career
                 Lineups[t] = l;
             }
         }
-        var (h, a) = Sides(g);
-        // новые карьеры — движок по сменам; старые сохранения (сила модели) — движок «матч целиком»
-        MatchResult r;
-        if (BottomUp && ShiftEngine.Enabled)
+        return Sides(g);
+    }
+
+    /// <summary>
+    /// Свой матч в трансляции: движок по шагам. В перерывах ИИ решает сам, а свой клуб — тренер (помощник советует);
+    /// FinishLive доигрывает (оставшиеся перерывы — по правилам помощника) и записывает матч как обычно.
+    /// </summary>
+    public sealed class LiveGame
+    {
+        public ScheduledGame G; public ShiftEngine.Sim Sim; public MatchSide H, A;
+        public (int tempo, int[] sys) HB, AB;
+        public bool UserHome; public bool AtBreak;
+        public MatchSide Me => UserHome ? H : A;
+        public MatchSide Opp => UserHome ? A : H;
+    }
+
+    public LiveGame BeginLive(ScheduledGame g)
+    {
+        if (g.Played || !BottomUp || !ShiftEngine.Enabled) return null;
+        var (h, a) = PrepareMatch(g);
+        // в трансляции свой состав — копия: перестановки по ходу матча не меняют звенья клуба
+        if (g.Home == UserTeam) h.Lineup = h.Lineup.Clone(); else a.Lineup = a.Lineup.Clone();
+        var lg = new LiveGame { G = g, H = h, A = a, UserHome = g.Home == UserTeam, HB = (h.Tempo, h.Plan ?? h.Lineup.Sys), AB = (a.Tempo, a.Plan ?? a.Lineup.Sys) };
+        lg.Sim = ShiftEngine.Start(Data, h, a, RngFor(g), g.Playoff);
+        lg.Sim.PauseAtBreaks = true;
+        lg.Sim.OnBreak = sim =>
         {
-            // перерывы: помощники обоих клубов решают по своим правилам (база — план на матч)
-            var hb = (h.Tempo, h.Plan ?? h.Lineup.Sys); var ab = (a.Tempo, a.Plan ?? a.Lineup.Sys);
-            r = ShiftEngine.Play(Data, h, a, RngFor(g), g.Playoff, sim => Rules.Break(this, sim, hb, ab));
-        }
-        else r = MatchEngine.Play(Data, h, a, RngFor(g), g.Playoff);
+            // соперник решает по своим правилам сразу; свой клуб — на экране перерыва
+            var side = lg.UserHome ? sim.AwaySide : sim.HomeSide;
+            var (bt, bs) = lg.UserHome ? lg.AB : lg.HB;
+            var d = Rules.Decide(sim, !lg.UserHome, side.Lineup.Rules ?? Rules.Ai(), bt, bs);
+            if (Rules.ApplyTo(this, sim, !lg.UserHome, d)) { Tactics.Prepare(this, sim.HomeSide, sim.AwaySide); sim.Apply(); }
+            lg.AtBreak = true;
+        };
+        return lg;
+    }
+
+    /// <summary>Доиграть трансляцию (оставшиеся перерывы — по правилам помощника) и записать матч.</summary>
+    public MatchResult FinishLive(LiveGame lg)
+    {
+        if (lg.G.Played) return lg.G.Result;
+        lg.Sim.PauseAtBreaks = false;
+        lg.Sim.OnBreak = sim => Rules.Break(this, sim, lg.HB, lg.AB);
+        lg.Sim.Run();
+        Complete(lg.G, lg.H, lg.A, lg.Sim.Result);
+        return lg.G.Result;
+    }
+
+    /// <summary>После матча: сыгранность, хроника, статистика, травмы, усталость, настрой, выучка, новости.</summary>
+    void Complete(ScheduledGame g, MatchSide h, MatchSide a, MatchResult r)
+    {
         if (Plan?.Game == g.Id) Plan = null;
         g.Result = r;
         AddChem(r);
@@ -432,13 +490,12 @@ public sealed class Career
         InjuryModel.AfterGame(this, g, new Random(unchecked(Seed * 104729 + g.Id)));
         Fatigue.AfterGame(this, g);
         Morale.AfterGame(this, g);
-        if (g.Home == UserTeam || g.Away == UserTeam) Orders.AfterGame(this, UserTeam, g.Home == UserTeam ? g.Result.HomeDressed : g.Result.AwayDressed);
+        if (mine) Orders.AfterGame(this, UserTeam, g.Home == UserTeam ? g.Result.HomeDressed : g.Result.AwayDressed);
         Tactics.AfterGame(this, g);
         if (!mine) { r.Events = new(); r.Box = new(); }   // хронику и протокол храним только для своих матчей — сохранение не раздувается
         foreach (var (side, abbr) in new[] { (h, g.Home), (a, g.Away) })
             GoalieStreak[abbr] = side.Goalie == Lineups[abbr].G1 ? GoalieStreak.GetValueOrDefault(abbr) + 1 : 0;
-        if (g.Home == UserTeam || g.Away == UserTeam) News.MatchReport(this, g);
-        return r;
+        if (mine) News.MatchReport(this, g);
     }
 
     /// <summary>Сыграть все матчи текущего дня (кроме матча клуба игрока, если skipUser) и перейти к следующему.</summary>

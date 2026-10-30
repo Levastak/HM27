@@ -440,3 +440,109 @@ public static class Rules
         return true;
     }
 }
+
+/// <summary>
+/// Советы помощника по ходу матча (перерывы и пауза в трансляции): правила тренера, контрприёмы против того, как сейчас
+/// играет соперник, и «горячий» игрок соперника. Каждый совет можно принять или нет — решает тренер.
+/// </summary>
+public static class LiveAdvice
+{
+    public sealed record Item(string Title, string Why, Action Apply);
+
+    public static List<Item> For(Career c, Career.LiveGame lg)
+    {
+        var sim = lg.Sim; bool home = lg.UserHome;
+        var me = lg.Me; var op = lg.Opp;
+        var list = new List<Item>();
+        void Refresh() { Tactics.Prepare(c, sim.HomeSide, sim.AwaySide); sim.Apply(); }
+        var curSys = (int[])(me.Plan ?? me.Lineup.Sys ?? new int[Tactics.Levers.Length]).Clone();
+
+        // 1) правила тренера
+        var (bt, bs) = home ? lg.HB : lg.AB;
+        var d = Rules.Decide(sim, home, Rules.Of(me.Lineup), bt, bs);
+        if (d.Tempo != me.Tempo)
+            list.Add(new(d.Tempo < 0 ? "Закрыть игру" : d.Tempo > 0 ? "Открыть игру" : "Вернуть обычный темп", Why(sim, home, me.Lineup, d.Tempo < 0 ? "tempo-" : "tempo+"),
+                () => { me.Tempo = d.Tempo; sim.Note(home, d.Tempo < 0 ? "закрываем игру" : d.Tempo > 0 ? "открываем игру" : "обычный темп"); Refresh(); }));
+        for (int i = 0; i < Tactics.Levers.Length; i++)
+            if (d.Sys[i] != curSys[i])
+            {
+                int li = i, v = d.Sys[i];
+                var lv = Tactics.Levers[i];
+                list.Add(new($"{lv.Name}: {Tactics.PoleName(lv, v).ToLowerInvariant()}", Why(sim, home, me.Lineup, lv.Key + (v < 0 ? "-" : v > 0 ? "+" : "0")),
+                    () => { var s = (int[])(me.Plan ?? me.Lineup.Sys ?? new int[Tactics.Levers.Length]).Clone(); s[li] = v; me.Plan = s; sim.Note(home, $"{lv.Name.ToLowerInvariant()} — {Tactics.PoleName(lv, v).ToLowerInvariant()}"); Refresh(); }));
+            }
+        if (d.Goalie && sim.GoalieOn(home) == sim.Result.GoalieStart(home))
+        {
+            int backup = me.Goalie == me.Lineup.G1 ? me.Lineup.G2 : me.Lineup.G1;
+            var (ga, sa) = sim.GoalieLine(home);
+            if (backup != 0)
+                list.Add(new($"Сменить вратаря: {c.Short(backup)}", $"{c.Short(sim.GoalieOn(home))} пропустил {ga} из {sa} бросков",
+                    () => { me.Goalie = backup; sim.Note(home, "в воротах " + c.Short(backup)); sim.Apply(); }));
+        }
+
+        // 2) против того, как соперник играет сейчас: полюс, который заметно лучше текущего (с выучкой)
+        var keep = me.Plan;
+        double Eval(int[] s) { me.Plan = s; var e = Tactics.Of(c, me, op); me.Plan = keep; return c.Data.League.GoalsPerGame * 0.95 * (Math.Exp(e.For) - Math.Exp(e.Against)); }
+        double cur = Eval(curSys);
+        for (int i = 0; i < Tactics.Levers.Length; i++)
+        {
+            if (list.Any(x => x.Title.StartsWith(Tactics.Levers[i].Name))) continue;
+            foreach (int v in new[] { -1, 0, 1 })
+            {
+                if (v == curSys[i]) continue;
+                var s = (int[])curSys.Clone(); s[i] = v;
+                double gain = Eval(s) - cur;
+                if (gain < 0.03) continue;
+                int li = i, vv = v; var lv = Tactics.Levers[i];
+                me.Plan = s; var notes = Tactics.Of(c, me, op).Notes; me.Plan = keep;
+                list.Add(new($"{lv.Name}: {Tactics.PoleName(lv, v).ToLowerInvariant()}",
+                    (notes.FirstOrDefault() ?? "против их нынешней игры так выгоднее") + $" — около {gain:+0.00} гола за матч",
+                    () => { var s2 = (int[])(me.Plan ?? me.Lineup.Sys ?? new int[Tactics.Levers.Length]).Clone(); s2[li] = vv; me.Plan = s2; sim.Note(home, $"{lv.Name.ToLowerInvariant()} — {Tactics.PoleName(lv, vv).ToLowerInvariant()}"); Refresh(); }));
+                break;
+            }
+        }
+
+        // 3) у кого-то не идёт игра: из первых двух троек — минус два и хуже без очков; поменять с лучшим из третьей-четвёртой
+        var ml = me.Lineup;
+        int Pts(int id) => sim.Result.Events.Count(e => e.Kind == "goal" && e.Team == me.Team.Abbr && e.P1 == id)
+                           + sim.Result.Goals.Count(g => g.Team == me.Team.Abbr && (g.A1 == id || g.A2 == id));
+        var top = ml.F.Take(2).SelectMany(x => x).Where(id => id != 0).ToList();
+        var low = ml.F.Skip(2).SelectMany(x => x).Where(id => id != 0).ToList();
+        var bad = top.Select(id => (id, b: sim.BoxOf(home, id))).Where(x => x.b != null && x.b.Pm <= -2 && Pts(x.id) == 0).OrderBy(x => x.b.Pm).FirstOrDefault();
+        if (bad.b != null && low.Count > 0)
+        {
+            var good = low.Select(id => (id, b: sim.BoxOf(home, id), p: Pts(id))).Where(x => x.b != null).OrderByDescending(x => x.p * 2 + x.b.Pm).First();
+            if (good.p > 0 || good.b.Pm > 0)
+            {
+                int x1 = bad.id, x2 = good.id;
+                list.Add(new($"Поменять {c.Short(x1)} и {c.Short(x2)}", $"у {c.Short(x1)} {bad.b.Pm} и ни одного очка, у {c.Short(x2)} {(good.p > 0 ? $"{good.p} очк." : $"+{good.b.Pm}")}; сыгранность новых троек ниже",
+                    () => { sim.SwapLines(home, x1, x2); sim.Note(home, $"{c.Short(x2)} — выше, {c.Short(x1)} — ниже"); sim.Apply(); }));
+            }
+        }
+        // указание не работает: игрок с указанием в минусе
+        foreach (var (id, key) in ml.Orders ?? new())
+        {
+            var b = sim.BoxOf(home, id);
+            if (b == null || b.Pm > -2 || Orders.Get(key) is not { } od) continue;
+            list.Add(new($"Снять указание «{od.Name.ToLowerInvariant()}» с {c.Short(id)}", $"с ним на льду {b.Pm} — не работает",
+                () => { ml.Orders = new(ml.Orders); ml.Orders.Remove(id); sim.Note(home, $"{c.Short(id)} — без указаний"); sim.Apply(); }));
+        }
+
+        // 4) у соперника «горячий» игрок — опека
+        var oppAbbr = op.Team.Abbr;
+        var hot = sim.Result.Events.Where(e => e.Kind == "goal" && e.Team == oppAbbr).GroupBy(e => e.P1).OrderByDescending(x => x.Count()).FirstOrDefault();
+        if (hot != null && hot.Count() >= 2 && me.Shadow != hot.Key)
+        {
+            int id = hot.Key;
+            list.Add(new($"Плотно опекать {c.Short(id)}", $"у него уже {hot.Count()} {(hot.Count() < 5 ? "гола" : "голов")}; у нас станет чуть больше удалений",
+                () => { me.Shadow = id; sim.Note(home, "опекаем " + c.Short(id)); sim.Apply(); }));
+        }
+        return list;
+    }
+
+    static string Why(ShiftEngine.Sim sim, bool home, Lineup l, string then)
+    {
+        var r = Rules.Of(l).FirstOrDefault(x => x.On && x.Then == then && Rules.Holds(sim, home, x.When));
+        return r != null ? "правило: " + Rules.WhenText(r.When).ToLowerInvariant() : "по правилам тренера условие больше не выполняется — возвращаем план на матч";
+    }
+}

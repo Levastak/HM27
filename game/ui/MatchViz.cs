@@ -32,10 +32,10 @@ public static class MatchColors
 /// </summary>
 public partial class XgChart : Control
 {
-    readonly List<MatchEvent> _ev;
+    List<MatchEvent> _ev;
     readonly ScheduledGame _g;
     readonly Color _ca, _ch;
-    readonly double _end;
+    double _end;
     double _clock = 1e9;
     public XgChart() { }
     public XgChart(List<MatchEvent> ev, ScheduledGame g, Career c)
@@ -49,6 +49,13 @@ public partial class XgChart : Control
 
     public void SetClock(double t) { _clock = t; QueueRedraw(); }
     public bool HasXg => _ev != null && _ev.Any(e => e.Xg > 0);
+    /// <summary>Трансляция: события дописываются по ходу матча.</summary>
+    public void SetEvents(List<MatchEvent> ev)
+    {
+        _ev = ev.Where(e => e.Kind is "shot" or "goal").OrderBy(e => e.T).ToList();
+        _end = Math.Max(3600, ev.Count > 0 ? ev.Max(e => e.T) + 20 : 3600);
+        QueueRedraw();
+    }
 
     public override void _Draw()
     {
@@ -110,7 +117,7 @@ public partial class XgChart : Control
 /// </summary>
 public partial class ShotMap : Control
 {
-    readonly List<MatchEvent> _ev;
+    List<MatchEvent> _ev;
     readonly ScheduledGame _g;
     readonly Color _ca, _ch;
     double _clock = 1e9;
@@ -124,6 +131,7 @@ public partial class ShotMap : Control
     }
     public bool Empty => _ev == null || _ev.Count == 0;
     public void SetClock(double t) { _clock = t; QueueRedraw(); }
+    public void SetEvents(List<MatchEvent> ev) { _ev = ev.Where(e => e.Z >= 0 && e.Kind is "shot" or "goal" or "miss" or "block").ToList(); QueueRedraw(); }
 
     /// <summary>Точка броска в футах: x от центра (−100…100), y поперёк (−42…42), атака вправо.</summary>
     static Vector2 Spot(MatchEvent e)

@@ -649,7 +649,34 @@ void StepsCheck()
             swaps++;
         }
     }
-        Check("Матч по шагам", same == gg.Count && swaps is > 20 and < 85,
+        // трансляция: перерывы, советы помощника (применяем все), доигрывание — матч записан, ошибок нет
+    int liveOk = 0, advices = 0, applied = 0;
+    {
+        var cl = Career.New(data, "MIN", 909);
+        for (int k = 0; k < 6; k++)
+        {
+            cl.SimToUserGame();
+            var g = cl.UserGameToday();
+            if (g == null) break;
+            var lg = cl.BeginLive(g);
+            for (int t = 60; !lg.Sim.Finished && t < 4200; t += 60)
+            {
+                lg.Sim.RunTo(t);
+                if (lg.AtBreak || t % 600 == 0)
+                {
+                    var items = LiveAdvice.For(cl, lg);
+                    advices += items.Count;
+                    foreach (var it in items) { it.Apply(); applied++; }
+                    lg.AtBreak = false;
+                }
+            }
+            cl.FinishLive(lg);
+            if (g.Played && g.Result.HomeGoals + g.Result.AwayGoals >= 0) liveOk++;
+            cl.SimDay();
+        }
+    }
+    Check("Трансляция", liveOk == 6 && advices > 0, $"матчей в трансляции {liveOk} из 6, советов помощника {advices}, применено {applied}");
+    Check("Матч по шагам", same == gg.Count && swaps is > 20 and < 85,
             $"пауза и Apply без решений: совпало {same} из {gg.Count} матчей; замен вратаря по ходу матча — {swaps} на 400 матчей (в НХЛ сменщик выходит примерно в каждом шестом–седьмом матче)");
     }
 

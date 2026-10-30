@@ -496,12 +496,39 @@ public static class ShiftEngine
         /// <summary>Пропущено вратарём на льду (без пустых ворот) и броски по нему: хозяева / гости.</summary>
         public (int ga, int sa) GoalieLine(bool home) { var t = home ? H : A; return (t.GBox.Ga, t.GBox.Sa); }
         public int GoalieOn(bool home) => (home ? H : A).Goalie;
+        /// <summary>Кто на льду сейчас (полевые) и их энергия 0–1.</summary>
+        public IReadOnlyList<int> OnIce(bool home) => (home ? H : A).On.Select(x => x.Id).ToList();
+        public double Energy(bool home, int id) => (home ? H : A).All.TryGetValue(id, out var sk) ? sk.Energy(T) : 1;
+        /// <summary>Протокол игрока по ходу матча (полевые).</summary>
+        public PlayerBox BoxOf(bool home, int id) => (home ? H : A).All.TryGetValue(id, out var sk) ? sk.Box : null;
+
+        /// <summary>
+        /// Поменять местами двух полевых в звеньях равных составов по ходу матча (тот же тип: нападающие или защитники).
+        /// Состав стороны (MatchSide.Lineup) меняется тоже — в трансляции это копия, клуб не трогаем.
+        /// </summary>
+        public bool SwapLines(bool home, int a, int b)
+        {
+            var t = home ? H : A;
+            if (!t.All.TryGetValue(a, out var sa) || !t.All.TryGetValue(b, out var sb) || sa.D != sb.D) return false;
+            var units = sa.D ? t.D : t.F;
+            foreach (var u in units) for (int i = 0; i < u.Length; i++) u[i] = u[i] == sa ? sb : u[i] == sb ? sa : u[i];
+            t.S.Lineup.SwapEven(a, b);
+            foreach (var x in new[] { sa, sb }) if (t.S.Lineup.SlotOf(x.Id) is char slot) (x.PosOff, x.PosDef) = Lineup.SlotPenalty(x.P, slot);
+            t.FTop = t.F.Count == 0 ? -1 : Enumerable.Range(0, t.F.Count).OrderByDescending(i => t.F[i].Average(x => x.Off)).First();
+            recompose = dirty = true;
+            return true;
+        }
+
+        /// <summary>Состав на льду сейчас: «5×5», «5×4», «6×5»… с точки зрения хозяев.</summary>
+        public string Strength => H.On.Count == 0 ? "" : $"{H.On.Count}×{A.On.Count}";
         /// <summary>Удаления команды за период (малые и большие, без совпадающих).</summary>
         public int PensIn(bool home, int per) => r.Events.Count(e => e.Kind == "pen" && e.Team == (home ? H : A).Abbr && e.T >= (per - 1) * 1200 && e.T < per * 1200);
         /// <summary>Событие тренера в протокол (решения в перерыве: темп, система, вратарь).</summary>
         public void Note(bool home, string text) => r.Events.Add(new MatchEvent { T = T, Team = (home ? H : A).Abbr, Kind = "coach", Note = text });
         /// <summary>Перерыв после периода: можно поменять стороны (MatchSide) и вызвать Apply.</summary>
         public Action<Sim> OnBreak;
+        /// <summary>Трансляция: после перерыва RunTo возвращается (экран перерыва), следующий вызов начинает период.</summary>
+        public bool PauseAtBreaks;
 
         public void Run() => RunTo(int.MaxValue);
 
@@ -513,7 +540,7 @@ public static class ShiftEngine
                 if (!inPer && !NextPeriod()) return;
                 while (inPer && T + 1 <= until && !finished) Tick();
                 if (inPer) return;           // пауза внутри периода
-                if (!finished && WillContinue()) OnBreak?.Invoke(this);
+                if (!finished && WillContinue()) { OnBreak?.Invoke(this); if (PauseAtBreaks) return; }
                 if (T >= until) return;
             }
         }

@@ -65,6 +65,7 @@ public partial class MatchScreen : Control
 
     void Back()
     {
+        if (_live != null && !_g.Played) { C.FinishLive(_live); _live = null; }   // ушли посреди трансляции — помощник доиграет
         if (_fresh) { C.SimDay(); Main.I.Save(); }
         Main.I.ShowHub();
     }
@@ -311,10 +312,22 @@ public partial class MatchScreen : Control
     }
 
     // ------------------------------------------------------------------ матч
+    Career.LiveGame _live;
+    bool _paused;
+    int _evIdx;
+    VBoxContainer _adviceBox, _iceBox;
+    Button _pauseBtn;
+    readonly List<Button> _speedBtns = new();
+    /// <summary>Игровых секунд в реальную секунду: ×1 — матч примерно за три минуты.</summary>
+    static readonly (string name, double sp)[] Speeds = { ("×1", 20), ("×2", 40), ("×4", 80), ("×8", 200) };
+
     void StartMatch()
     {
-        C.Play(_g);
+        _live = C.BeginLive(_g);
         _fresh = true;
+        _speed = Speeds[0].sp;
+        if (_live == null) { C.Play(_g); BuildLive(); _clock = 0; return; }   // старые сохранения: показ готового матча
+        _evIdx = 0; _paused = false;
         BuildLive();
         _clock = 0;
     }
@@ -323,7 +336,10 @@ public partial class MatchScreen : Control
 
     public void PlayInstant()
     {
-        if (!_g.Played) { C.Play(_g); _fresh = true; }
+        if (_live != null && !_g.Played) C.FinishLive(_live);
+        else if (!_g.Played) C.Play(_g);
+        _fresh = true;
+        _live = null;
         _clock = -1;
         ShowResult();
     }
@@ -337,18 +353,26 @@ public partial class MatchScreen : Control
         return r.Goals.Where(e => e.Kind != "so").Select(e => new MatchEvent { T = (e.Period - 1) * 1200 + e.Sec, Team = e.Team, Kind = "goal", P1 = e.Scorer, P2 = e.A1, Note = e.Kind }).ToList();
     }
 
+    MatchResult Res => _live?.Sim.Result ?? _g.Result;
+
+    /// <summary>Все события для статистики: в трансляции — те, что движок уже сыграл.</summary>
+    List<MatchEvent> AllEvents => _live != null ? _live.Sim.Result.Events : _g.Result.Events;
+
     void BuildLive()
     {
-        _ev = Events();
-        _shown = 0;
+        _ev = _live != null ? new List<MatchEvent>() : Events();
+        _shown = 0; _lastPeriod = 1;
         var body = Frame();
         _scoreL.Text = "0:0"; _clockL.Text = "1-й период · 00:00";
         var row = Ui.Expand(Ui.H(12), true, true);
         body.AddChild(row);
-        row.AddChild(StatsPanel());
+        var left = StatsPanel();
+        _iceBox = Ui.V(4);
+        if (_live != null) ((VBoxContainer)left).AddChild(Widget.Make("На льду", _iceBox));
+        row.AddChild(left);
         var center = Ui.Expand(Ui.V(10), true, true);
-        _xg = new XgChart(_g.Result.Events, _g, C) { CustomMinimumSize = new Vector2(0, 140) };
-        if (_xg.HasXg) { _xg.SetClock(0); center.AddChild(Widget.Make("Ожидаемые голы по ходу матча", _xg, null, null, 8)); }
+        _xg = new XgChart(AllEvents, _g, C) { CustomMinimumSize = new Vector2(0, 140) };
+        if (_live != null || _xg.HasXg) { _xg.SetClock(0); center.AddChild(Widget.Make("Ожидаемые голы по ходу матча", _xg, null, null, 8)); }
         else
         {
             _xg = null;
@@ -364,23 +388,136 @@ public partial class MatchScreen : Control
         center.AddChild(feedPanel);
         var ctl = Ui.H(8);
         ctl.Alignment = BoxContainer.AlignmentMode.Center;
+        if (_live != null)
+        {
+            _pauseBtn = Ui.B("Пауза", TogglePause, false, 13);
+            _pauseBtn.CustomMinimumSize = new Vector2(110, 0);
+            ctl.AddChild(_pauseBtn);
+        }
         ctl.AddChild(Ui.L("Скорость:", 12, Ui.Muted));
-        foreach (var (n, sp) in new[] { ("×1", 30.0), ("×2", 60.0), ("×4", 120.0), ("×8", 300.0) })
-            ctl.AddChild(Ui.B(n, () => _speed = sp).Also(b => b.AddThemeFontSizeOverride("font_size", 12)));
-        ctl.AddChild(Ui.B("Сразу к итогу", PlayInstant).Also(b => b.AddThemeFontSizeOverride("font_size", 12)));
+        _speedBtns.Clear();
+        foreach (var (n, sp) in Speeds)
+        {
+            var b = Ui.B(n, null).Also(x => x.AddThemeFontSizeOverride("font_size", 12));
+            b.Pressed += () => { _speed = sp; MarkSpeed(); };
+            _speedBtns.Add(b); ctl.AddChild(b);
+        }
+        MarkSpeed();
+        ctl.AddChild(Ui.B("Сразу к итогу", PlayInstant).Also(b => { b.AddThemeFontSizeOverride("font_size", 12); b.TooltipText = "Помощник доиграет матч по вашим правилам"; }));
         center.AddChild(ctl);
         row.AddChild(center);
         _lineupBox = Ui.V(2);
         var rightCol = Ui.V(12); rightCol.CustomMinimumSize = new Vector2(420, 0);
-        _map = new ShotMap(_g.Result.Events, _g, C) { CustomMinimumSize = new Vector2(0, 220) };
+        _map = new ShotMap(AllEvents, _g, C) { CustomMinimumSize = new Vector2(0, 220) };
         _map.SetClock(0);
-        if (!_map.Empty) rightCol.AddChild(Widget.Make("Карта бросков", _map, null, null, 8));
+        if (_live != null || !_map.Empty) rightCol.AddChild(Widget.Make("Карта бросков", _map, null, null, 8));
         else _map = null;
+        if (_live != null)
+        {
+            _adviceBox = Ui.V(6);
+            rightCol.AddChild(Widget.Make("Помощник", _adviceBox));
+            FillAdvice(false);
+        }
         var right = Widget.Make("Отличились", Ui.Scroll(_lineupBox), null, null, 10);
         right.SizeFlagsVertical = SizeFlags.ExpandFill;
         rightCol.AddChild(right);
         row.AddChild(rightCol);
         AddFeed(new MatchEvent { T = 0, Kind = "start" });
+    }
+
+    void MarkSpeed()
+    {
+        for (int i = 0; i < _speedBtns.Count; i++)
+        {
+            bool on = Math.Abs(Speeds[i].sp - _speed) < 0.01;
+            _speedBtns[i].AddThemeColorOverride("font_color", on ? Ui.Gold : Ui.Text);
+        }
+    }
+
+    void TogglePause()
+    {
+        if (_live == null) return;
+        _paused = !_paused;
+        _pauseBtn.Text = _paused ? "Играть" : "Пауза";
+        FillAdvice(_paused);
+    }
+
+    /// <summary>Советы помощника: на паузе и в перерыве — с кнопками «Принять», в игре — подсказка поставить паузу.</summary>
+    void FillAdvice(bool active)
+    {
+        if (_adviceBox == null || _live == null) return;
+        Ui.Clear(_adviceBox);
+        var me = _live.Me;
+        string tempo = me.Tempo switch { -1 => "закрытый", 1 => "открытый", _ => "обычный" };
+        var sys = me.Plan ?? me.Lineup.Sys ?? new int[Tactics.Levers.Length];
+        _adviceBox.AddChild(Ui.L($"Темп: {tempo}. Система: " + string.Join(", ", Enumerable.Range(0, Tactics.Levers.Length).Select(i => Tactics.PoleName(Tactics.Levers[i], sys[i]).ToLowerInvariant())), 11, Ui.Muted).Also(Wrap));
+        if (!active)
+        {
+            if (_pendingAdvice > 0)
+            {
+                var b = Ui.B($"Помощник: есть {_pendingAdvice} {(_pendingAdvice == 1 ? "совет" : _pendingAdvice < 5 ? "совета" : "советов")} — пауза", TogglePause, false, 12);
+                b.AddThemeColorOverride("font_color", Ui.Gold);
+                _adviceBox.AddChild(b);
+            }
+            else _adviceBox.AddChild(Ui.L("Поставьте паузу — помощник подскажет, что поменять. В перерывах он сам предложит.", 12, Ui.Dim).Also(Wrap));
+            return;
+        }
+        if (_live.AtBreak)
+        {
+            // итог периода: броски, моменты, большинство
+            int per = _live.Sim.Period, from = (per - 1) * 1200, to = per * 1200;
+            var pe = _live.Sim.Result.Events.Where(e => e.T >= from && e.T < to).ToList();
+            string Line(string team) => $"броски {pe.Count(e => e.Team == team && (e.Kind == "shot" || e.Kind == "goal"))}, xG {pe.Where(e => e.Team == team && e.Kind is "shot" or "goal").Sum(e => e.Xg):0.0}, удаления {pe.Count(e => e.Team == team && e.Kind == "pen")}";
+            _adviceBox.AddChild(Ui.L(per <= 3 ? $"{per}-й период" : "Овертайм", 15, Ui.Text, Ui.Cond));
+            _adviceBox.AddChild(Ui.H(6, new TeamBadge(Away, 16), Ui.L(Line(_g.Away), 12, Ui.Muted)));
+            _adviceBox.AddChild(Ui.H(6, new TeamBadge(Home, 16), Ui.L(Line(_g.Home), 12, Ui.Muted)));
+        }
+        var items = LiveAdvice.For(C, _live);
+        if (items.Count == 0) _adviceBox.AddChild(Ui.L("Менять ничего не нужно: всё идёт по плану.", 13, Ui.Text));
+        foreach (var it in items)
+        {
+            var h = Ui.H(8, Ui.Icon("lightbulb", 14, Ui.Gold),
+                Ui.Expand(Ui.V(0, Ui.L(it.Title, 13, Ui.Text, Ui.Semi), Ui.L(it.Why, 11, Ui.Muted).Also(Wrap))),
+                Ui.B("Принять", () => { it.Apply(); Main.I.Save(); FillAdvice(true); }, false, 11));
+            _adviceBox.AddChild(h);
+        }
+        // ручные решения: темп и вратарь
+        var tseg = new Segmented(new[] { "Закрытый", "Обычный", "Открытый" }, me.Tempo + 1, k =>
+        {
+            me.Tempo = k - 1; _live.Sim.Note(_live.UserHome, k == 0 ? "закрываем игру" : k == 2 ? "открываем игру" : "обычный темп");
+            Tactics.Prepare(C, _live.Sim.HomeSide, _live.Sim.AwaySide); _live.Sim.Apply(); FillAdvice(true);
+        });
+        _adviceBox.AddChild(Ui.H(8, Ui.L("Темп", 12, Ui.Muted), tseg));
+        int backup = me.Goalie == me.Lineup.G1 ? me.Lineup.G2 : me.Lineup.G1;
+        if (backup != 0 && _live.Sim.GoalieOn(_live.UserHome) == _live.Sim.Result.GoalieStart(_live.UserHome))
+            _adviceBox.AddChild(Ui.B($"Сменить вратаря: {C.Short(backup)}", () => { me.Goalie = backup; _live.Sim.Note(_live.UserHome, "в воротах " + C.Short(backup)); _live.Sim.Apply(); FillAdvice(true); }, false, 11));
+        if (_live.AtBreak)
+        {
+            var go = Ui.B(_live.Sim.Period >= 3 ? "Начать овертайм" : $"Начать {_live.Sim.Period + 1}-й период", () => { _live.AtBreak = false; _paused = false; _pauseBtn.Text = "Пауза"; FillAdvice(false); }, true, 14);
+            _adviceBox.AddChild(go);
+        }
+    }
+
+    void UpdateIce()
+    {
+        if (_iceBox == null || _live == null) return;
+        Ui.Clear(_iceBox);
+        var sim = _live.Sim;
+        foreach (bool home in new[] { false, true })
+        {
+            var t = home ? Home : Away;
+            var ids = sim.OnIce(home);
+            var row = Ui.H(4, new TeamBadge(t, 16));
+            foreach (var id in ids)
+            {
+                double e = sim.Energy(home, id);
+                var c = e >= 0.7 ? Ui.Text : e >= 0.45 ? Ui.Otl : Ui.Loss;
+                row.AddChild(Ui.L(C.Short(id), 11, c));
+            }
+            _iceBox.AddChild(row);
+        }
+        string st = sim.Strength;
+        if (st != "" && st != "5×5") _iceBox.AddChild(Ui.L(st, 12, Ui.Gold, Ui.Semi));
     }
 
     Control StatsPanel()
@@ -405,7 +542,7 @@ public partial class MatchScreen : Control
     {
         if (_stat == null) return;
         var past = _ev.Where(e => e.T <= t).ToList();
-        var pastAll = _g.Result.Events.Where(e => e.T <= t).ToList();   // со вбрасываниями и силовыми
+        var pastAll = AllEvents.Where(e => e.T <= t).ToList();   // со вбрасываниями и силовыми
         int Count(string team, Func<MatchEvent, bool> f) => past.Count(e => e.Team == team && f(e));
         int CountAll(string team, string kind) => pastAll.Count(e => e.Team == team && e.Kind == kind);
         foreach (var (team, idx) in new[] { (_g.Away, 0), (_g.Home, 1) })
@@ -429,8 +566,11 @@ public partial class MatchScreen : Control
         }
     }
 
+    double _uiTick;
+    int _pendingAdvice, _adviceAt;
     public override void _Process(double delta)
     {
+        if (_live != null) { ProcessLive(delta); return; }
         if (_clock < 0 || _g.Result == null || _ev == null) return;
         var r = _g.Result;
         _clock += delta * _speed;
@@ -445,6 +585,56 @@ public partial class MatchScreen : Control
         UpdateStats(_clock);
         double end = Math.Max(3600, _ev.Count > 0 ? _ev[^1].T : 3600) + (r.End == "SO" ? 120 : 0);
         if (_clock >= end + 30) { _clock = -1; ShowResult(); }
+    }
+
+    /// <summary>Трансляция: движок идёт вместе с часами; перерыв — пауза с советами помощника.</summary>
+    void ProcessLive(double delta)
+    {
+        if (_clock < 0 || _paused || _live.AtBreak) return;
+        var sim = _live.Sim;
+        if (sim.Finished)
+        {
+            C.FinishLive(_live);
+            _live = null; _clock = -1;
+            ShowResult();
+            return;
+        }
+        _clock += delta * _speed;
+        sim.RunTo((int)_clock);
+        if (sim.Clock + 1 < (int)_clock && !sim.InPeriod) _clock = sim.Clock;   // перерыв или конец: часы стоят
+        // новые события
+        var all = sim.Result.Events;
+        bool added = false;
+        for (; _evIdx < all.Count; _evIdx++)
+        {
+            var e = all[_evIdx];
+            if (e.Kind is "fo" or "hit" or "tk" or "gv") continue;
+            _ev.Add(e); added = true;
+        }
+        while (_shown < _ev.Count) AddFeed(_ev[_shown++]);
+        _scoreL.Text = $"{sim.AwayGoals}:{sim.HomeGoals}";
+        int t = sim.Clock, per = sim.Period, inPer = t - (per - 1) * 1200;
+        _clockL.Text = !sim.InPeriod && _live.AtBreak ? $"Перерыв после {(per <= 3 ? per + "-го периода" : "овертайма")}" : per <= 3 ? $"{per}-й период · {inPer / 60:00}:{inPer % 60:00}" : $"Овертайм · {inPer / 60:00}:{inPer % 60:00}";
+        if (added) { _xg?.SetEvents(all); _map?.SetEvents(all); }
+        _xg?.SetClock(t); _map?.SetClock(t);
+        _uiTick += delta;
+        if (_uiTick > 0.25 || added) { _uiTick = 0; UpdateStats(t); UpdateIce(); }
+        // раз в две игровые минуты помощник смотрит, есть ли что сказать (решения — только на паузе)
+        if (t - _adviceAt >= 120 && sim.InPeriod)
+        {
+            _adviceAt = t;
+            int n = LiveAdvice.For(C, _live).Count;
+            if (n != _pendingAdvice) { _pendingAdvice = n; FillAdvice(false); }
+        }
+        if (_live.AtBreak)
+        {
+            _paused = false;
+            _pauseBtn.Text = "Пауза";
+            UpdateStats(t);
+            AddFeed(new MatchEvent { T = t - 1, Kind = "period", Note = $"Перерыв. Счёт {Away.City} {sim.AwayGoals}:{sim.HomeGoals} {Home.City}" });
+            FillAdvice(true);
+        }
+        if (sim.Finished) { _clock = sim.Clock; }
     }
 
     static bool IsKey(MatchEvent e) => e.Kind is "goal" or "pen" or "start" or "period" or "coach" or "goalie";
@@ -499,13 +689,14 @@ public partial class MatchScreen : Control
             case "start": return ($"Вбрасывание! «{Home.City}» принимает «{Away.City}».", Ui.Muted, Ui.Semi, "activity");
             case "period": return (e.Note, Ui.Muted, Ui.Semi, "activity");
             case "goal":
-                var gl = _g.Result.Goals.FirstOrDefault(x => x.Scorer == e.P1 && (x.Period - 1) * 1200 + x.Sec == e.T);
+                var gl = Res.Goals.FirstOrDefault(x => x.Scorer == e.P1 && (x.Period - 1) * 1200 + x.Sec == e.T);
                 var assists = gl == null ? new List<string>() : new[] { gl.A1, gl.A2 }.Where(x => x != 0).Select(S).ToList();
                 string tag = e.Note switch { "pp" => " в большинстве", "sh" => " в меньшинстве", "en" => " в пустые ворота", "ev6" => " с шестым полевым!", _ => "" };
-                return ($"ГОЛ{tag}! {N(e.P1)}{(assists.Count > 0 ? $" ({string.Join(", ", assists)})" : " (без передач)")}", Colors.White, Ui.Bold, "trophy");
+                return ($"ГОЛ{tag}! {N(e.P1)}{(assists.Count > 0 ? $" ({string.Join(", ", assists)})" : " (без передач)")}" + (e.Xg > 0 ? $"  · xG {e.Xg:0.00}" : ""), Colors.White, Ui.Bold, "trophy");
             case "shot":
                 string[] sv = { "отражает", "ловит шайбу", "отбивает щитком", "спасает", "забирает шайбу", "в отличной позиции — сейв", "отбивает блином" };
-                return ($"{S(e.P1)}: {e.Note} — {S(e.P2)} {sv[h]}", Ui.Text, null, "");
+                string zone = e.Z switch { 0 => " у ворот", 1 => " со средней дистанции", 2 => " издали", _ => "" };
+                return ($"{S(e.P1)}: {e.Note}{zone} — {S(e.P2)} {sv[h]}" + (e.Xg > 0 ? $"  · xG {e.Xg:0.00}" : ""), e.Xg >= 0.15 ? Colors.White : Ui.Text, e.Xg >= 0.15 ? Ui.Semi : null, "");
             case "miss": return ($"{S(e.P1)} бросает — {e.Note}", Ui.Muted, null, "");
             case "block": return ($"{S(e.P1)} бросает — блокирует {S(e.P2)}", Ui.Muted, null, "");
             case "pen": int pm = e.P2 is 4 or 5 ? e.P2 : 2; return ($"Удаление: {N(e.P1)}, {pm} {(pm == 5 ? "минут" : "минуты")} ({e.Note})", Ui.Otl, Ui.Semi, "");
@@ -575,6 +766,7 @@ public partial class MatchScreen : Control
         if (r.PullNote == "tie") goals.AddChild(Ui.L("Раннее снятие вратаря сработало: гол с шестым полевым.", 12, Ui.Win));
         if (r.PullNote == "en") goals.AddChild(Ui.L("Вратаря сняли раньше — пропустили в пустые ворота.", 12, Ui.Muted));
         center.AddChild(Widget.Make("Голы", goals));
+        if ((_g.Home == C.UserTeam || _g.Away == C.UserTeam) && r.Events.Count > 0) center.AddChild(Widget.Make("Разбор", Review(r)));
         var act = Ui.H(12);
         act.Alignment = BoxContainer.AlignmentMode.Center;
         var next = Ui.B(_fresh ? "Продолжить" : "К клубу", Back, true, 16);
@@ -587,6 +779,48 @@ public partial class MatchScreen : Control
         foreach (var (t, dressed) in new[] { (_g.Away, r.AwayDressed), (_g.Home, r.HomeDressed) })
             right.AddChild(Widget.Make($"Протокол: {C.Team(t).City}", RatingsTable(dressed), null, null, 0));
         row.AddChild(Ui.Scroll(right).Also(s => s.CustomMinimumSize = new Vector2(450, 0)));
+    }
+
+    /// <summary>
+    /// Разбор после матча для тренера: моменты против голов (реализация и вратари), что дали решения по ходу матча,
+    /// спецбригады. Только факты протокола — без оценок «правильно/неправильно».
+    /// </summary>
+    Control Review(MatchResult r)
+    {
+        var v = Ui.V(6);
+        string me = C.UserTeam, op = _g.Home == me ? _g.Away : _g.Home;
+        bool home = _g.Home == me;
+        double xf = r.Events.Where(e => e.Team == me && e.Kind is "shot" or "goal").Sum(e => e.Xg), xa = r.Events.Where(e => e.Team == op && e.Kind is "shot" or "goal").Sum(e => e.Xg);
+        int gf = home ? r.HomeGoals : r.AwayGoals, ga = home ? r.AwayGoals : r.HomeGoals;
+        void Line(string icon, Color c, string text) => v.AddChild(Ui.H(8, Ui.Icon(icon, 14, c), Ui.Expand(Ui.L(text, 12, Ui.Text).Also(Wrap))));
+        string verdict = Math.Abs(xf - xa) < 0.4 ? "по моментам матч равный" : xf > xa ? "по моментам мы были лучше" : "по моментам соперник был лучше";
+        Line("activity", Ui.Muted, $"Ожидаемые голы {xf:0.0} — {xa:0.0}: {verdict}; счёт {gf}:{ga}.");
+        // вратари: сейвы сверх ожидаемых
+        foreach (var (id, mine) in new[] { (home ? r.HomeGoalie : r.AwayGoalie, true), (home ? r.AwayGoalie : r.HomeGoalie, false) })
+            if (r.Box.TryGetValue(id, out var b) && b.Sa > 0)
+            {
+                double gsax = b.Xga - b.Ga;
+                if (Math.Abs(gsax) >= 0.8)
+                    Line("shield", mine == gsax > 0 ? Ui.Win : Ui.Loss, $"{C.Short(id)}: {b.Sa - b.Ga} из {b.Sa}, {(gsax > 0 ? "спас" : "пропустил")} на {Math.Abs(gsax):0.0} гола {(gsax > 0 ? "больше" : "больше")} ожидаемого.");
+            }
+        // реализация
+        if (gf - xf >= 1.2) Line("crosshair", Ui.Win, $"Реализация выше моментов: забили {gf} при {xf:0.0} ожидаемых.");
+        else if (xf - gf >= 1.2) Line("crosshair", Ui.Loss, $"Не реализовали: {gf} при {xf:0.0} ожидаемых.");
+        // решения по ходу матча и что было после
+        var dec = r.Events.Where(e => e.Kind is "coach" or "goalie" && e.Team == me).OrderBy(e => e.T).ToList();
+        foreach (var d in dec)
+        {
+            int t = d.T;
+            int after = r.Goals.Count(g => g.Team == me && g.Kind != "so" && (g.Period - 1) * 1200 + g.Sec >= t), afterA = r.Goals.Count(g => g.Team == op && g.Kind != "so" && (g.Period - 1) * 1200 + g.Sec >= t);
+            string what = d.Kind == "goalie" ? $"замена вратаря: {C.Short(d.P1)}" : d.Note;
+            Line("clipboard-list", Ui.Gold, $"{(t / 1200 < 3 ? $"После {t / 1200}-го периода" : "Перед овертаймом")} — {what}. Дальше {after}:{afterA}.");
+        }
+        if (dec.Count == 0) Line("clipboard-list", Ui.Muted, "По ходу матча система и темп не менялись.");
+        // спецбригады
+        int ppf = r.Goals.Count(g => g.Team == me && g.Kind == "pp"), ppa = r.Goals.Count(g => g.Team == op && g.Kind == "pp");
+        int penf = r.Events.Count(e => e.Kind == "pen" && e.Team == op), pena = r.Events.Count(e => e.Kind == "pen" && e.Team == me);
+        Line("zap", Ui.Muted, $"Большинство {ppf} из {penf}, меньшинство — пропустили {ppa} из {pena}.");
+        return v;
     }
 
     Control RatingsTable(List<int> dressed)
