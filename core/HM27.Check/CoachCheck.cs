@@ -191,33 +191,33 @@ static class OrdersCheck
         var l = c.Lineups["MIN"];
         l.Rules = new(); l.TempoAuto = false;
         var games = c.Games.Where(g => !g.Playoff && (g.Home == "MIN" || g.Away == "MIN")).Take(41).ToList();
+        // зонд движка: ожидаемые голы пятёрки с игроком при одинаковых условиях (5×5, равный счёт, все свежие) — без шума исходов;
+        // по каждому матчу (соперник, его состав) и в среднем, в голах за 60 минут пятёрки
         double Net(int id, string order)
         {
-            l.Orders = id == 0 ? null : new() { [id] = order };
+            l.Orders = id == 0 || order == null ? null : new() { [id] = order };
             double s = 0; int n = 0;
             foreach (var g in games)
             {
                 bool home = g.Home == "MIN";
                 var (h, a) = c.Sides(g);
-                for (int k = 0; k < reps; k++)
-                {
-                    var r = ShiftEngine.Play(data, h, a, new Random(k * 7919 + g.Id));
-                    s += home ? r.HomeGoals - r.AwayGoals : r.AwayGoals - r.HomeGoals; n++;
-                }
+                var sim = ShiftEngine.Start(data, h, a, new Random(g.Id));
+                var (gf, ga) = sim.Probe(home, id);
+                s += 3600 * (gf - ga); n++;
             }
             l.Orders = null;
             return s / n;
         }
+        double Diff(int id, string order) => Net(id, order) - Net(id, null);
         var fw = l.F.Take(3).SelectMany(x => x).Where(id => id != 0).Select(id => c.Data.PlayerById[id]).ToList();
         var ds = l.D.Take(3).SelectMany(x => x).Where(id => id != 0).Select(id => c.Data.PlayerById[id]).ToList();
         var shoot = Orders.Get("shoot"); var join = Orders.Get("join");
         var best = fw.OrderByDescending(p => Orders.Fit(c, p, shoot)).First(); var worst = fw.OrderBy(p => Orders.Fit(c, p, shoot)).First();
         var dG = ds.OrderByDescending(p => Orders.Fit(c, p, join)).First(); var dB = ds.OrderBy(p => Orders.Fit(c, p, join)).First();
-        double b0 = Net(0, null);
-        double r1 = Net(best.Id, "shoot") - b0, r2 = Net(worst.Id, "shoot") - b0, r3 = Net(dG.Id, "join") - b0, r4 = Net(dB.Id, "join") - b0;
+        double r1 = Diff(best.Id, "shoot"), r2 = Diff(worst.Id, "shoot"), r3 = Diff(dG.Id, "join"), r4 = Diff(dB.Id, "join");
         if (verbose)
         {
-            Console.WriteLine($"Бросать чаще: {c.Short(best.Id)} (пригодность {Orders.Fit(c, best, shoot):+0.00;-0.00}) {r1:+0.000;-0.000} гола за матч, {c.Short(worst.Id)} ({Orders.Fit(c, worst, shoot):+0.00;-0.00}) {r2:+0.000;-0.000}");
+            Console.WriteLine($"Бросать чаще: {c.Short(best.Id)} (пригодность {Orders.Fit(c, best, shoot):+0.00;-0.00}) {r1:+0.000;-0.000} гола за 60 минут пятёрки, {c.Short(worst.Id)} ({Orders.Fit(c, worst, shoot):+0.00;-0.00}) {r2:+0.000;-0.000}");
             Console.WriteLine($"Подключаться: {c.Short(dG.Id)} ({Orders.Fit(c, dG, join):+0.00;-0.00}) {r3:+0.000;-0.000}, {c.Short(dB.Id)} ({Orders.Fit(c, dB, join):+0.00;-0.00}) {r4:+0.000;-0.000}");
         }
         return (r1, r2, r3, r4);
@@ -254,7 +254,7 @@ static class SmartBot
                 var rep = Scout.For(c, g);
                 var club = c.Lineups[team].Sys ?? new int[Tactics.Levers.Length];
                 var plan = new MatchPlan { Game = g.Id, Sys = (int[])club.Clone() };
-                foreach (var a in rep.Advice.Where(a => a.Gain >= 0.02)) plan.Sys[a.Lever] = a.V;
+                foreach (var a in rep.Advice.Where(a => a.Conf == "уверен")) plan.Sys[a.Lever] = a.V;   // умный тренер берёт только уверенные советы
                 if (rep.ShadowGain >= 0.02) plan.Shadow = rep.ShadowPick;
                 if (rep.PressGain >= 0.02) plan.PressD = rep.PressPick;
                 c.Plan = plan;
@@ -284,6 +284,9 @@ static class SmartBotFixed
 {
     public sealed record Result(double Auto, double Lines, double Plans, double Smart);
 
+    /// <summary>Части плана для разбора (botfix … parts): темп и снятие, советы по системе, задания.</summary>
+    public static bool UseTempo = true, UseSys = true, UseTargets = true;
+
     public static Result Run(GameData data, string team, int reps, int seed = 4040)
     {
         var c = Career.New(data, team, seed);
@@ -294,7 +297,7 @@ static class SmartBotFixed
         double Run(bool lines, bool plans)
         {
             c.Lineups[team] = (lines ? smartL : auto).Clone();
-            c.Lineups[team].TempoAuto = plans; c.Lineups[team].Pull = plans ? Coach.ASSIST : Coach.USUAL;
+            c.Lineups[team].TempoAuto = plans && UseTempo; c.Lineups[team].Pull = plans && UseTempo ? Coach.ASSIST : Coach.USUAL;
             double s = 0; int n = 0;
             foreach (var g in games)
             {
@@ -303,9 +306,9 @@ static class SmartBotFixed
                 {
                     var rep = Scout.For(c, g);
                     var plan = new MatchPlan { Game = g.Id, Sys = (int[])(c.Lineups[team].Sys ?? new int[Tactics.Levers.Length]).Clone() };
-                    foreach (var a in rep.Advice.Where(a => a.Gain >= 0.02)) plan.Sys[a.Lever] = a.V;
-                    if (rep.ShadowGain >= 0.02) plan.Shadow = rep.ShadowPick;
-                    if (rep.PressGain >= 0.02) plan.PressD = rep.PressPick;
+                    if (UseSys) foreach (var a in rep.Advice.Where(a => a.Conf == "уверен")) plan.Sys[a.Lever] = a.V;   // умный тренер берёт только уверенные советы
+                    if (UseTargets && rep.ShadowGain >= 0.02) plan.Shadow = rep.ShadowPick;
+                    if (UseTargets && rep.PressGain >= 0.02) plan.PressD = rep.PressPick;
                     c.Plan = plan;
                 }
                 var (h, a2) = c.Sides(g);
@@ -318,5 +321,82 @@ static class SmartBotFixed
         var res = new Result(Run(false, false), Run(true, false), Run(false, true), Run(true, true));
         c.Lineups[team] = auto;
         return res;
+    }
+}
+
+/// <summary>
+/// Подписи схем: каждый край рычага сдвигает в статистике матча то, что обещает его описание (те же матчи и случайные числа,
+/// клуб против себя с обычной системой). Плюс доля голов «с хода после отбора» среди голов в равных составах.
+/// </summary>
+static class SignCheck
+{
+    // край → (сторона: u — наши, t — соперника; показатель; знаменатель или null; ожидаемое направление)
+    static readonly (string pole, string side, string num, string den, int dir)[] Expect =
+    {
+        ("fc+", "u", "tk", null, 1), ("fc+", "u", "rush_sec", null, 1), ("fc-", "u", "tk", null, -1),
+        ("en+", "u", "gv", null, 1), ("en-", "u", "gv", null, -1),
+        ("da+", "u", "datt", null, 1), ("da-", "u", "datt", null, -1),
+        ("sh+", "u", "att", null, 1), ("sh-", "u", "att", null, -1),
+        ("agg+", "u", "hit", null, 1), ("agg+", "u", "penx", null, 1), ("agg-", "u", "hit", null, -1), ("agg-", "u", "penx", null, -1),
+        ("dz-", "t", "z0", "zs", -1), ("dz-", "u", "blk", null, 1), ("dz+", "t", "att", null, -1), ("dz+", "u", "tk", null, 1),
+        ("bo-", "u", "gv", null, -1), ("bo-", "u", "fo_dz", "fo", 1), ("bo+", "u", "rush_xg", "rush_sec", 1), ("bo+", "u", "gv", null, 1),
+        ("pp-", "u", "pp_datt", "pp_att", 1), ("pp+", "u", "pp_datt", "pp_att", -1),
+        ("pk-", "u", "pk_blk", null, 1), ("pk-", "u", "pk_att", null, -1), ("pk+", "u", "pk_att", null, 1),
+    };
+
+    public static (int ok, int total, double rushShare, List<string> lines) Run(GameData data, bool verbose, int reps = 4, string team = "MIN")
+    {
+        var c = Career.New(data, team, 818);
+        var games = c.Games.Where(g => !g.Playoff && (g.Home == team || g.Away == team)).Take(41).ToList();
+        var l = c.Lineups[team];
+        var keep = (int[])l.Sys.Clone(); var keepL = new Dictionary<string, float>(l.Learn);
+        double rushG = 0, esG = 0;
+        Dictionary<string, double>[] Play(int[] sys)
+        {
+            l.Sys = sys; l.Learn = new();
+            for (int i = 0; i < sys.Length; i++) if (sys[i] != 0) l.Learn[Tactics.Levers[i].Key + (sys[i] < 0 ? "-" : "+")] = 1;
+            var us = new Dictionary<string, double>(); var them = new Dictionary<string, double>();
+            foreach (var g in games)
+            {
+                var (h, a) = c.Sides(g);
+                bool home = g.Home == team;
+                for (int k = 0; k < reps; k++)
+                {
+                    var r = ShiftEngine.Play(data, h, a, new Random(k * 7919 + g.Id), false);
+                    foreach (var (d, src) in new[] { (us, home ? r.HomeStats : r.AwayStats), (them, home ? r.AwayStats : r.HomeStats) })
+                        foreach (var kv in src) d[kv.Key] = d.GetValueOrDefault(kv.Key) + kv.Value;
+                    if (sys.All(x => x == 0))
+                    {
+                        rushG += (r.HomeStats.GetValueOrDefault("rush_g") + r.AwayStats.GetValueOrDefault("rush_g"));
+                        esG += r.Events.Count(e => e.Kind == "goal" && e.Note == "ev");
+                    }
+                }
+            }
+            foreach (var d in new[] { us, them }) d["zs"] = d.GetValueOrDefault("z0") + d.GetValueOrDefault("z1") + d.GetValueOrDefault("z2");
+            return new[] { us, them };
+        }
+        var b = Play(new int[Tactics.Levers.Length]);
+        int ok = 0;
+        var lines = new List<string>();
+        foreach (var grp in Expect.GroupBy(x => x.pole))
+        {
+            string key = grp.Key.TrimEnd('+', '-');
+            int lever = Tactics.IndexOf(key), v = grp.Key.EndsWith("+") ? 1 : -1;
+            var sys = new int[Tactics.Levers.Length]; sys[lever] = v;
+            var x = Play(sys);
+            foreach (var (pole, side, num, den, dir) in grp)
+            {
+                int si = side == "u" ? 0 : 1;
+                double Val(Dictionary<string, double>[] s) => den == null ? s[si].GetValueOrDefault(num) : s[si].GetValueOrDefault(num) / Math.Max(1e-9, s[si].GetValueOrDefault(den));
+                double v0 = Val(b), v1 = Val(x), rel = v0 == 0 ? 0 : v1 / v0 - 1;
+                bool good = Math.Sign(rel) == dir && Math.Abs(rel) >= 0.03;
+                if (good) ok++;
+                string line = $"{Tactics.PoleName(Tactics.Levers[lever], v),-24} {(side == "u" ? "наши" : "их"),-4} {num}{(den != null ? "/" + den : ""),-12} {rel:+0%;-0%} {(good ? "OK" : "НЕТ")}";
+                lines.Add(line);
+                if (verbose) Console.WriteLine(line);
+            }
+        }
+        l.Sys = keep; l.Learn = keepL;
+        return (ok, Expect.Length, esG == 0 ? 0 : rushG / esG, lines);
     }
 }

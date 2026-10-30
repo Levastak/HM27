@@ -17,6 +17,8 @@ public static class AiCoach
     public const double AI_MIN = 0.008;
     /// <summary>План на матч: менять систему, если выгода в глазах тренера не меньше PLAN_MIN гола.</summary>
     public const double PLAN_MIN = 0.025;
+    /// <summary>Опека лучшего нападающего клуба игрока (выключатель для проверок).</summary>
+    public static bool ShadowUser = true;
 
     /// <summary>Старт карьеры: стиль в настройках и первая правка звеньев («сборы»).</summary>
     public static void Init(Career c)
@@ -94,6 +96,13 @@ public static class AiCoach
         }
         opp.Plan = oppKeep;
         me.Plan = plan.SequenceEqual(baseSys) ? keep : plan;
+        // против клуба игрока гибкий тренер опекает его лучшего нападающего (в плей-офф — почти любой)
+        if (ShadowUser && opp.Team.Abbr == c.UserTeam && (coach.Flex >= 13 || g.Playoff && coach.Flex >= 9))
+        {
+            var top = opp.Lineup.F.Take(2).SelectMany(x => x).Where(id => id != 0)
+                .Select(id => (id, v: c.Data.PlayerById.TryGetValue(id, out var p) ? Staff.View(c, coach, p).off : 0)).OrderByDescending(x => x.v).FirstOrDefault();
+            if (top.id != 0) { me.Targets ??= new(); me.Targets[top.id] = "shadow"; }
+        }
     }
 
     /// <summary>Раз в месяц: если система полсезона не идёт, гибкий тренер её меняет (по своей оценке состава).</summary>

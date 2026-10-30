@@ -275,6 +275,11 @@ public sealed class Career
             if (p.Team == c.UserTeam && c.Players.TryGetValue(p.Id, out var own)) own.Know = 1f;
         foreach (var p in data.Players)   // новые игроки в базе
             if (!c.Players.ContainsKey(p.Id)) c.Players[p.Id] = PlayerModel.Make(c, p, noise: false);
+        // старые сохранения: система из 4 рычагов — дополняем серединой новых
+        foreach (var l in c.Lineups.Values)
+            if (l.Sys != null && l.Sys.Length < Tactics.Levers.Length) { var s = new int[Tactics.Levers.Length]; l.Sys.CopyTo(s, 0); l.Sys = s; }
+        if (c.Plan?.Sys != null && c.Plan.Sys.Length < Tactics.Levers.Length) { var s = new int[Tactics.Levers.Length]; c.Plan.Sys.CopyTo(s, 0); c.Plan.Sys = s; }
+        if (c.LastUserSys != null && c.LastUserSys.Length < Tactics.Levers.Length) { var s = new int[Tactics.Levers.Length]; c.LastUserSys.CopyTo(s, 0); c.LastUserSys = s; }
         return c;
     }
 
@@ -292,6 +297,8 @@ public sealed class Career
     public Dictionary<string, DateOnly> AiTuned { get; set; } = new();
     /// <summary>Система, которой клуб игрока играл в последнем матче (ИИ отвечает на неё в серии плей-офф).</summary>
     public int[] LastUserSys { get; set; }
+    /// <summary>Журнал тренера: свои матчи — система и то, что она дала (Journal).</summary>
+    public List<JournalEntry> Journal { get; set; } = new();
     /// <summary>Тренеры: главные тренеры клубов ИИ и помощник своего клуба (Staff).</summary>
     public List<StaffMember> Staff { get; set; }
     /// <summary>План тренировок своего клуба (Training); null — обычная общая подготовка.</summary>
@@ -410,7 +417,7 @@ public sealed class Career
         if (Plan != null && Plan.Game == g.Id && (g.Home == UserTeam || g.Away == UserTeam))
         {
             var me = g.Home == UserTeam ? h : a;
-            me.Plan = (int[])Plan.Sys?.Clone(); me.Shadow = Plan.Shadow; me.PressD = Plan.PressD;
+            me.Plan = (int[])Plan.Sys?.Clone(); me.Targets = new(Plan.All());
         }
         if (BottomUp)
         {
@@ -421,6 +428,7 @@ public sealed class Career
             if (h.Plan != hp || a.Plan != ap) Tactics.Prepare(this, h, a);
         }
         Coach.Prepare(this, g, h, a);
+        foreach (var x in new[] { h, a }) { x.StartSys = (int[])(x.Plan ?? x.Lineup.Sys)?.Clone(); x.StartTempo = x.Tempo; }
         return (h, a);
     }
 
@@ -476,6 +484,8 @@ public sealed class Career
         public ScheduledGame G; public ShiftEngine.Sim Sim; public MatchSide H, A;
         public (int tempo, int[] sys) HB, AB;
         public bool UserHome; public bool AtBreak;
+        /// <summary>Слова команде в этом матче: «вид:период» (одно на период).</summary>
+        public readonly HashSet<string> Talks = new();
         public MatchSide Me => UserHome ? H : A;
         public MatchSide Opp => UserHome ? A : H;
     }
@@ -527,6 +537,7 @@ public sealed class Career
         Morale.AfterGame(this, g);
         if (mine) Orders.AfterGame(this, UserTeam, g.Home == UserTeam ? g.Result.HomeDressed : g.Result.AwayDressed);
         if (mine) Press.AfterGame(this, g);
+        if (mine) HM27.Core.Journal.Record(this, g, g.Home == UserTeam ? h : a, r);
         Tactics.AfterGame(this, g);
         if (!mine) { r.Events = new(); r.Box = new(); }   // хронику и протокол храним только для своих матчей — сохранение не раздувается
         foreach (var (side, abbr) in new[] { (h, g.Home), (a, g.Away) })

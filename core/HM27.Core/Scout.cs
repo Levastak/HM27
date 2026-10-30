@@ -9,6 +9,7 @@ public static class Scout
 {
     public sealed record Threat(int Id, string Why);
     public sealed record Advice(int Lever, int V, double Gain, double Learn, string Why, string Conf);
+    public sealed record TargetTip(int Id, string Kind, string Why, string Conf, double Gain);
 
     public sealed class Report
     {
@@ -25,6 +26,8 @@ public static class Scout
         /// <summary>Кто готовил советы (помощник своего клуба) — его оценка, не истина.</summary>
         public StaffMember By;
         public string ShadowConf, PressConf;
+        /// <summary>Советы помощника по заданиям на соперника (до трёх): игрок, вид, почему, уверенность; оценка — для ИИ и проверок.</summary>
+        public List<TargetTip> Tips = new();
     }
 
     static double Gpg(Career c) => c.Data.League.GoalsPerGame * 0.95;
@@ -50,7 +53,7 @@ public static class Scout
             var st = c.Skaters.GetValueOrDefault(id);
             var f = PlayerForm.Of(c, id);
             string stat = st == null || st.Gp == 0 ? "сезон только начался" : $"{st.G} + {st.A} в {st.Gp} {Plural(st.Gp, "матче", "матчах", "матчах")}";
-            rep.Threats.Add(new Threat(id, $"{stat}; форма — {f.Word.ToLowerInvariant()}"));
+            rep.Threats.Add(new Threat(id, f.Word.Length > 1 ? $"{stat}; форма — {f.Word.ToLowerInvariant()}" : stat));
         }
         // вратарь: сезон и отскоки
         rep.Goalie = op.Goalie;
@@ -77,7 +80,7 @@ public static class Scout
         var who = rep.By = Staff.Decider(c, me);
         for (int i = 0; i < Tactics.Levers.Length; i++)
         {
-            double best = 0.01; int bv = baseSys[i];
+            double best = 0.02; int bv = baseSys[i];
             foreach (int v in new[] { -1, 0, 1 })
             {
                 if (v == baseSys[i]) continue;
@@ -115,6 +118,31 @@ public static class Scout
             rep.PressGain = Staff.Estimate(c, who, rep.PressGain, g.Id, 32); rep.PressConf = Staff.Confidence(who, rep.PressGain);
             rep.PressWhy = "хуже всех в их первых парах отдаёт шайбу — под давлением ошибается";
         }
+        // советы по заданиям: опека лучшего, давление на слабого с шайбой, не давать бросать снайперу, жёстко — техничному и лёгкому
+        if (rep.ShadowPick != 0 && rep.ShadowGain > 0.01)
+            rep.Tips.Add(new TargetTip(rep.ShadowPick, "shadow", "самый опасный у них в атаке", rep.ShadowConf, rep.ShadowGain));
+        if (rep.PressPick != 0 && rep.PressGain > 0.01)
+            rep.Tips.Add(new TargetTip(rep.PressPick, "press", "хуже всех в их первых парах отдаёт шайбу", rep.PressConf, rep.PressGain));
+        var taken = rep.Tips.Select(x => x.Id).ToHashSet();
+        var oattr = op.Attr ?? TeamStrength.Attr(c, c.DlBase);
+        var skaters = ol.F.Take(3).SelectMany(x => x).Concat(ol.D.Take(2).SelectMany(x => x)).Where(id => id != 0 && !taken.Contains(id) && c.Data.PlayerById.ContainsKey(id)).Distinct()
+            .Select(id => c.Data.PlayerById[id]).ToList();
+        var shooter = skaters.OrderByDescending(p => (oattr(p, "fin") + oattr(p, "lng") + oattr(p, "pwr")) / 3 + (p.Tr?.Contains("shoot") == true ? 1.5 : 0)).FirstOrDefault();
+        if (shooter != null && rep.Tips.Count < MatchPlan.MAX_TARGETS)
+        {
+            double share = ol.MinutesOf(shooter.Id) / 60.0;
+            double gain = Staff.Estimate(c, who, 0.5 * lamOp * share * TeamStrength.SPREAD * sc.A1 * ShiftEngine.LINE_K * 0.9 - 0.004, g.Id, 33);
+            if (gain > 0.01) { rep.Tips.Add(new TargetTip(shooter.Id, "lane", "у них лучший бросок — пусть отдаёт партнёрам", Staff.Confidence(who, gain), gain)); taken.Add(shooter.Id); }
+        }
+        var light = skaters.Where(p => !p.IsDefense && !taken.Contains(p.Id)).OrderByDescending(p => oattr(p, "hnd") - oattr(p, "str")).FirstOrDefault();
+        if (light != null && rep.Tips.Count < MatchPlan.MAX_TARGETS)
+        {
+            double share = ol.MinutesOf(light.Id) / 60.0;
+            double soft = Math.Clamp((oattr(light, "hnd") - oattr(light, "str")) / 6, 0, 1);
+            double gain = Staff.Estimate(c, who, lamOp * share * TeamStrength.SPREAD * sc.A1 * ShiftEngine.LINE_K * 0.5 * (0.5 + soft) - 0.2 * 2.8 * 0.04, g.Id, 34);
+            if (gain > 0.01) rep.Tips.Add(new TargetTip(light.Id, "hit", "техничный, но лёгкий — силовая борьба его сбивает", Staff.Confidence(who, gain), gain));
+        }
+        rep.Tips = rep.Tips.OrderByDescending(x => x.Gain).ToList();
         return rep;
     }
 

@@ -42,7 +42,8 @@ public partial class Shell : Control
             new Item("Раздевалка", "heart-pulse", "room", null, "Настрой игроков и команды: кто доволен, кто нет"),
             new Item("Статистика", "chart-column", "squad", "stats", "Очки, броски, время на льду"),
             new Item("Лазарет", "cross", "medical", null, "Травмы и сроки возвращения"),
-            new Item("Тактика", "swords", "tactics", "system", "Система игры: форчек, вход в зону, защитники, броски"),
+            new Item("Тактика", "swords", "tactics", "system", "Система игры: девять рычагов, готовые стили"),
+            new Item("Что сработало", "notebook-pen", "tactics", "journal", "Журнал: что схемы дали в наших матчах"),
             new Item("Правила матча", "clipboard-list", "tactics", "rules", "Что помощник меняет в перерывах"),
         }),
         new Section("training", "Тренировки", new[]
@@ -102,6 +103,7 @@ public partial class Shell : Control
         ["comp"] = new[] { ("table", "Таблица"), ("stats", "Статистика лиги"), ("teams", "Клубы"), ("playoffs", "Плей-офф") },
         ["club"] = new[] { ("overview", "Обзор"), ("players", "Игроки"), ("stats", "Статистика"), ("schedule", "Расписание") },
         ["player"] = new[] { ("overview", "Обзор"), ("attrs", "Характеристики"), ("stats", "Статистика"), ("career", "Карьера") },
+        ["tactics"] = new[] { ("system", "Система"), ("journal", "Что сработало"), ("rules", "Правила матча") },
     };
 
     public Shell(string page, string sub = null, string arg = null) { _cur = new Nav(page, sub, arg); }
@@ -179,7 +181,7 @@ public partial class Shell : Control
             "club" => _cur.Sub == "schedule" ? Embedded("calendar:" + (_cur.Arg ?? C.UserTeam)) : _cur.Sub == "players" ? new SquadPage(_cur.Arg ?? C.UserTeam) : _cur.Sub == "stats" ? new TeamStatsPage(_cur.Arg ?? C.UserTeam) : new ClubPage(_cur.Arg ?? C.UserTeam),
             "medical" => new MedicalPage(),
             "room" => new RoomPage(),
-            "tactics" => _cur.Sub == "rules" ? new RulesPage() : new TacticsPage(_cur.Arg),
+            "tactics" => _cur.Sub == "rules" ? new RulesPage() : _cur.Sub == "journal" ? new JournalPage(_cur.Arg) : new TacticsPage(_cur.Arg),
             "training" => new TrainingPage(_cur.Sub),
             _ => new HomePage(),
         };
@@ -472,7 +474,7 @@ public partial class Shell : Control
             "club" => (t.Name, rec),
             "medical" => ("Лазарет", rec),
             "room" => ("Раздевалка", rec),
-            "tactics" => (_cur.Sub == "rules" ? "Правила матча" : "Тактика", rec),
+            "tactics" => (_cur.Sub == "rules" ? "Правила матча" : _cur.Sub == "journal" ? "Что сработало" : "Тактика", rec),
             "training" => (_cur.Sub == "individual" ? "Индивидуальная работа" : _cur.Sub == "youth" ? "Развитие молодых" : "Тренировки", rec),
             _ => (t.Name, rec),
         };

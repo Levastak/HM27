@@ -109,47 +109,30 @@ public partial class LinesView : HBoxContainer
     Control StylePanel()
     {
         var v = Ui.V(12);
-        var next = C.NextGame(C.UserTeam);
-        MatchSide hs = null, aws = null; bool home = false; string opp = null;
-        if (next != null)
-        {
-            (hs, aws) = C.Sides(next, true); home = next.Home == C.UserTeam;
-            opp = "«" + C.Data.TeamByAbbr[home ? next.Away : next.Home].Name + "»";
-        }
+        // здесь — общие настройки клуба; всё про конкретного соперника — в письме скаута и на экране «до матча»
         var tAuto = new CheckBox { Text = "По сопернику — решает помощник", ButtonPressed = L.TempoAuto, FocusMode = FocusModeEnum.None };
         tAuto.Toggled += on => { L.TempoAuto = on; Changed(); };
-        int shown = L.TempoAuto && next != null ? Coach.Tempo(C, next, hs, aws, home).tempo : L.Tempo;
-        var tSeg = new Segmented(new[] { "Закрытый", "Обычный", "Открытый" }, shown + 1, k => { L.TempoAuto = false; L.Tempo = k - 1; Changed(); });
+        var tSeg = new Segmented(new[] { "Закрытый", "Обычный", "Открытый" }, L.Tempo + 1, k => { L.TempoAuto = false; L.Tempo = k - 1; Changed(); });
         if (L.TempoAuto) tSeg.Modulate = new Color(1, 1, 1, 0.55f);
         v.AddChild(Section("Темп игры", tAuto, tSeg,
             Note(L.TempoAuto
-                ? (next == null ? "Помощник выбирает темп перед каждым матчем: со слабым — открытый, с сильным — закрытый."
-                    : $"Следующий матч. {Staff.Assistant(C)?.Name} ({Coach.Tempo(C, next, hs, aws, home).conf}): " + Coach.TempoText(Coach.Tempo(C, next, hs, aws, home).tempo, Coach.Tempo(C, next, hs, aws, home).gain, opp, next.Playoff))
+                ? "Помощник выбирает темп перед каждым матчем: с сильным соперником чаще закрывается, со слабым — открывается. Его выбор — на экране перед матчем."
                 : L.Tempo switch
                 {
-                    -1 => "Меньше моментов у обеих команд (−7% голов). Чаще овертаймы — это помогает слабому выстоять против сильного, а сильному стоит очков.",
-                    1 => "Больше моментов у обеих команд (+7% голов). Фаворит реже отдаёт очки в овертаймах, слабый — чаще проигрывает в основное время.",
+                    -1 => "Меньше моментов у обеих команд. Чаще овертаймы — это помогает слабому выстоять против сильного, а сильному стоит очков.",
+                    1 => "Больше моментов у обеих команд. Фаворит реже отдаёт очки в овертаймах, слабый — чаще проигрывает в основное время.",
                     _ => "Обычный хоккей: темп как у среднего клуба НХЛ.",
                 })));
-        Control pullPlan = null;
-        if (L.Pull == Coach.ASSIST && next != null)
-        {
-            var pp = Coach.Pull(C, next, hs, aws, home);
-            Control Cell(string k, string val, Color col) => Ui.V(-2, Ui.L(k, 11, Ui.Dim), Ui.L(val, 20, col, Ui.CondBold));
-            pullPlan = Ui.H(18, Cell("при −1", Coach.Clock(pp.T1), Ui.Text), Cell("при −2", Coach.Clock(pp.T2), Ui.Text),
-                Cell("сравнять", $"{100 * pp.Tie1:0}%", Ui.Gold), Cell("за 2:00", $"{100 * pp.TieUsual1:0}%", Ui.Muted));
-        }
         string pullNote = L.Pull switch
         {
-            Coach.ASSIST => next == null ? "Помощник рассчитывает время на каждый матч: чем опаснее соперник в атаке, тем позже."
-                : $"Следующий матч, расчёт {Staff.Assistant(C)?.Name} ({Staff.StyleText(Staff.Assistant(C))}). " + Coach.PullWhy(Coach.Pull(C, next, hs, aws, home), opp) + " «Сравнять» — шанс отыграться при −1 за 10 минут до конца. Цена раннего снятия — чаще крупные поражения.",
-            Coach.EARLY => $"Всегда за {Coach.Clock(Coach.EARLY1)} при −1 и за {Coach.Clock(Coach.EARLY2)} при −2, кто бы ни был соперник. Шансов сравнять больше, но чаще шайбы в пустые и крупные поражения.",
+            Coach.ASSIST => "Помощник рассчитывает время на каждый матч: чем опаснее соперник в атаке, тем позже. Расчёт и шанс отыграться — на экране перед матчем.",
+            Coach.EARLY => $"Всегда за {Coach.Clock(Coach.EARLY1)} при −1 и за {Coach.Clock(Coach.EARLY2)} при −2, кто бы ни был соперник. Сравнивают чаще, но чаще и шайбы в пустые ворота.",
             _ => "Как большинство тренеров НХЛ: за 2:00 при −1 и −2. Реже крупные поражения, но и сравнивают реже.",
         };
         v.AddChild(Section("Снятие вратаря",
             new Segmented(new[] { "Как в НХЛ", "По расчёту", "Рано" }, L.Pull switch { Coach.ASSIST => 1, Coach.EARLY => 2, _ => 0 },
                 k => { L.Pull = k switch { 1 => Coach.ASSIST, 2 => Coach.EARLY, _ => Coach.USUAL }; Changed(); }),
-            pullPlan ?? new Control(), Note(pullNote)));
+            Note(pullNote)));
         var mu = new CheckBox { Text = "Оборонительная тройка — против их лучшей", ButtonPressed = L.Matchup, FocusMode = FocusModeEnum.None };
         mu.Toggled += on => { L.Matchup = on; Changed(); };
         v.AddChild(Section("Расстановка", mu, Note("Дома на каждой остановке выпускаем оборонительную тройку и пару против лучшей тройки соперника — у хозяев последняя смена. В гостях — только на ходу, получается реже.")));
@@ -170,12 +153,12 @@ public partial class LinesView : HBoxContainer
 
         var (gF, gA) = C.LineupEffect(C.UserTeam);
         var (fF, fA) = Coach.FamGoals(C, L);
-        double famNet = fF - fA;
+        double famNet = fF - fA, ab = gF - gA;
+        Control Word(string k, double x) => Ui.H(8, Ui.Expand(Ui.L(k, 12, Ui.Muted)), Ui.L(Staff.GainWord(x), 13, Math.Abs(x) < 0.01 ? Ui.Text : x > 0 ? Ui.Win : Ui.Loss, Ui.Semi));
         v.AddChild(Section("Анализ состава",
-            Ui.H(8, Ui.Expand(Ui.L("Забиваем за матч", 12, Ui.Muted)), Ui.L(Ui.Signed(gF), 14, gF >= -0.005 ? Ui.Win : Ui.Loss, Ui.Bold)),
-            Ui.H(8, Ui.Expand(Ui.L("Пропускаем за матч", 12, Ui.Muted)), Ui.L(Ui.Signed(gA), 14, gA <= 0.005 ? Ui.Win : Ui.Loss, Ui.Bold)),
-            Ui.H(8, Ui.Expand(Ui.L("Сыгранность звеньев", 12, Ui.Muted)), Ui.L(Ui.Signed(famNet), 14, famNet >= -0.005 ? Ui.Win : Ui.Loss, Ui.Bold)),
-            Note("Способности — по оценке помощника, против звеньев «как в НХЛ». Сыгранность — голов за матч в пользу клуба против обычной: новые звенья теряют, сыгранные прибавляют.")));
+            Word("Звенья против «как в НХЛ»", ab),
+            Word("Сыгранность звеньев", famNet),
+            Note($"Способности — глазами {Staff.Assistant(C)?.Name ?? "помощника"}: он может ошибаться. Сыгранность — новые звенья теряют, сыгранные прибавляют.")));
         var auto = Ui.B("Вариант помощника", () => AssistantReview.Open(this, C, C.UserTeam, Set));
         var nhl = Ui.B("Как в НХЛ", () => Set(Lineup.FromTeam(C.Data, C.Team(C.UserTeam), C.Injured.ToHashSet())));
         auto.AddThemeFontSizeOverride("font_size", 12); nhl.AddThemeFontSizeOverride("font_size", 12);

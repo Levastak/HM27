@@ -30,7 +30,7 @@ public static class AssistantReview
         double ability = rv.Gf - rv.Ga, fam = rv.FamGf - rv.FamGa, net = ability + fam;
         bool same = rv.Changes.Count == 0;
         var tiles = Ui.H(10,
-            Tile("По его оценке", ability, "гола за матч"),
+            Tile("По его оценке", ability, rv.By == null ? "по способностям" : Staff.Confidence(rv.By, ability)),
             Tile("Сыгранность сейчас", fam, rv.Moved + rv.Changes.Count(x => x.StartsWith("В состав")) > 0 ? "новые звенья сыграются за 15–20 матчей" : "звенья те же"),
             Tile("Итого в ближайших матчах", net, net >= 0 ? "выгоднее текущего" : "пока хуже текущего", true));
         v.AddChild(tiles);
@@ -64,10 +64,12 @@ public static class AssistantReview
         var col = Math.Abs(v) < 0.005 ? Ui.Muted : v > 0 ? Ui.Win : Ui.Loss;
         p.AddChild(Ui.V(0,
             Ui.L(title, 12, Ui.Muted),
-            Ui.L(Ui.Signed(v, "0.00"), 34, col, Ui.CondBlack),
+            Ui.L(Cap(Staff.GainWord(v)), 24, col, Ui.CondBold),
             Ui.L(hint, 11, Ui.Dim)));
         return Ui.Expand(p);
     }
+
+    static string Cap(string s) => string.IsNullOrEmpty(s) ? s : char.ToUpper(s[0]) + s[1..];
 
     static Control Risk(string icon, Color col, string who, string text) =>
         Ui.H(8, Ui.Icon(icon, 15, col), Ui.L(who, 13, Ui.Text, Ui.Semi), Ui.L(text, 13, Ui.Muted));

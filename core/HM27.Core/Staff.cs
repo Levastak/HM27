@@ -133,6 +133,19 @@ public static class Staff
         return z >= 2 ? "уверен" : z >= 1 ? "скорее да" : "сомневается";
     }
 
+    /// <summary>Оценка выгоды словами (без цифр): что тренер думает о решении.</summary>
+    public static string GainWord(double est) => est >= 0.06 ? "заметно лучше" : est >= 0.02 ? "немного лучше" : est > -0.01 ? "почти без разницы" : est > -0.04 ? "немного хуже" : "заметно хуже";
+
+    /// <summary>Сравнение словами: «заметно лучше обычного», «почти как обычный» (gen — с чем сравниваем в родительном, nom — в именительном).</summary>
+    public static string GainVs(double est, string gen, string nom) => Math.Abs(est) < 0.01 ? $"почти как {nom}" : est > -0.01 && est < 0.02 ? $"чуть лучше {gen}" : $"{GainWord(est)} {gen}";
+
+    /// <summary>Мнение тренера о совете одной фразой: насколько он уверен.</summary>
+    public static string ConfWord(StaffMember s, double est)
+    {
+        string c = Confidence(s, est);
+        return c == "уверен" ? "уверен, что так лучше" : c == "скорее да" ? "думает, что так лучше" : "сомневается, но предлагает попробовать";
+    }
+
     public static string StyleText(StaffMember s)
     {
         var parts = new List<string>();

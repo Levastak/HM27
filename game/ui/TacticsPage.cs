@@ -7,9 +7,10 @@ using HM27.Core;
 namespace HM27.UI;
 
 /// <summary>
-/// «Тактика»: система игры клуба. Слева — четыре рычага (форчек, вход в зону, защитники, броски) с пригодностью состава
-/// и выучкой, в центре — тактическая доска выбранного рычага, справа — что система даёт в среднем и против следующего соперника,
-/// и кому из игроков она подходит.
+/// «Тактика»: система игры клуба. Слева — готовые стили и девять рычагов по фазам (без шайбы, с шайбой, спецбригады)
+/// с пригодностью состава и выучкой; в центре — доска выбранного рычага, что он меняет в игре и мнение помощника — словами,
+/// без голов за матч (цену схемы игрок узнаёт из журнала и советов, которые могут ошибаться); справа — кому подходит.
+/// Всё про конкретного соперника — в письме скаута и на экране «до матча».
 /// </summary>
 public partial class TacticsPage : Control
 {
@@ -19,6 +20,7 @@ public partial class TacticsPage : Control
     /// <summary>Всё на странице — глазами помощника: пригодность он оценивает со своей ошибкой.</summary>
     Func<PlayerData, string, double> Eye => _eye ??= Staff.AttrView(C, Staff.Assistant(C));
     Func<PlayerData, string, double> _eye;
+    StaffMember Asst => Staff.Assistant(C);
 
     public TacticsPage(string arg = null)
     {
@@ -36,8 +38,8 @@ public partial class TacticsPage : Control
         row.OffsetLeft = 16; row.OffsetRight = -16; row.OffsetTop = 12; row.OffsetBottom = -12;
         AddChild(row);
         row.AddChild(LeversPanel());
-        row.AddChild(Ui.Expand(Center(), true, true));
-        row.AddChild(EffectPanel());
+        row.AddChild(Ui.Expand(Ui.Scroll(Center()), true, true));
+        row.AddChild(SidePanel());
     }
 
     void Changed()
@@ -46,24 +48,55 @@ public partial class TacticsPage : Control
         CallDeferred(nameof(Build));
     }
 
-    // ------------------------------------------------------------------ слева: рычаги
+    // ------------------------------------------------------------------ мнение помощника (словами)
+    /// <summary>Как помощник оценивает край против середины для этого состава: его ошибка и любимый форчек.</summary>
+    double Opinion(int lever, int v)
+    {
+        if (v == 0) return 0;
+        var who = Asst;
+        double x = Tactics.Value(C, L, lever, v, Eye);
+        if (who == null) return x;
+        return x + Staff.TacSd(who) / 3 * Staff.Noise(C, who, 900 + lever, v) + (lever == 0 && who.Press == v ? 0.006 : 0);
+    }
+
+    double SysOpinion(int[] sys) => Enumerable.Range(0, Tactics.Levers.Length).Sum(i => Opinion(i, i < sys.Length ? sys[i] : 0));
+
+    // ------------------------------------------------------------------ слева: стили и рычаги
     Control LeversPanel()
     {
         var v = Ui.V(10);
         v.AddChild(Ui.V(0, Ui.L("Система игры", 22, Ui.Text, Ui.CondBold),
             Ui.L("Середина — обычный хоккей, его знают все. Края дают больше, если подходят игрокам, и требуют выучки.", 11, Ui.Dim).Also(Wrap)));
-        var views = Tactics.Breakdown(C, L, Eye);
-        for (int i = 0; i < Tactics.Levers.Length; i++) v.AddChild(LeverCard(i, views[i]));
-        var suggest = Ui.B("Система под состав", () =>
+        // готовые стили
+        var cur = Enumerable.Range(0, Tactics.Levers.Length).Select(i => L.SysOf(i)).ToArray();
+        var flow = new HFlowContainer();
+        flow.AddThemeConstantOverride("h_separation", 6); flow.AddThemeConstantOverride("v_separation", 6);
+        foreach (var (name, what, sys) in Tactics.Styles)
         {
-            var s = Tactics.Suggest(C, L, who: Staff.Assistant(C));
+            bool on = sys.SequenceEqual(cur);
+            var b = Ui.B(name, () => { for (int i = 0; i < sys.Length; i++) if (sys[i] != L.SysOf(i)) Tactics.Set(L, i, sys[i]); Changed(); }, false, 12);
+            b.TooltipText = what + (Asst != null ? $"\n{Asst.Name}: для нашего состава — {Staff.GainVs(SysOpinion(sys) - SysOpinion(cur), "нынешней системы", "нынешняя система")}." : "");
+            if (on) { b.AddThemeStyleboxOverride("normal", Ui.Box(new Color(Ui.Accent, 0.28f), 6, Ui.AccentBright, 9)); b.AddThemeColorOverride("font_color", Colors.White); }
+            flow.AddChild(b);
+        }
+        var plain = Ui.B("Обычная", () => { for (int i = 0; i < Tactics.Levers.Length; i++) Tactics.Set(L, i, 0); Changed(); }, false, 12);
+        flow.AddChild(plain);
+        var suggest = Ui.B("Под состав", () =>
+        {
+            var s = Tactics.Suggest(C, L, who: Asst);
             for (int i = 0; i < s.Length; i++) if (s[i] != L.SysOf(i)) Tactics.Set(L, i, s[i]);
             Changed();
-        }, false, 13);
-        suggest.TooltipText = "Помощник выберет для каждого рычага край, который больше всего подходит игрокам, или середину";
-        var reset = Ui.B("Обычная", () => { for (int i = 0; i < Tactics.Levers.Length; i++) Tactics.Set(L, i, 0); Changed(); }, false, 13);
-        v.AddChild(Ui.H(8, Ui.Expand(suggest), Ui.Expand(reset)));
-        var panel = new PanelContainer { CustomMinimumSize = new Vector2(360, 0) };
+        }, false, 12);
+        suggest.TooltipText = "Помощник выберет для каждого рычага край, который, по его мнению, больше всего подходит игрокам, или середину";
+        flow.AddChild(suggest);
+        v.AddChild(Ui.V(4, Ui.L("Готовые стили", 13, Ui.Muted, Ui.Semi), flow));
+        var views = Tactics.Breakdown(C, L, Eye);
+        foreach (var (phase, levers) in Tactics.Phases)
+        {
+            v.AddChild(Ui.L(phase, 15, Ui.Gold, Ui.Cond).Also(l => l.CustomMinimumSize = new Vector2(0, 22)));
+            foreach (var i in levers) v.AddChild(LeverCard(i, views[i]));
+        }
+        var panel = new PanelContainer { CustomMinimumSize = new Vector2(370, 0) };
         panel.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 4, null, 12));
         panel.AddChild(Ui.Scroll(v));
         return panel;
@@ -77,12 +110,18 @@ public partial class TacticsPage : Control
         int v = L.SysOf(i);
         bool sel = i == _sel;
         var card = new PanelContainer { MouseFilter = MouseFilterEnum.Stop, MouseDefaultCursorShape = CursorShape.PointingHand };
-        card.AddThemeStyleboxOverride("panel", Ui.Box(sel ? Ui.Panel2 : new Color(0, 0, 0, 0.18f), 3, sel ? Ui.Blue : Ui.Line, 10));
+        card.AddThemeStyleboxOverride("panel", Ui.Box(sel ? Ui.Panel2 : new Color(0, 0, 0, 0.18f), 3, sel ? Ui.Blue : Ui.Line, 9));
         card.GuiInput += e => { if (e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left } && _sel != i) { _sel = i; CallDeferred(nameof(Build)); } };
-        var col = Ui.V(6);
+        var col = Ui.V(5);
         col.MouseFilter = MouseFilterEnum.Pass;
         card.AddChild(col);
-        col.AddChild(Ui.H(8, Ui.Expand(Ui.L(lever.Name, 17, Ui.Text, Ui.Cond)), Ui.L(Tactics.PoleName(lever, v), 12, v == 0 ? Ui.Muted : Ui.Gold, Ui.Semi)));
+        var head = Ui.H(8, Ui.Expand(Ui.L(lever.Name, 16, Ui.Text, Ui.Cond)));
+        if (v != 0)
+        {
+            string lw = lv.Learn >= 0.95 ? "выучена" : lv.Learn >= 0.6 ? "почти выучена" : "учим";
+            head.AddChild(Ui.H(5, Ui.Bar(lv.Learn, lv.Learn >= 0.95 ? Ui.Win : Ui.Otl, 46, 5).Also(b => b.SizeFlagsVertical = SizeFlags.ShrinkCenter), Ui.L(lw, 11, lv.Learn >= 0.95 ? Ui.Muted : Ui.Otl)));
+        }
+        col.AddChild(head);
         col.AddChild(new Segmented(new[] { lever.Minus.Short, lever.MidShort, lever.Plus.Short }, v + 1, k =>
         {
             _sel = i;
@@ -99,11 +138,6 @@ public partial class TacticsPage : Control
                 FitBar(f))));
         }
         col.AddChild(fits);
-        if (v != 0)
-        {
-            var learn = new PctBar(lv.Learn) { CustomMinimumSize = new Vector2(0, 14) };
-            col.AddChild(Ui.H(8, Ui.L("Выучка", 11, Ui.Dim), Ui.Expand(learn), Ui.L($"{lv.Learn * 100:0}%", 11, lv.Learn >= 0.95 ? Ui.Win : Ui.Text, Ui.Cond)));
-        }
         return card;
     }
 
@@ -118,7 +152,7 @@ public partial class TacticsPage : Control
         return bar;
     }
 
-    // ------------------------------------------------------------------ центр: доска
+    // ------------------------------------------------------------------ центр: доска, что меняет, мнение помощника
     Control Center()
     {
         var lever = Tactics.Levers[_sel];
@@ -126,97 +160,91 @@ public partial class TacticsPage : Control
         var pole = Tactics.PoleOf(lever, v);
         var v0 = Ui.V(10);
         var board = new TacticsBoard { Lever = lever.Key, V = v, Club = Ui.Club };
-        board.SizeFlagsHorizontal = SizeFlags.ExpandFill; board.SizeFlagsVertical = SizeFlags.ExpandFill;
-        board.CustomMinimumSize = new Vector2(520, 380);
+        board.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        board.CustomMinimumSize = new Vector2(520, 360);
         v0.AddChild(Ui.H(10, Ui.L(lever.Name + ": ", 26, Ui.Muted, Ui.CondBold), Ui.L(Tactics.PoleName(lever, v), 26, v == 0 ? Ui.Text : Ui.Gold, Ui.CondBold)));
         v0.AddChild(board);
-        string what = pole?.What ?? lever.Key switch
+        v0.AddChild(Legend(lever.Key));
+        v0.AddChild(Ui.L(pole?.What ?? lever.MidWhat, 15, Ui.Text).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart));
+        // что увидите в статистике — по обоим краям
+        var watch = Ui.V(4);
+        foreach (int side in new[] { -1, 1 })
         {
-            "fc" => "Двое на шайбе в углу, третий — на подстраховке у синей линии: обычный хоккей, его знают все игроки.",
-            "en" => "Есть место — заходим с шайбой, нет — отдаём в угол и боремся.",
-            "da" => "Защитники подключаются, когда шайба у своих на синей линии, и успевают назад.",
-            _ => "Бросаем, когда есть позиция, и ищем передачу, когда её нет.",
-        };
-        v0.AddChild(Ui.L(what, 14, Ui.Text).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart));
-        v0.AddChild(Legend());
+            var pl = Tactics.PoleOf(lever, side);
+            watch.AddChild(Ui.H(8, Ui.L(pl.Short, 12, side == v ? Ui.Gold : Ui.Muted, Ui.Semi).Also(l => l.CustomMinimumSize = new Vector2(110, 0)),
+                Ui.Expand(Ui.L(Cap(pl.Watch), 12, side == v ? Ui.Text : Ui.Muted).Also(Wrap))));
+        }
+        v0.AddChild(Card(Ui.V(6, Ui.L("Что меняется в игре", 14, Ui.Text, Ui.Semi), watch,
+            Ui.L("Насколько это окупается — зависит от игроков и соперника. Смотрите журнал: что схемы дали в наших матчах.", 11, Ui.Dim).Also(Wrap),
+            Ui.B("Журнал: что сработало", () => Main.I.ShowHub("tactics:journal"), false, 12).Also(b => b.SizeFlagsHorizontal = SizeFlags.ShrinkBegin))));
+        // мнение помощника — словами
+        if (Asst is { } a)
+        {
+            var op = Ui.V(4);
+            op.AddChild(Ui.H(8, Ui.Icon("user", 14, Ui.Gold), Ui.L($"{a.Name} о рычаге «{lever.Name.ToLowerInvariant()}»", 14, Ui.Text, Ui.Semi)));
+            foreach (int side in new[] { -1, 1 })
+            {
+                double est = Opinion(_sel, side);
+                op.AddChild(Ui.H(8, Ui.L(Tactics.PoleOf(lever, side).Short, 12, Ui.Muted).Also(l => l.CustomMinimumSize = new Vector2(110, 0)),
+                    Ui.L(Cap(Staff.GainVs(est, "обычного", "обычный")), 13, est >= 0.02 ? Ui.Win : est <= -0.01 ? Ui.Otl : Ui.Text, Ui.Semi),
+                    Ui.L("— " + Staff.Confidence(a, est), 12, Ui.Dim)));
+            }
+            op.AddChild(Ui.L("Против среднего соперника, с выученной схемой. Это его взгляд: помощник со слабой тактикой ошибается чаще, и у каждого свои пристрастия.", 11, Ui.Dim).Also(Wrap));
+            v0.AddChild(Card(op));
+        }
         return v0;
     }
 
-    static Control Legend()
+    static string Cap(string s) => string.IsNullOrEmpty(s) ? s : char.ToUpper(s[0]) + s[1..];
+
+    static Control Legend(string lever)
     {
         Control Dot(Color c) => new ColorRect { Color = c, CustomMinimumSize = new Vector2(10, 10) }.Also(r => r.SizeFlagsVertical = SizeFlags.ShrinkCenter);
+        bool own = TacticsBoard.OwnZone(lever);
         return Ui.H(14,
             Ui.H(5, Dot(Ui.Club.Lightened(0.15f)), Ui.L("наши", 11, Ui.Muted)),
             Ui.H(5, Dot(new Color("6B7686")), Ui.L("соперник", 11, Ui.Muted)),
             Ui.H(5, Dot(Ui.Gold), Ui.L("движение", 11, Ui.Muted)),
-            Ui.H(5, Dot(new Color("10161F")), Ui.L("шайба и броски", 11, Ui.Muted)));
+            Ui.H(5, Dot(new Color("10161F")), Ui.L("шайба, передачи и броски", 11, Ui.Muted)),
+            Ui.L(own ? "ворота — наши" : "ворота — соперника", 11, Ui.Dim));
     }
 
-    // ------------------------------------------------------------------ справа: что даёт и кому подходит
-    Control EffectPanel()
+    // ------------------------------------------------------------------ справа: помощник и кому подходит
+    Control SidePanel()
     {
         var v = Ui.V(12);
-        double gpg = C.Data.League.GoalsPerGame * 0.95;
-        var views = Tactics.Breakdown(C, L, Eye);
-        double F = views.Sum(x => x.F), A = views.Sum(x => x.A);
-        double gf = gpg * (Math.Exp(F) - 1), ga = gpg * (Math.Exp(A) - 1);
-        if (Staff.Assistant(C) is { } asst)
-            v.AddChild(Card(Ui.V(2, Ui.H(8, Ui.Icon("user", 14, Ui.Gold), Ui.L($"Помощник: {asst.Name}", 14, Ui.Text, Ui.Semi)),
-                Ui.L($"Тактика — {Staff.Level(asst.Tac)}, оценка игроков — {Staff.Level(asst.Judge)}; {Staff.StyleText(asst)}", 11, Ui.Muted).Also(Wrap),
-                Ui.L("Его советы — его взгляд: сильный помощник ошибается реже, у каждого свои пристрастия.", 11, Ui.Dim).Also(Wrap))));
-        v.AddChild(Ui.L("Что даёт система", 18, Ui.Text, Ui.Cond));
-        v.AddChild(Ui.H(16,
-            Big("Итого за матч", gf - ga, true),
-            Big("Забиваем", gf, false),
-            Big("Пропускаем", ga, false, true)));
-        v.AddChild(Ui.L("Голов за матч против обычной системы по оценке помощника — с этим составом против среднего соперника, с нынешней выучкой.", 11, Ui.Dim).Also(Wrap));
-
-        // против следующего соперника — с его системой и составом
-        var next = C.NextGame(C.UserTeam);
-        if (next != null)
+        if (Asst is { } asst)
         {
-            var (hs, aws) = C.Sides(next, true);
-            bool home = next.Home == C.UserTeam;
-            var me = home ? hs : aws;
-            var opp = C.Data.TeamByAbbr[home ? next.Away : next.Home];
-            var ol = C.Lineups[opp.Abbr];
-            var box = Ui.V(4);
-            double nf = gpg * (Math.Exp(me.Sys?.For ?? 0) - 1), na = gpg * (Math.Exp(me.Sys?.Against ?? 0) - 1);
-            double est = Staff.Estimate(C, Staff.Assistant(C), nf - na, next.Id, 77);
-            box.AddChild(Ui.H(8, Ui.Expand(Ui.L($"Против «{opp.Name}»", 14, Ui.Text, Ui.Semi)), Ui.L(Ui.Signed(est), 18, Col(est), Ui.CondBold)));
-            box.AddChild(Ui.L("Их система: " + string.Join(", ", Enumerable.Range(0, Tactics.Levers.Length).Select(i => Tactics.PoleName(Tactics.Levers[i], ol.SysOf(i)).ToLowerInvariant())), 11, Ui.Muted).Also(Wrap));
-            foreach (var n in me.Sys?.Notes ?? new List<string>()) box.AddChild(Ui.H(6, Ui.Icon("triangle-alert", 13, Ui.Otl), Ui.L(n, 12, Ui.Text).Also(Wrap)));
-            if ((me.Sys?.Notes.Count ?? 0) == 0) box.AddChild(Ui.L("Особых контрприёмов у соперника нет.", 12, Ui.Muted));
-            v.AddChild(Card(box));
+            var cur = Enumerable.Range(0, Tactics.Levers.Length).Select(i => L.SysOf(i)).ToArray();
+            double all = SysOpinion(cur);
+            v.AddChild(Card(Ui.V(3, Ui.H(8, Ui.Icon("user", 14, Ui.Gold), Ui.L($"Помощник: {asst.Name}", 14, Ui.Text, Ui.Semi)),
+                Ui.L($"Тактика — {Staff.Level(asst.Tac)}, оценка игроков — {Staff.Level(asst.Judge)}; {Staff.StyleText(asst)}", 11, Ui.Muted).Also(Wrap),
+                Ui.L($"Система в целом, по его мнению, {Staff.GainVs(all, "обычной", "обычная")} ({Staff.Confidence(asst, all)}).", 12, Ui.Text).Also(Wrap))));
         }
+        var style = Tactics.Styles.FirstOrDefault(x => x.sys.SequenceEqual(Enumerable.Range(0, Tactics.Levers.Length).Select(i => L.SysOf(i))));
+        if (style.name != null) v.AddChild(Card(Ui.V(3, Ui.L($"Стиль «{style.name}»", 14, Ui.Gold, Ui.Semi), Ui.L(style.what, 12, Ui.Text).Also(Wrap))));
 
-        // кому подходит выбранный рычаг
         var lever = Tactics.Levers[_sel];
         int sv = L.SysOf(_sel);
         int side = sv != 0 ? sv : (Tactics.Fit(C, L, lever, 1, Eye) >= Tactics.Fit(C, L, lever, -1, Eye) ? 1 : -1);
         var pole = Tactics.PoleOf(lever, side);
-        var dressed = L.Skaters.Select(id => C.Data.PlayerById[id]).ToList();
+        var pool = pole.Group == 'P' ? (L.Pp1 ?? Array.Empty<int>()).Concat(L.Pp2 ?? Array.Empty<int>())
+                 : pole.Group == 'K' ? (L.Pk1 ?? Array.Empty<int>()).Concat(L.Pk2 ?? Array.Empty<int>()) : L.Skaters;
+        var dressed = pool.Where(id => id != 0).Distinct().Select(id => C.Data.PlayerById[id]).ToList();
         var ranked = dressed.Select(p => (p, f: Tactics.PlayerFit(C, p, lever, side, Eye))).Where(x => !double.IsNaN(x.f)).OrderByDescending(x => x.f).ToList();
         var who = Ui.V(3);
-        who.AddChild(Ui.L($"Кому подходит «{pole.Name}»", 14, Ui.Text, Ui.Semi));
+        who.AddChild(Ui.L($"Кому подходит «{pole.Short}»", 14, Ui.Text, Ui.Semi));
         who.AddChild(Ui.L("Нужно: " + string.Join(", ", pole.Fit.Select(x => HM27.Core.Attrs.Skater.First(a => a.Key == x.k).Name.ToLowerInvariant())), 11, Ui.Muted).Also(Wrap));
+        if (pole.Group is 'P' or 'K') who.AddChild(Ui.L(pole.Group == 'P' ? "Смотрим звенья большинства." : "Смотрим звенья меньшинства.", 11, Ui.Dim));
         foreach (var (p, f) in ranked.Take(4)) who.AddChild(PlayerRow(p, f));
         if (ranked.Count > 7) who.AddChild(Ui.Rule());
         foreach (var (p, f) in ranked.Skip(Math.Max(4, ranked.Count - 3))) who.AddChild(PlayerRow(p, f));
         v.AddChild(Card(who));
 
-        var panel = new PanelContainer { CustomMinimumSize = new Vector2(400, 0) };
+        var panel = new PanelContainer { CustomMinimumSize = new Vector2(380, 0) };
         panel.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 4, null, 14));
         panel.AddChild(Ui.Scroll(v));
         return panel;
-    }
-
-    static Color Col(double x) => Math.Abs(x) < 0.005 ? Ui.Muted : x > 0 ? Ui.Win : Ui.Loss;
-
-    static Control Big(string cap, double val, bool main, bool against = false)
-    {
-        var v = Ui.V(-2, Ui.L(cap, 11, Ui.Muted), Ui.L(Ui.Signed(val), main ? 40 : 26, main ? (Math.Abs(val) < 0.005 ? Ui.Text : val > 0 ? Ui.Gold : Ui.Loss) : Col(against ? -val : val), Ui.CondBlack));
-        return v;
     }
 
     static Control Card(Control content)
@@ -291,13 +319,19 @@ public partial class TacticsBoard : Control
         DrawRect(new Rect2(At(0.905f, 0.465f), new Vector2(w * 0.03f, h * 0.07f)), RedL, false, 2);
         DrawString(Ui.Semi, At(0.02f, 0.06f) + new Vector2(0, 8), "красная линия", HorizontalAlignment.Left, -1, 11, new Color(0, 0, 0, 0.35f));
         DrawString(Ui.Semi, At(0.375f, 0.06f) + new Vector2(0, 8), "синяя линия", HorizontalAlignment.Left, -1, 11, new Color(0, 0, 0, 0.35f));
-        DrawString(Ui.Semi, At(0.84f, 0.97f) + new Vector2(-30, 0), "атака →", HorizontalAlignment.Left, -1, 11, new Color(0, 0, 0, 0.35f));
+        DrawString(Ui.Semi, At(0.8f, 0.97f) + new Vector2(-30, 0), OwnZone(Lever) ? "наши ворота →" : "атака →", HorizontalAlignment.Left, -1, 11, new Color(0, 0, 0, 0.35f));
+        if (OwnZone(Lever)) Goalie();
 
         switch (Lever)
         {
             case "fc": Forecheck(); break;
             case "en": Entry(); break;
             case "da": Defense(); break;
+            case "agg": Physical(); break;
+            case "dz": OwnZoneD(); break;
+            case "bo": Breakout(); break;
+            case "pp": PowerPlay(); break;
+            case "pk": PenaltyKill(); break;
             default: Shots(); break;
         }
     }
@@ -349,6 +383,166 @@ public partial class TacticsBoard : Control
     }
 
     Color Gold => Ui.Gold;
+
+    /// <summary>Рычаги своей зоны: ворота на доске — наши.</summary>
+    public static bool OwnZone(string lever) => lever is "dz" or "bo" or "pk";
+
+    void Goalie()
+    {
+        var p = At(0.88f, 0.5f);
+        float r = _sz.Y * 0.04f;
+        DrawRect(new Rect2(p - new Vector2(r * 0.7f, r * 1.1f), new Vector2(r * 1.4f, r * 2.2f)), Club.Darkened(0.2f));
+        DrawRect(new Rect2(p - new Vector2(r * 0.7f, r * 1.1f), new Vector2(r * 1.4f, r * 2.2f)), Colors.White, false, 2);
+    }
+
+    void Burst(Vector2 p, Color c)
+    {
+        float r = _sz.Y * 0.035f;
+        var pts = new Vector2[16];
+        for (int i = 0; i < 16; i++) { float t = i / 16f * Mathf.Tau; float rr = i % 2 == 0 ? r : r * 0.45f; pts[i] = p + new Vector2(Mathf.Cos(t) * rr, Mathf.Sin(t) * rr); }
+        DrawColoredPolygon(pts, c);
+    }
+
+    void Tag(Vector2 p, string text, Color c) => DrawString(Ui.Semi, p, text, HorizontalAlignment.Left, -1, 12, c);
+
+    void Physical()
+    {
+        // у борта: соперник с шайбой, второй — у ворот; наши — в борьбе
+        var a = At(0.8f, 0.14f); var b = At(0.64f, 0.72f);
+        Player(a, "", false); Puck(a + new Vector2(_sz.Y * 0.05f, 0)); Player(b, "", false);
+        Player(At(0.84f, 0.5f), "", false);
+        switch (V)
+        {
+            case 1:
+                Player(At(0.66f, 0.2f), "Н1"); Arrow(At(0.66f, 0.2f), a + new Vector2(-14, 4), Gold, 5); Burst(a + new Vector2(-6, 10), new Color(Ui.Red, 0.8f));
+                Player(At(0.5f, 0.66f), "З"); Arrow(At(0.5f, 0.66f), b + new Vector2(-14, 0), Gold, 5); Burst(b + new Vector2(-8, 0), new Color(Ui.Red, 0.8f));
+                Player(At(0.72f, 0.4f), "Н2"); Arrow(At(0.72f, 0.4f), At(0.8f, 0.48f), Gold, 3);
+                Tag(At(0.38f, 0.42f), "силовой — при каждой возможности", new Color(Ui.Red, 0.85f));
+                break;
+            case -1:
+                Player(At(0.7f, 0.22f), "Н1"); DrawLine(At(0.7f, 0.22f), a + new Vector2(_sz.Y * 0.05f, 0), Ink, 2); 
+                Player(At(0.72f, 0.66f), "З"); DrawDashedLine(At(0.72f, 0.66f), b, Club, 2, 6);
+                Player(At(0.74f, 0.42f), "Н2");
+                Zone(At(0.78f, 0.5f), _sz.X * 0.08f, _sz.Y * 0.2f, new Color(Club, 0.14f));
+                Tag(At(0.36f, 0.42f), "клюшкой и положением, между ним и воротами", new Color(Club, 0.95f));
+                break;
+            default:
+                Player(At(0.66f, 0.2f), "Н1"); Arrow(At(0.66f, 0.2f), a + new Vector2(-14, 4), Gold, 4); Burst(a + new Vector2(-6, 10), new Color(Ui.Red, 0.6f));
+                Player(At(0.72f, 0.66f), "З"); DrawDashedLine(At(0.72f, 0.66f), b, Club, 2, 6);
+                Player(At(0.74f, 0.42f), "Н2");
+                break;
+        }
+    }
+
+    void OwnZoneD()
+    {
+        // атакуют соперники: двое на синей, трое внизу; ворота наши
+        var o = new[] { At(0.42f, 0.24f), At(0.42f, 0.76f), At(0.74f, 0.12f), At(0.76f, 0.86f), At(0.8f, 0.42f) };
+        foreach (var p in o) Player(p, "", false);
+        Puck(o[0] + new Vector2(_sz.Y * 0.05f, 0));
+        switch (V)
+        {
+            case -1:
+                Zone(At(0.76f, 0.5f), _sz.X * 0.12f, _sz.Y * 0.2f, new Color(Club, 0.18f));
+                Player(At(0.66f, 0.36f), "ЛН"); Player(At(0.66f, 0.64f), "ПН"); Player(At(0.83f, 0.34f), "ЛЗ"); Player(At(0.83f, 0.66f), "ПЗ"); Player(At(0.74f, 0.5f), "Ц");
+                Arrow(o[0] + new Vector2(10, 6), At(0.86f, 0.47f), Ink, 2, true); Arrow(o[1] + new Vector2(10, -6), At(0.86f, 0.53f), Ink, 2, true);
+                Tag(At(0.5f, 0.52f), "пятак закрыт, бросают издали", new Color(Club, 0.95f));
+                break;
+            case 1:
+                Player(At(0.47f, 0.28f), "ЛН"); Player(At(0.47f, 0.72f), "ПН"); Player(At(0.72f, 0.18f), "ЛЗ"); Player(At(0.73f, 0.8f), "ПЗ"); Player(At(0.77f, 0.47f), "Ц");
+                foreach (var (a, b) in new[] { (0.47f, 0.28f, 0), (0.47f, 0.72f, 1), (0.72f, 0.18f, 2), (0.73f, 0.8f, 3), (0.77f, 0.47f, 4) }.Select(x => (At(x.Item1, x.Item2), o[x.Item3])))
+                    DrawDashedLine(a, b, Gold, 2, 5);
+                Tag(At(0.5f, 0.52f), "каждый держит своего", new Color(Gold.Darkened(0.4f), 1));
+                break;
+            default:
+                Player(At(0.52f, 0.3f), "ЛН"); Player(At(0.52f, 0.7f), "ПН"); Player(At(0.73f, 0.18f), "ЛЗ"); Player(At(0.8f, 0.6f), "ПЗ"); Player(At(0.72f, 0.46f), "Ц");
+                DrawDashedLine(At(0.73f, 0.18f), o[2], Gold, 2, 5);
+                Zone(At(0.8f, 0.52f), _sz.X * 0.07f, _sz.Y * 0.13f, new Color(Club, 0.14f));
+                break;
+        }
+    }
+
+    void Breakout()
+    {
+        // выход из своей зоны: защитник с шайбой за воротами, выходим влево
+        var d = At(0.96f, 0.42f);
+        Player(d, "З"); Puck(d + new Vector2(-_sz.Y * 0.05f, _sz.Y * 0.03f));
+        Player(At(0.7f, 0.3f), "", false); Player(At(0.62f, 0.7f), "", false); Player(At(0.3f, 0.5f), "", false);
+        switch (V)
+        {
+            case -1:
+                Player(At(0.4f, 0.08f), "ЛН");
+                Curve(d + new Vector2(-6, -12), At(0.9f, 0.0f), At(0.42f, 0.1f), Ink, 3, true);
+                Arrow(At(0.4f, 0.08f), At(0.14f, 0.08f), Gold, 3);
+                Player(At(0.74f, 0.62f), "Ц"); Player(At(0.86f, 0.82f), "З");
+                Arrow(At(0.36f, 0.13f), At(0.02f, 0.2f), Ink, 2, true);
+                Tag(At(0.1f, 0.3f), "по борту, при давлении — выбросить", new Color(Club, 0.95f));
+                break;
+            case 1:
+                Player(At(0.08f, 0.4f), "ЛН"); Arrow(At(0.08f, 0.4f), At(0.0f, 0.36f), Gold, 4);
+                Arrow(d + new Vector2(-12, 0), At(0.1f, 0.42f), Ink, 3, true);
+                Player(At(0.66f, 0.5f), "Ц"); Player(At(0.44f, 0.86f), "ПН"); Arrow(At(0.44f, 0.86f), At(0.14f, 0.8f), Gold, 3);
+                Tag(At(0.16f, 0.62f), "первым пасом — на ход", new Color(Gold.Darkened(0.4f), 1));
+                break;
+            default:
+                Player(At(0.72f, 0.55f), "Ц"); Arrow(d + new Vector2(-10, 4), At(0.73f, 0.53f), Ink, 2, true); Arrow(At(0.72f, 0.55f), At(0.4f, 0.5f), Gold, 4);
+                Player(At(0.46f, 0.16f), "ЛН"); Player(At(0.42f, 0.88f), "ПН");
+                break;
+        }
+    }
+
+    void PowerPlay()
+    {
+        // четверо соперника — коробкой
+        foreach (var (x, y) in new[] { (0.66f, 0.36f), (0.66f, 0.64f), (0.82f, 0.36f), (0.82f, 0.64f) }) Player(At(x, y), "", false);
+        switch (V)
+        {
+            case -1:   // зонтик: бросок с синей, заслон и подправление
+                Player(At(0.4f, 0.5f), "З"); Puck(At(0.43f, 0.5f));
+                Player(At(0.5f, 0.16f), "Н"); Player(At(0.5f, 0.84f), "Н"); Player(At(0.88f, 0.44f), "Н"); Player(At(0.74f, 0.5f), "Ц");
+                Arrow(At(0.44f, 0.5f), At(0.88f, 0.5f), Ink, 3, true);
+                Zone(At(0.88f, 0.48f), _sz.X * 0.04f, _sz.Y * 0.09f, new Color(Gold, 0.35f));
+                Tag(At(0.5f, 0.62f), "бросок сквозь заслон", new Color(0, 0, 0, 0.6f));
+                break;
+            case 1:    // 1-3-1: передачи поперёк и бросок в одно касание
+                Player(At(0.4f, 0.5f), "З"); Player(At(0.62f, 0.12f), "Н"); Player(At(0.74f, 0.5f), "Ц"); Player(At(0.62f, 0.88f), "Н"); Player(At(0.88f, 0.5f), "Н");
+                Puck(At(0.65f, 0.14f));
+                Arrow(At(0.64f, 0.16f), At(0.6f, 0.84f), Ink, 2, true);
+                Arrow(At(0.62f, 0.84f), At(0.88f, 0.55f), Ink, 3, true);
+                Tag(At(0.3f, 0.3f), "передача — бросок в одно касание", new Color(0, 0, 0, 0.6f));
+                break;
+            default:
+                Player(At(0.42f, 0.32f), "З"); Player(At(0.48f, 0.78f), "Н"); Player(At(0.62f, 0.14f), "Н"); Player(At(0.88f, 0.46f), "Н"); Player(At(0.74f, 0.56f), "Ц");
+                Puck(At(0.45f, 0.33f));
+                Arrow(At(0.45f, 0.34f), At(0.62f, 0.16f), Ink, 2, true);
+                break;
+        }
+    }
+
+    void PenaltyKill()
+    {
+        // у соперника пятеро: зонтик; у нас четверо
+        var o = new[] { At(0.42f, 0.5f), At(0.56f, 0.14f), At(0.56f, 0.86f), At(0.86f, 0.42f), At(0.74f, 0.6f) };
+        foreach (var p in o) Player(p, "", false);
+        Puck(o[1] + new Vector2(_sz.Y * 0.05f, 0));
+        switch (V)
+        {
+            case -1:
+                Zone(At(0.74f, 0.5f), _sz.X * 0.1f, _sz.Y * 0.2f, new Color(Club, 0.18f));
+                Player(At(0.66f, 0.36f), "Н"); Player(At(0.66f, 0.64f), "Н"); Player(At(0.82f, 0.34f), "З"); Player(At(0.82f, 0.66f), "З");
+                Tag(At(0.3f, 0.32f), "коробка: периметр — им", new Color(Club, 0.95f));
+                break;
+            case 1:
+                Player(At(0.6f, 0.26f), "Н"); Arrow(At(0.6f, 0.26f), o[1] + new Vector2(6, 12), Gold, 4);
+                Player(At(0.5f, 0.4f), "Н"); Arrow(At(0.5f, 0.4f), At(0.46f, 0.47f), Gold, 3);
+                Player(At(0.8f, 0.38f), "З"); Player(At(0.8f, 0.64f), "З");
+                Tag(At(0.24f, 0.72f), "давим на шайбу — ловим на ошибке", new Color(Gold.Darkened(0.4f), 1));
+                break;
+            default:
+                Player(At(0.6f, 0.5f), "Н"); Player(At(0.7f, 0.3f), "Н"); Player(At(0.7f, 0.7f), "З"); Player(At(0.78f, 0.56f), "З");
+                break;
+        }
+    }
 
     void Forecheck()
     {

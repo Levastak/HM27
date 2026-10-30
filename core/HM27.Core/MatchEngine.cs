@@ -25,10 +25,15 @@ public sealed class MatchSide
     public double? Pull1, Pull2;
     /// <summary>Система игры на этот матч (Tactics.Of); null — обычная.</summary>
     public Tactics.Effect Sys;
-    /// <summary>Задания на соперника: плотная опека (его игрок) и давление на его защитника; 0 — нет.</summary>
-    public int Shadow, PressD;
+    /// <summary>Задания на соперника (до трёх): игрок соперника → shadow (плотная опека), press (давить), hit (жёстко), lane (не давать бросать).</summary>
+    public Dictionary<int, string> Targets;
+    /// <summary>Настрой на матч от тренера (слова в перерыве, требование, тайм-аут): лог голов, только свой клуб.</summary>
+    public double Spark;
+    public int TargetOf(string kind) => Targets?.FirstOrDefault(x => x.Value == kind).Key ?? 0;
     /// <summary>Система на этот матч (план тренера или решение в перерыве); null — система клуба (Lineup.Sys).</summary>
     public int[] Plan;
+    /// <summary>Система и темп на старте матча (для журнала тренера: решения по ходу матча — отдельно).</summary>
+    public int[] StartSys; public int StartTempo;
 }
 
 public sealed class GoalEvent
@@ -76,6 +81,9 @@ public sealed class MatchResult
     /// <summary>Секунды вместе на льду для пар партнёров (нападающие с нападающими, защитники с защитниками) — для сыгранности.
     /// Не сохраняется: карьера забирает сразу после матча.</summary>
     [System.Text.Json.Serialization.JsonIgnore] public Dictionary<long, int> PairSec { get; set; }
+    /// <summary>Счётчики движка по сторонам (броски по зонам, атаки с хода, блоки, спецбригады…) — для журнала тренера; не сохраняются.</summary>
+    [System.Text.Json.Serialization.JsonIgnore] public Dictionary<string, double> HomeStats { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore] public Dictionary<string, double> AwayStats { get; set; }
 }
 
 public sealed class MatchEvent
@@ -90,6 +98,12 @@ public sealed class MatchEvent
     public int Z { get; set; } = -1;
     /// <summary>Ожидаемый гол броска в створ (без вратаря); у блоков и промахов — 0.</summary>
     public double Xg { get; set; }
+    /// <summary>Бросок или гол с хода — после отбора или потери соперника (1).</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public int R { get; set; }
+    /// <summary>Гол после видеопросмотра: 1 — засчитан, 2 — отменён.</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public int Rev { get; set; }
 }
 
 /// <summary>Шансы до матча.</summary>
@@ -180,8 +194,8 @@ public static class MatchEngine
         double tempo = (1 + TEMPO_K * home.Tempo) * (1 + TEMPO_K * away.Tempo);
         lh *= tempo; la *= tempo;
         // системы игры: свои голы и голы против
-        lh *= Math.Exp((home.Sys?.For ?? 0) + (away.Sys?.Against ?? 0));
-        la *= Math.Exp((away.Sys?.For ?? 0) + (home.Sys?.Against ?? 0));
+        lh *= Math.Exp((home.Sys?.For ?? 0) + (away.Sys?.Against ?? 0) + home.Spark);
+        la *= Math.Exp((away.Sys?.For ?? 0) + (home.Sys?.Against ?? 0) + away.Spark);
 
         double phr0 = 0, par0 = 0;
         for (int i = 0; i < 13; i++)

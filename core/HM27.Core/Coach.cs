@@ -79,7 +79,7 @@ public static class Coach
         _ => $"С {opp} примерно на равных: менять темп нет смысла.",
     };
 
-    static string Gain(double g, bool playoff) => playoff ? $"+{100 * g:0.0}%" : $"+{g:0.000} за матч";
+    static string Gain(double g, bool playoff) => playoff ? (g >= 0.01 ? "заметно выше" : "чуть выше") : (g >= 0.02 ? "заметно больше" : "чуть больше");
 
     // ------------------------------------------------------------------ снятие вратаря
 
@@ -279,8 +279,46 @@ public sealed class MatchPlan
 {
     public int Game { get; set; }
     public int[] Sys { get; set; }
+    /// <summary>Задания на соперника (до трёх): игрок → вид (MatchSide.Targets).</summary>
+    public Dictionary<int, string> Targets { get; set; } = new();
+    /// <summary>Старые сохранения: опека и давление по одному игроку (переносятся в Targets).</summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
     public int Shadow { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
     public int PressD { get; set; }
+    public const int MAX_TARGETS = 3;
+
+    public Dictionary<int, string> All()
+    {
+        Targets ??= new();
+        if (Shadow != 0) { Targets.TryAdd(Shadow, "shadow"); Shadow = 0; }
+        if (PressD != 0) { Targets.TryAdd(PressD, "press"); PressD = 0; }
+        return Targets;
+    }
+
+    /// <summary>Поставить задание (kind = null — снять); больше трёх — нельзя.</summary>
+    public bool Set(int id, string kind)
+    {
+        var t = All();
+        if (kind == null) return t.Remove(id);
+        if (!t.ContainsKey(id) && t.Count >= MAX_TARGETS) return false;
+        t[id] = kind; return true;
+    }
+}
+
+/// <summary>Задания на соперника: названия и что они делают (для экрана и помощника).</summary>
+public static class Targeting
+{
+    public sealed record Kind(string Key, string Name, string What, string Cost);
+    /// <summary>Внимание делится: с двумя заданиями каждое работает на 71%, с тремя — на 58% (цена — полная).</summary>
+    public static readonly Kind[] Kinds =
+    {
+        new("shadow", "Плотная опека", "его атака слабее, бросает реже", "у нас больше удалений"),
+        new("press", "Давить на него", "ошибается с шайбой, хуже обороняется", "наши устают быстрее"),
+        new("hit", "Играть жёстко", "устаёт и торопится с шайбой", "у нас больше удалений"),
+        new("lane", "Не давать бросать", "бросает реже и дальше от ворот", "зато чаще отдаёт партнёрам"),
+    };
+    public static Kind Get(string k) => Kinds.FirstOrDefault(x => x.Key == k);
 }
 
 /// <summary>
@@ -309,6 +347,7 @@ public static class Rules
         ("tempo-", "Закрыть игру"), ("tempo+", "Открыть игру"),
         ("fc-", "Сдержанный форчек 1-2-2"), ("fc0", "Убрать прессинг"), ("fc+", "Прессинг 2-3"),
         ("sh+", "Бросать всё"), ("da-", "Защитники — сзади"), ("da+", "Защитники — в атаку"),
+        ("agg-", "Спокойнее, без лишних силовых"), ("agg+", "Жёстче в борьбе"), ("dz-", "Закрыть пятак"), ("bo-", "Выходить по борту"),
         ("goalie", "Сменить вратаря"),
     };
 
@@ -355,7 +394,9 @@ public static class Rules
 
     public static Decision Decide(ShiftEngine.Sim sim, bool home, IEnumerable<Rule> rules, int baseTempo, int[] baseSys)
     {
-        var d = new Decision { Tempo = baseTempo, Sys = (int[])(baseSys ?? new int[Tactics.Levers.Length]).Clone() };
+        var sys0 = new int[Tactics.Levers.Length];
+        if (baseSys != null) Array.Copy(baseSys, sys0, Math.Min(baseSys.Length, sys0.Length));
+        var d = new Decision { Tempo = baseTempo, Sys = sys0 };
         foreach (var r in rules)
         {
             if (!r.On || r.Then == "none" || !Holds(sim, home, r.When)) continue;
@@ -366,7 +407,7 @@ public static class Rules
                 case "goalie": d.Goalie = true; break;
                 case "fc0" when d.Sys[0] <= 0: continue;   // «убрать прессинг» — только если давим
                 default:
-                    int lever = Array.FindIndex(Tactics.Levers, l => r.Then.StartsWith(l.Key));
+                    int lever = Tactics.IndexOf(r.Then.TrimEnd('+', '-', '0'));
                     if (lever >= 0) d.Sys[lever] = r.Then.EndsWith("-") ? -1 : r.Then.EndsWith("+") ? 1 : 0;
                     break;
             }
@@ -423,7 +464,9 @@ public static class LiveAdvice
         var me = lg.Me; var op = lg.Opp;
         var list = new List<Item>();
         void Refresh() { Tactics.Prepare(c, sim.HomeSide, sim.AwaySide); sim.Apply(); }
-        var curSys = (int[])(me.Plan ?? me.Lineup.Sys ?? new int[Tactics.Levers.Length]).Clone();
+        var curSys = new int[Tactics.Levers.Length];
+        var src = me.Plan ?? me.Lineup.Sys;
+        if (src != null) Array.Copy(src, curSys, Math.Min(src.Length, curSys.Length));
         var who = Staff.Decider(c, me.Team.Abbr);
 
         // 1) правила тренера
@@ -449,7 +492,7 @@ public static class LiveAdvice
                     () => { me.Goalie = backup; sim.Note(home, "в воротах " + c.Short(backup)); sim.Apply(); }));
         }
 
-        // 2) против того, как соперник играет сейчас: полюс, который заметно лучше текущего (с выучкой)
+        // 2) против того, как соперник играет сейчас: край, который заметно лучше текущего (с выучкой) — словами, без цифр
         var keep = me.Plan;
         double Eval(int[] s) { me.Plan = s; var e = Tactics.Of(c, me, op); me.Plan = keep; return c.Data.League.GoalsPerGame * 0.95 * (Math.Exp(e.For) - Math.Exp(e.Against)); }
         double cur = Eval(curSys);
@@ -465,7 +508,7 @@ public static class LiveAdvice
                 int li = i, vv = v; var lv = Tactics.Levers[i];
                 me.Plan = s; var notes = Tactics.Of(c, me, op).Notes; me.Plan = keep;
                 list.Add(new($"{lv.Name}: {Tactics.PoleName(lv, v).ToLowerInvariant()}",
-                    (notes.FirstOrDefault() ?? "против их нынешней игры так выгоднее") + $" — около {gain:+0.00} гола за матч, {Staff.Confidence(who, gain)}",
+                    notes.Count > 0 ? $"{Cap(notes[0])}. {who?.Name ?? "Помощник"} {Staff.ConfWord(who, gain)}" : $"{who?.Name ?? "Помощник"} {Staff.ConfWord(who, gain)} против их нынешней игры",
                     () => { var s2 = (int[])(me.Plan ?? me.Lineup.Sys ?? new int[Tactics.Levers.Length]).Clone(); s2[li] = vv; me.Plan = s2; sim.Note(home, $"{lv.Name.ToLowerInvariant()} — {Tactics.PoleName(lv, vv).ToLowerInvariant()}"); Refresh(); }));
                 break;
             }
@@ -484,7 +527,7 @@ public static class LiveAdvice
             if (good.p > 0 || good.b.Pm > 0)
             {
                 int x1 = bad.id, x2 = good.id;
-                list.Add(new($"Поменять {c.Short(x1)} и {c.Short(x2)}", $"у {c.Short(x1)} {bad.b.Pm} и ни одного очка, у {c.Short(x2)} {(good.p > 0 ? $"{good.p} очк." : $"+{good.b.Pm}")}; сыгранность новых троек ниже",
+                list.Add(new($"Поменять {c.Short(x1)} и {c.Short(x2)}", $"У {c.Short(x1)} {bad.b.Pm} и ни одного очка, у {c.Short(x2)} {(good.p > 0 ? $"{good.p} очк." : $"+{good.b.Pm}")}. Сыгранность новых троек ниже",
                     () => { sim.SwapLines(home, x1, x2); sim.Note(home, $"{c.Short(x2)} — выше, {c.Short(x1)} — ниже"); sim.Apply(); }));
             }
         }
@@ -493,21 +536,42 @@ public static class LiveAdvice
         {
             var b = sim.BoxOf(home, id);
             if (b == null || b.Pm > -2 || Orders.Get(key) is not { } od) continue;
-            list.Add(new($"Снять указание «{od.Name.ToLowerInvariant()}» с {c.Short(id)}", $"с ним на льду {b.Pm} — не работает",
+            list.Add(new($"Снять указание «{od.Name.ToLowerInvariant()}» с {c.Short(id)}", $"С ним на льду {b.Pm} — не работает",
                 () => { ml.Orders = new(ml.Orders); ml.Orders.Remove(id); sim.Note(home, $"{c.Short(id)} — без указаний"); sim.Apply(); }));
         }
 
-        // 4) у соперника «горячий» игрок — опека
+        // 4) задания на соперника: «горячий» нападающий — опека; защитник, который теряет шайбу, — давить
+        me.Targets ??= new();
         var oppAbbr = op.Team.Abbr;
+        bool room = me.Targets.Count < MatchPlan.MAX_TARGETS;
         var hot = sim.Result.Events.Where(e => e.Kind == "goal" && e.Team == oppAbbr).GroupBy(e => e.P1).OrderByDescending(x => x.Count()).FirstOrDefault();
-        if (hot != null && hot.Count() >= 2 && me.Shadow != hot.Key)
+        if (room && hot != null && hot.Count() >= 2 && !me.Targets.ContainsKey(hot.Key))
         {
             int id = hot.Key;
-            list.Add(new($"Плотно опекать {c.Short(id)}", $"у него уже {hot.Count()} {(hot.Count() < 5 ? "гола" : "голов")}; у нас станет чуть больше удалений",
-                () => { me.Shadow = id; sim.Note(home, "опекаем " + c.Short(id)); sim.Apply(); }));
+            list.Add(new($"Плотно опекать {c.Short(id)}", $"У него уже {hot.Count()} {(hot.Count() < 5 ? "гола" : "голов")}. У нас станет чуть больше удалений",
+                () => { me.Targets[id] = "shadow"; sim.Note(home, "опекаем " + c.Short(id)); sim.Apply(); }));
+        }
+        var loose = sim.Result.Events.Where(e => e.Kind == "gv" && e.Team == oppAbbr).GroupBy(e => e.P1).OrderByDescending(x => x.Count()).FirstOrDefault();
+        if (room && loose != null && loose.Count() >= 3 && !me.Targets.ContainsKey(loose.Key))
+        {
+            int id = loose.Key;
+            list.Add(new($"Давить на {c.Short(id)}", $"Он уже {loose.Count()} раза потерял шайбу — под давлением ошибается. Наши устанут чуть быстрее",
+                () => { me.Targets[id] = "press"; sim.Note(home, "давим на " + c.Short(id)); sim.Apply(); }));
+        }
+
+        // 5) наши устали: тайм-аут
+        if (!sim.TimeoutUsed(home) && sim.InPeriod)
+        {
+            var ids = ml.F.Take(2).SelectMany(x => x).Concat(ml.D.Take(2).SelectMany(x => x)).Where(id => id != 0).ToList();
+            double e = ids.Count == 0 ? 1 : ids.Average(id => sim.Energy(home, id));
+            if (e < 0.62)
+                list.Add(new("Взять тайм-аут", "Первые звенья выдохлись — минута отдыха вернёт им ноги. Тайм-аут один на матч",
+                    () => { sim.Timeout(home); }));
         }
         return list;
     }
+
+    static string Cap(string s) => string.IsNullOrEmpty(s) ? s : char.ToUpper(s[0]) + s[1..];
 
     static string Why(ShiftEngine.Sim sim, bool home, Lineup l, string then)
     {
@@ -516,6 +580,78 @@ public static class LiveAdvice
     }
 }
 
+
+/// <summary>
+/// Указания с бровки в трансляции (этап «Тренер»): быстрые смены системы на матч и слова команде.
+/// Слова (требовать, похвалить) — один раз за период; эффект — настрой на матч (MatchSide.Spark) по настроению раздевалки:
+/// команда в духе отвечает, команда в унынии — сникает. Без случайных чисел: исход виден по раздевалке.
+/// </summary>
+public static class Shouts
+{
+    public sealed record Shout(string Key, string Name, string What, bool Talk);
+    public static readonly Shout[] All =
+    {
+        new("attack", "Вперёд!", "открыть игру: темп, прессинг, защитники в атаку", false),
+        new("hold", "Держим счёт", "закрыть игру: темп ниже, 1-2-2, защитники сзади", false),
+        new("shoot", "Больше бросать", "бросать при любой возможности", false),
+        new("calm", "Спокойнее", "без лишних силовых — меньше удалений", false),
+        new("hard", "Жёстче", "силовые при каждой возможности", false),
+        new("demand", "Требую большего", "встряхнуть команду — если она в духе", true),
+        new("praise", "Так держать", "похвалить — работает, когда игра идёт", true),
+    };
+
+    /// <summary>Применить указание. Возвращает, что вышло (для ленты и подсказки).</summary>
+    public static string Apply(Career c, Career.LiveGame lg, string key)
+    {
+        var sim = lg.Sim; bool home = lg.UserHome; var me = lg.Me;
+        var s = (int[])(me.Plan ?? me.Lineup.Sys ?? new int[Tactics.Levers.Length]).Clone();
+        if (s.Length < Tactics.Levers.Length) Array.Resize(ref s, Tactics.Levers.Length);
+        void Lever(string k, int v) => s[Tactics.IndexOf(k)] = v;
+        string res;
+        switch (key)
+        {
+            case "attack": me.Tempo = 1; Lever("fc", 1); Lever("da", 1); res = "открываем игру"; break;
+            case "hold": me.Tempo = -1; Lever("fc", -1); Lever("da", -1); res = "закрываем игру"; break;
+            case "shoot": Lever("sh", 1); res = "бросаем всё"; break;
+            case "calm": Lever("agg", -1); res = "спокойнее, без лишних силовых"; break;
+            case "hard": Lever("agg", 1); res = "жёстче в борьбе"; break;
+            case "demand":
+            case "praise":
+            {
+                string tag = key + ":" + sim.Period;
+                if (!lg.Talks.Add(tag)) return "уже говорили в этом периоде";
+                double room = Morale.Team(c, me.Team.Abbr);
+                int diff = home ? sim.HomeGoals - sim.AwayGoals : sim.AwayGoals - sim.HomeGoals;
+                double d = key == "demand" ? (room >= 60 ? 0.04 : room >= 45 ? 0.01 : -0.02) : (diff >= 0 ? 0.02 : -0.01);
+                me.Spark = Math.Clamp(me.Spark + d, -0.06, 0.08);
+                res = d > 0.015 ? (key == "demand" ? "команда завелась" : "команда приободрилась")
+                    : d > 0 ? "команда выслушала спокойно" : (key == "demand" ? "в раздевалке уныние — команда сникла" : "похвала прозвучала невпопад");
+                sim.Note(home, (key == "demand" ? "тренер требует большего: " : "тренер хвалит: ") + res);
+                sim.Apply();
+                return res;
+            }
+            default: return "";
+        }
+        me.Plan = s;
+        sim.Note(home, res);
+        Tactics.Prepare(c, sim.HomeSide, sim.AwaySide); sim.Apply();
+        return res;
+    }
+
+    /// <summary>Видеотренер: был ли офсайд или помеха — его мнение (ошибается тем чаще, чем слабее помощник в тактике).</summary>
+    public static (bool yes, string text) VideoRead(Career c, Career.LiveGame lg)
+    {
+        int gt = lg.Sim.ChallengeFor(lg.UserHome);
+        if (gt < 0) return (false, null);
+        var ev = lg.Sim.Result.Events.Last(e => e.Kind == "goal" && e.T == gt);
+        bool truth = lg.Sim.Reviewable(gt, ev.P1);
+        var who = Staff.Assistant(c);
+        double wrong = who == null ? 0.1 : 0.04 + 0.012 * (20 - who.Tac);
+        double u = who == null ? 0.5 : 0.5 + 0.5 * Math.Tanh(Staff.Noise(c, who, lg.G.Id, 5000 + gt));
+        bool says = u < wrong ? !truth : truth;
+        return (says, says ? "Видеотренер: похоже, был офсайд или помеха вратарю — стоит оспорить." : "Видеотренер: нарушения не видно. Неудачный просмотр — удаление за задержку игры.");
+    }
+}
 
 /// <summary>
 /// Звенья глазами тренера (помощник своего клуба и главные тренеры ИИ): вклад игрока на месте = минуты × (атака − штраф места,
