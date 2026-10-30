@@ -6,8 +6,10 @@ using HM27.Core;
 namespace HM27.UI;
 
 /// <summary>
-/// Эмблемы клубов: при первом запуске скачиваются с сайта НХЛ (SVG) и кэшируются в папке пользователя.
-/// Эмблемы — товарные знаки лиги и клубов; в сборку игры они не входят. Пока эмблемы нет — круг в цветах клуба.
+/// Эмблемы клубов и фото игроков. Личная сборка: вшитый пак res://art/art.pak (tools/fetch_art.py, релиз «art») —
+/// всё на месте сразу, без загрузок. Нет пака (или нет файла в паке) — скачивание с сайта НХЛ и кэш в папке пользователя;
+/// пока нет картинки — круг в цветах клуба или силуэт. Эмблемы и фото — товарные знаки и изображения НХЛ и игроков:
+/// пак только для личного пользования; для публичного релиза — своё оформление и паки из папки пользователя, как в FM.
 /// </summary>
 public partial class LogoCache : Node
 {
@@ -32,6 +34,53 @@ public partial class LogoCache : Node
 
     public Texture2D Get(TeamData t) => Fetch(t.Abbr, t.Logo);
 
+    /// <summary>Тёмная версия эмблемы (для светлого фона) — только из пака.</summary>
+    public Texture2D GetDark(TeamData t)
+    {
+        string key = "d:" + t.Abbr;
+        if (_tex.TryGetValue(key, out var tex)) return tex;
+        var b = Pack("logo_d:" + t.Abbr);
+        tex = b == null ? null : Decode(key, b);
+        if (tex != null) _tex[key] = tex;
+        return tex ?? Get(t);
+    }
+
+    // ---- вшитый пак
+    static Dictionary<string, (long off, int len)> _index;
+    static long _base;
+    static bool _packTried;
+
+    static byte[] Pack(string key)
+    {
+        if (!_packTried)
+        {
+            _packTried = true;
+            try
+            {
+                if (FileAccess.FileExists("res://art/art.pak"))
+                {
+                    using var f = FileAccess.Open("res://art/art.pak", FileAccess.ModeFlags.Read);
+                    var magic = System.Text.Encoding.ASCII.GetString(f.GetBuffer(8));
+                    if (magic == "HM27ART1")
+                    {
+                        uint n = f.Get32();
+                        var idx = System.Text.Json.JsonDocument.Parse(f.GetBuffer(n));
+                        _index = new();
+                        foreach (var e in idx.RootElement.EnumerateObject()) _index[e.Name] = (e.Value[0].GetInt64(), e.Value[1].GetInt32());
+                        _base = 12 + n;
+                    }
+                }
+            }
+            catch (Exception e) { GD.PrintErr("art.pak: " + e.Message); _index = null; }
+        }
+        if (_index == null || !_index.TryGetValue(key, out var x)) return null;
+        using var fa = FileAccess.Open("res://art/art.pak", FileAccess.ModeFlags.Read);
+        fa.Seek((ulong)(_base + x.off));
+        return fa.GetBuffer(x.len);
+    }
+
+    public static bool HasPack { get { Pack(""); return _index != null; } }
+
     /// <summary>Фото игрока (assets.nhle.com), кэш в папке пользователя. Пока нет — null.</summary>
     public Texture2D Photo(PlayerData p) =>
         string.IsNullOrEmpty(p.Head) ? null : Fetch($"p:{p.Id}", $"https://assets.nhle.com/mugs/nhl/{p.Head}.png");
@@ -41,6 +90,8 @@ public partial class LogoCache : Node
     Texture2D Fetch(string key, string url)
     {
         if (_tex.TryGetValue(key, out var tex)) return tex;
+        var packed = Pack(key.StartsWith("p:") ? key : "logo:" + key);
+        if (packed != null && (tex = Decode(key, packed)) != null) { _tex[key] = tex; return tex; }
         var path = PathOf(key);
         if (FileAccess.FileExists(path))
         {

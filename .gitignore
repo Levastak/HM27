@@ -10,3 +10,4 @@ obj/
 build/
 *.zip
 data/__pycache__/
+game/art/
