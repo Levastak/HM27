@@ -6,7 +6,7 @@ namespace HM27.Core;
 /// Ничего не влияет на игру и ничего не выдумывает: каждая цифра посчитана движком, каждый сюжет — из таблицы и протоколов.
 /// Шаблоны выбираются детерминированно (сид карьеры + день), поэтому одна и та же карьера пишет одни и те же тексты.
 /// </summary>
-public static class News
+public static partial class News
 {
     static Random Rng(Career c, int salt) => new(unchecked(c.Seed * 7349 + c.Today.DayNumber * 31 + salt));
     static string Pick(Random r, params string[] xs) => xs[r.Next(xs.Length)];
@@ -238,7 +238,7 @@ public static class News
         // цитата: после победы — лучший игрок матча, после поражения — капитан
         int speaker = win ? myStar : (capId != 0 ? capId : myStar);
         string quote;
-        if (comeback) quote = Pick(rng, "Никто в раздевалке не опустил голову. Сказали друг другу: играем своё — и это сработало.", "После такого начала легко было сломаться. Но это не про нас.");
+        if (comeback) quote = Quotes.Of(c, speaker, "comeback", rng);
         else if (blown) quote = Pick(rng, "Мы сами отдали этот матч. Вели — и перестали делать простые вещи. Это на нас.", "Нельзя так терять преимущество. Разберём каждую ошибку.");
         else if (win && r.End == "SO") quote = Pick(rng, "Буллиты — это лотерея, но сегодня билет был наш.", "Два очка есть два очка. Главное — не отпустили игру в основное время.");
         else if (win && late) quote = gwg.Scorer == speaker
@@ -251,15 +251,15 @@ public static class News
         else if (win && hat != 0 && hat == speaker) quote = Pick(rng, "Шайба сегодня сама шла в ворота. Партнёры отдавали так, что оставалось подставить клюшку.", "Три гола — это приятно, но важнее два очка.");
         else if (win && my - their >= 4) quote = Pick(rng, "Хороший вечер. Много бросали, давили, и в какой-то момент шайбы полетели.", "Сыграли так, как готовились. Но завтра это уже ничего не значит.");
         else if (win && dominated) quote = Pick(rng, "Много бросали и давили — рано или поздно это должно было сработать.", "Мы владели шайбой большую часть матча. Так и надо играть.");
-        else if (win) quote = Pick(rng, "Не самый красивый матч, но такие тоже нужно выигрывать.", "Тяжёлые два очка. Соперник был неудобным, но мы терпели.", "Сделали работу. Есть что поправить, но победа — это главное.");
+        else if (win) quote = Quotes.Of(c, speaker, "win", rng);
         else if (theirGoalie) quote = Pick(rng, $"Бросали много, но у {c.Short(opG)} был его вечер. Бывает. Продолжаем делать то же самое.", "Моменты были, вратарь соперника сыграл здорово. Голову не опускаем.");
         else if (r.End != "REG") quote = Pick(rng, "Очко лучше, чем ничего, но хотелось двух.", "Дотянули до овертайма, а там чуть-чуть не хватило.");
-        else if (their - my >= 3) quote = Pick(rng, "Говорить особо нечего. Это был не наш вечер. Забыть и готовиться к следующему.", "Стыдно перед болельщиками. Ответим на льду.", "Пропускали слишком легко. Так в этой лиге не выигрывают.");
+        else if (their - my >= 3) quote = Quotes.Of(c, speaker, "bigloss", rng);
         else if (pkFail) quote = Pick(rng, "Слишком много удалений. Против такого большинства так играть нельзя.", "Сами себе усложнили жизнь удалениями.");
         else if (outshot) quote = Pick(rng, "Проиграли по делу. Отдали им инициативу и так и не вернули.", "Мы слишком долго были в своей зоне. С этим надо что-то делать.");
         else if (ppFail) quote = Pick(rng, "Большинство сегодня не сработало, а в равных такие матчи не выигрываются.", "Были шансы в большинстве — не использовали. В этом вся разница.");
         else if (their - my >= 2) quote = Pick(rng, "Слишком много ошибок у своих ворот. Соперник этим воспользовался.", "Отдали им лёгкие голы. Над этим и будем работать.");
-        else quote = Pick(rng, "Равный матч, решили мелочи. В следующий раз эти мелочи должны быть нашими.", "Боролись, но где-то не хватило концентрации. Двигаемся дальше.");
+        else quote = Quotes.Of(c, speaker, "loss", rng);
 
         // плашка цифр
         var facts = new List<MsgFact> { new("Счёт", score + (r.End == "OT" ? " ОТ" : r.End == "SO" ? " Б" : ""), home ? "дома" : "в гостях", win ? "good" : "bad") };
@@ -288,7 +288,7 @@ public static class News
         // три звезды
         var stars = r.Ratings.OrderByDescending(kv => kv.Value).Take(3).Select(kv => kv.Key).ToList();
         string by = speaker != 0 && c.Data.PlayerById.TryGetValue(speaker, out var sp) ? sp.NameRu + (speaker == capId ? ", капитан" : "") : "Помощник тренера";
-        Post(c, "Пресс-служба клуба", "Матч", headline, lead, body.ToString(), "match", $"game:{g.Id}", me, win ? 2 : 1, facts, stars, quote, by);
+        Post(c, By(c, Voices.BEAT), "Матч", headline, lead, body.ToString(), "match", $"game:{g.Id}", me, win ? 2 : 1, facts, stars, quote, by);
     }
 
     // ================================================================ «Вечер в НХЛ»: события вчерашнего дня по лиге
@@ -368,7 +368,7 @@ public static class News
         int played = games.Count;
         body += (body.Length > 0 ? "\n\n" : "") + $"Всего {N(played, "матч", "матча", "матчей")}, {N(games.Sum(g => g.Result.HomeGoals + g.Result.AwayGoals), "гол", "гола", "голов")}.";
         var players = items.Take(4).Where(i => i.Player != 0).Select(i => i.Player).Distinct().ToList();
-        Post(c, "Лента НХЛ", "Вечер в НХЛ", top.Head, top.Line + ".", body, "league", top.Player != 0 ? $"player:{top.Player}" : $"club:{top.Team}",
+        Post(c, By(c, Voices.WIRE), "Вечер в НХЛ", top.Head, top.Line + ".", body, "league", top.Player != 0 ? $"player:{top.Player}" : $"club:{top.Team}",
             top.Team, top.W >= 3 ? 2 : 1, null, players);
     }
 
@@ -503,7 +503,7 @@ public static class News
         };
         var players = new List<int> { pP.Id };
         if (gw.Key != 0) players.Add(gw.Key);
-        Post(c, "Аналитический отдел", "Неделя в НХЛ", head, lead, body.ToString().TrimEnd(), "week", "table", tw.Key, 2, facts, players);
+        Post(c, By(c, Voices.STATS), "Неделя в НХЛ", head, lead, body.ToString().TrimEnd(), "week", "table", tw.Key, 2, facts, players);
     }
 
     // ================================================================ «Цифры»: место клуба в лиге (раз в две недели)
@@ -558,7 +558,7 @@ public static class News
             luck > 0 ? $"Забиваем и спасаемся лучше, чем создаём и позволяем (+{F2(luck)} за матч): часть результата — реализация и вратарь, такое не всегда держится." :
                        $"Результаты хуже моментов ({F2(luck)} за матч): игра лучше таблицы, на дистанции должно выровняться.");
         var facts = m.Take(6).Select(x => new MsgFact(x.name, x.val, $"{Ord(x.rank)} в лиге", x.rank <= 8 ? "good" : x.rank >= n - 7 ? "bad" : null)).ToList();
-        Post(c, "Аналитический отдел", "Цифры", head, lead, body.ToString().TrimEnd(), "week", null, c.UserTeam, 1, facts);
+        Post(c, By(c, Voices.STATS), "Цифры", head, lead, body.ToString().TrimEnd(), "week", null, c.UserTeam, 1, facts);
     }
 
     // ================================================================ «Пресса»: сюжеты вокруг клуба
@@ -582,7 +582,7 @@ public static class News
             {
                 var last = c.TeamGames(me).Where(g => g.Played).OrderByDescending(g => g.Date).Take(sn).ToList();
                 int gf = last.Sum(g => g.Home == me ? g.Result.HomeGoals : g.Result.AwayGoals), ga = last.Sum(g => g.Home == me ? g.Result.AwayGoals : g.Result.HomeGoals);
-                Post(c, "Пресса", "Пресса", Pick(rng, $"«Где выход?»: {N(sn, "поражение", "поражения", "поражений")} подряд", $"Пресса: {Q(c, me)} в штопоре", $"{sn} без побед: что происходит?"),
+                Post(c, By(c, Voices.TABLOID), "Пресса", Pick(rng, $"«Где выход?»: {N(sn, "поражение", "поражения", "поражений")} подряд", $"Пресса: {Q(c, me)} в штопоре", $"{sn} без побед: что происходит?"),
                     $"Шайбы за серию — {gf}:{ga}. Журналисты спрашивают о переменах в составе, в раздевалке говорят о характере.",
                     $"Серия началась {last.Last().Date.Day} {Month(last.Last().Date)}. За это время клуб забивал {F1(gf / (double)sn)} за матч и пропускал {F1(ga / (double)sn)}.\n\n" +
                     "Пресса ждёт ответа от тренера: перестановки в звеньях, свежая кровь из запаса или терпение? Решать вам — звенья в разделе «Состав».",
@@ -592,7 +592,7 @@ public static class News
         if (row.Streak.StartsWith("В") && sn >= 4 && !Recent("run", 10))
             cands.Add((2.5, () =>
             {
-                Post(c, "Пресса", "Пресса", Pick(rng, $"{N(sn, "победа", "победы", "побед")} подряд: {Q(c, me)} разогнались", $"Пресса: {Q(c, me)} на ходу", $"Серия {sn}: соперники уже нервничают"),
+                Post(c, By(c, Voices.BEAT), "Пресса", Pick(rng, $"{N(sn, "победа", "победы", "побед")} подряд: {Q(c, me)} разогнались", $"Пресса: {Q(c, me)} на ходу", $"Серия {sn}: соперники уже нервничают"),
                     $"Клуб выиграл {N(sn, "матч", "матча", "матчей")} подряд. Аналитики осторожны, болельщики — нет.",
                     $"Сейчас {row.W}-{row.L}-{row.Otl}, {N(row.Pts, "очко", "очка", "очков")}. Главный вопрос прессы — выдержит ли состав темп, и не пора ли дать отдых лидерам: нагрузка видна в колонке «Свежесть».",
                     "board", "press:run", me, 2, null, cap != null ? new List<int> { cap.Id } : null,
@@ -605,35 +605,35 @@ public static class News
             if (s == null || f.Games < 5) continue;
             int recentPts = RecentPoints(c, p, 6, out int recentGp);
             if (f.Word is "Спад" or "Провал" && !Recent($"player:{p.Id}", 21))
-                cands.Add((2.2, () => Post(c, "Пресса", "Пресса", Pick(rng, $"{p.LastRu}: что случилось?", $"{p.LastRu} ищет игру", $"{p.LastRu} в спаде: пресса задаёт вопросы"),
+                cands.Add((2.2, () => Post(c, By(c, Voices.TABLOID), "Пресса", Pick(rng, $"{p.LastRu}: что случилось?", $"{p.LastRu} ищет игру", $"{p.LastRu} в спаде: пресса задаёт вопросы"),
                     $"{N(recentPts, "очко", "очка", "очков")} в последних {N(recentGp, "матче", "матчах", "матчах")} — заметно ниже его обычного уровня.",
                     $"За сезон у него {s.G}+{s.A} в {N(s.Gp, "матче", "матчах", "матчах")}, но последние недели — не его. Средняя оценка в последних матчах {F2(f.Recent)}.\n\n" +
                     "Серии спадов у лучших игроков случаются каждый сезон и обычно проходят сами. Но если он ещё и устал — стоит посмотреть на его минуты.",
                     "board", $"player:{p.Id}", me, 1, new List<MsgFact> { new("Последние матчи", $"{recentPts} оч.", $"в {recentGp}", "bad"), new("Сезон", $"{s.G}+{s.A}", $"{s.Gp} матчей") },
-                    new List<int> { p.Id })));
+                    new List<int> { p.Id }, Quotes.Of(c, p.Id, "slump", rng), p.NameRu)));
             if (f.Word == "Отличная" && recentPts >= recentGp && !Recent($"player:{p.Id}", 21))
-                cands.Add((2.0, () => Post(c, "Пресса", "Пресса", Pick(rng, $"{p.LastRu} в огне", $"Невозможно остановить: {p.LastRu}", $"{p.LastRu} тащит команду"),
+                cands.Add((2.0, () => Post(c, By(c, Voices.BEAT), "Пресса", Pick(rng, $"{p.LastRu} в огне", $"Невозможно остановить: {p.LastRu}", $"{p.LastRu} тащит команду"),
                     $"{N(recentPts, "очко", "очка", "очков")} в последних {N(recentGp, "матче", "матчах", "матчах")}. Лучший отрезок его сезона.",
                     $"За сезон — {s.G}+{s.A} в {N(s.Gp, "матче", "матчах", "матчах")}.\n\n" +
                     (s.G > s.Ixg + 3 ? "Скауты соперников уже шутят, что шайба его любит: забивает даже из позиций, откуда обычно не забивают. Вопрос — надолго ли." : "Он не просто удачно бросает — он постоянно оказывается там, где рождаются моменты."),
                     "board", $"player:{p.Id}", me, 1, new List<MsgFact> { new("Последние матчи", $"{recentPts} оч.", $"в {recentGp}", "good"), new("Сезон", $"{s.G}+{s.A}", $"{s.Gp} матчей"), new("xG", F1(s.Ixg), "по броскам в створ") },
-                    new List<int> { p.Id })));
+                    new List<int> { p.Id }, Quotes.Of(c, p.Id, "hot", rng), p.NameRu)));
         }
         foreach (var p in roster.Where(p => !p.IsGoalie && (p.Age(c.Today) ?? 30) <= 22 && Past(c, p).gp < 82))
         {
             var s = c.Skaters.GetValueOrDefault(p.Id);
             if (s == null || s.Gp < 8 || s.Pts < s.Gp * 0.55 || Recent($"player:{p.Id}", 40)) continue;
-            cands.Add((2.4, () => Post(c, "Пресса", "Пресса", Pick(rng, $"Новичок, о котором говорят: {p.LastRu}", $"{p.LastRu}: {N(p.Age(c.Today) ?? 20, "год", "года", "лет")} и уже {N(s.Pts, "очко", "очка", "очков")}"),
+            cands.Add((2.4, () => Post(c, By(c, Voices.INSIDER), "Пресса", Pick(rng, $"Новичок, о котором говорят: {p.LastRu}", $"{p.LastRu}: {N(p.Age(c.Today) ?? 20, "год", "года", "лет")} и уже {N(s.Pts, "очко", "очка", "очков")}"),
                 $"{p.NameRu} в {N(p.Age(c.Today) ?? 20, "год", "года", "лет")} набирает {F2(s.Pts / (double)s.Gp)} очка за матч. Скауты других клубов уже переписывают отчёты.",
                 $"{s.G}+{s.A} в {N(s.Gp, "матче", "матчах", "матчах")}, в среднем {(s.Gp > 0 && s.Toi > 0 ? $"{s.Toi / s.Gp / 60}:{s.Toi / s.Gp % 60:00}" : "—")} на льду.\n\n" +
                 "Молодые растут от минут и роли: чем больше доверия, тем быстрее приближаются к своему потолку.",
-                "board", $"player:{p.Id}", me, 2, new List<MsgFact> { new("Очки", $"{s.Pts}", $"{s.G}+{s.A}", "good"), new("За матч", F2(s.Pts / (double)s.Gp)) }, new List<int> { p.Id })));
+                "board", $"player:{p.Id}", me, 2, new List<MsgFact> { new("Очки", $"{s.Pts}", $"{s.G}+{s.A}", "good"), new("За матч", F2(s.Pts / (double)s.Gp)) }, new List<int> { p.Id }, Quotes.Of(c, p.Id, "rookie", rng), p.NameRu)));
         }
         var g1 = c.Lineups[me].G1;
         if (c.Goalies.TryGetValue(g1, out var gl) && gl.Gp >= 8 && gl.Gsax >= 5 && !Recent($"player:{g1}", 30))
         {
             var gp = c.Data.PlayerById[g1];
-            cands.Add((2.3, () => Post(c, "Пресса", "Пресса", Pick(rng, $"Стена: {gp.LastRu}", $"{gp.LastRu} держит команду"),
+            cands.Add((2.3, () => Post(c, By(c, Voices.STATS), "Пресса", Pick(rng, $"Стена: {gp.LastRu}", $"{gp.LastRu} держит команду"),
                 $"{gp.NameRu} спас на {F1(gl.Gsax)} гола больше, чем пропустил бы средний вратарь на тех же бросках.",
                 $"Процент отражённых — {gl.SvPct.ToString(".000", System.Globalization.CultureInfo.InvariantCulture)} в {N(gl.Gp, "матче", "матчах", "матчах")}. " +
                 "По данным НХЛ сезон вратаря наполовину талант и наполовину удача — посмотрим, сколько продлится.",
@@ -643,7 +643,7 @@ public static class News
         {
             // спокойная неделя: изредка — жизнь клуба вне льда (без влияния на игру)
             if (rng.NextDouble() < 0.06 && cap != null && !Recent("club", 25))
-                Post(c, "Пресса", "Клуб", Pick(rng, $"{cap.LastRu} навестил детскую больницу", $"Автограф-сессия: {cap.LastRu} и очередь до улицы", $"{cap.LastRu} провёл открытую тренировку для школьников"),
+                Post(c, By(c, Voices.BEAT), "Клуб", Pick(rng, $"{cap.LastRu} навестил детскую больницу", $"Автограф-сессия: {cap.LastRu} и очередь до улицы", $"{cap.LastRu} провёл открытую тренировку для школьников"),
                     "Клуб вне льда: игроки встретились с болельщиками.", "Пресс-служба клуба благодарит всех, кто пришёл. Следующая встреча — после домашней серии.",
                     "board", "press:club", me, 0, null, new List<int> { cap.Id });
             return;
@@ -673,8 +673,13 @@ public static class News
     {
         if (c.Phase == Phase.Finished) return;
         Daily(c);
+        Preview(c);
         if (c.Phase != Phase.Regular) return;
+        Chases(c);
+        Monthly(c);
+        HotSeats(c);
         if (c.Today.DayOfWeek == DayOfWeek.Monday) Weekly(c);
+        if (c.Today.DayOfWeek == DayOfWeek.Tuesday) PowerRankings(c);
         if (c.Today.DayOfWeek == DayOfWeek.Thursday && (c.Today.DayNumber / 7) % 2 == 0) Numbers(c);
         Press(c);
     }

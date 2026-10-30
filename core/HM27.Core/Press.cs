@@ -24,6 +24,36 @@ public static class Press
         return m;
     }
 
+    /// <summary>Кто спрашивает: «Имя (издание)».</summary>
+    static string Asks(Career c, string kind) { var j = Voices.Get(c, kind); return $"{j.Name} ({j.Outlet})"; }
+
+    /// <summary>
+    /// Слова тренера уходят в прессу: на следующий день журналист, задавший вопрос, публикует материал с цитатой.
+    /// «Общие слова» в газету не попадают.
+    /// </summary>
+    static void Quoted(Career c, Message m, string id)
+    {
+        string team = c.Team(c.UserTeam).Name;
+        var p = c.Data.PlayerById.GetValueOrDefault(m.Target);
+        (string kind, string words, string head)? x = (m.Action, id) switch
+        {
+            ("press:blowout", "self") => (Voices.TABLOID, "Это на мне. Игроки делали то, что я просил, — значит, я просил не то.", "Тренер берёт вину на себя"),
+            ("press:blowout", "demand") => (Voices.TABLOID, "Игроки должны дать больше. Некоторые сегодня просто отбыли номер.", "Тренер обрушился на игроков"),
+            ("press:big", "underdog") => (Voices.PUNDIT, "Нас никто не ждёт, и это нормально. Выйдем и сыграем свой хоккей.", "Тренер прибедняется перед матчем с лидером"),
+            ("press:big", "boast") => (Voices.PUNDIT, "Мы сильнее. Завтра это увидят все.", "Громкие слова: тренер обещает победу"),
+            ("press:slump", "back") when p != null => (Voices.BEAT, $"{p.LastRu} — один из наших лидеров. Я верю в него на сто процентов.", $"Тренер встал на защиту {p.LastRu}"),
+            ("press:slump", "demand") when p != null => (Voices.BEAT, $"{p.LastRu} знает, что может больше. Мы ждём от него этого — и он тоже должен ждать этого от себя.", $"Тренер — {p.LastRu}: «Ты можешь больше»"),
+            _ => null,
+        };
+        if (x == null) return;
+        var j = Voices.Get(c, x.Value.kind);
+        News.Post(c, Voices.By(j), "Пресса", x.Value.head, $"Главный тренер «{team}» на пресс-конференции не стал уходить от вопроса.",
+            j.Kind == Voices.TABLOID ? "Слова тренера уже разлетелись по соцсетям. Болельщики спорят, а в раздевалке, говорят, их прочитали все."
+            : j.Kind == Voices.PUNDIT ? "Смело. Посмотрим, как на это ответит соперник — такие слова в раздевалках вешают на стену."
+            : "Игроки слышат, что тренер говорит на камеры. Иногда это важнее любой тренировки.",
+            "league", "press:quote", c.UserTeam, 1, null, p != null ? new List<int> { p.Id } : null, x.Value.words, $"Главный тренер «{team}»");
+    }
+
     // ------------------------------------------------------------------ после разгрома
     static bool AfterBlowout(Career c)
     {
@@ -35,7 +65,7 @@ public static class Press
         var opp = c.Data.TeamByAbbr[home ? g.Away : g.Home];
         var m = Ask(c, "press:blowout", 0, $"Журналисты о поражении {gf}:{ga}",
             $"После матча с «{opp.Name}» журналисты ждут объяснений.",
-            $"«Тренер, {gf}:{ga} — что случилось с командой?»\n\nЧто сказать на камеры?",
+            $"{Asks(c, Voices.TABLOID)}: «Тренер, {gf}:{ga} — что случилось с командой? Болельщики требуют ответов».\n\nЧто сказать на камеры?",
             new List<MsgOption>
             {
                 new("self", "Это моя ответственность", "Защитить игроков: доверие к тренеру вырастет, особенно у лидеров."),
@@ -61,7 +91,7 @@ public static class Press
         var t = c.Data.TeamByAbbr[opp];
         Ask(c, "press:big", 0, $"Перед матчем с «{t.Name}»",
             $"«{t.Name}» — {place}-е место в лиге. Журналисты спрашивают о завтрашнем матче.",
-            $"«Как настроены на матч с одним из лидеров?»\n\nПо прогнозу шансы на победу — {100 * pw:0}%.\n\nЧто ответить?",
+            $"{Asks(c, Voices.PUNDIT)}: «Завтра — один из лидеров. Ваши ребята готовы к такому уровню?»\n\nПо прогнозу шансы на победу — {100 * pw:0}%.\n\nЧто ответить?",
             new List<MsgOption>
             {
                 new("underdog", "Нас никто не ждёт", "Снять давление: команде легче, если она и правда не фаворит."),
@@ -83,7 +113,7 @@ public static class Press
             var st = c.Skaters.GetValueOrDefault(p.Id);
             Ask(c, "press:slump", 0, $"Журналисты о спаде {p.LastRu}",
                 $"{p.NameRu} не в форме, и это заметили.",
-                $"«Что происходит с {p.LastRu}? {(st != null ? $"У него {st.G} + {st.A} в {st.Gp} матчах." : "")} Он ещё нужен команде в таком виде?»\n\nЧто ответить?",
+                $"{Asks(c, Voices.BEAT)}: «Что происходит с {p.LastRu}? {(st != null ? $"У него {st.G} + {st.A} в {st.Gp} матчах." : "")} Он ещё нужен команде в таком виде?»\n\nЧто ответить?",
                 new List<MsgOption>
                 {
                     new("back", "Полностью ему доверяем", "Поддержать: настрой и доверие игрока вырастут."),
@@ -99,6 +129,7 @@ public static class Press
     // ------------------------------------------------------------------ ответы
     public static string Answer(Career c, Message m, string id)
     {
+        Quoted(c, m, id);
         var roster = c.Roster(c.UserTeam).Where(p => c.Players.ContainsKey(p.Id)).ToList();
         switch (m.Action)
         {

@@ -24,17 +24,26 @@ public static class AiCoach
     public static void Init(Career c)
     {
         foreach (var t in c.Data.Teams)
+            if (t.Abbr != c.UserTeam) InitTeam(c, t.Abbr);
+    }
+
+    /// <summary>Тренер клуба: стиль в настройки, правка звеньев «на сборах» (и после смены тренера — его взгляд на игроков).</summary>
+    public static void InitTeam(Career c, string abbr)
+    {
+        var coach = Staff.Decider(c, abbr);
+        var l = c.Lineups[abbr];
+        if (coach == null) return;
+        l.Pull = coach.Risk >= 2 ? Coach.EARLY : coach.Tac >= 15 ? Coach.ASSIST : Coach.USUAL;
+        l.TempoAuto = coach.Tac >= 14;
+        l.Rules = Rules(coach);
+        LineOpt.Improve(c, abbr, l, coach, AI_MIN, 4 + coach.Flex / 3);
+        l.FixPowerPlay(c.Data);
+        c.AiTuned[abbr] = c.Today;
+        // новый тренер в сезоне приносит свою систему (выучка — с нуля, кроме середины)
+        if (c.Table.TryGetValue(abbr, out var row) && row.Gp > 0)
         {
-            if (t.Abbr == c.UserTeam) continue;
-            var coach = Staff.Decider(c, t.Abbr);
-            var l = c.Lineups[t.Abbr];
-            if (coach == null) continue;
-            l.Pull = coach.Risk >= 2 ? Coach.EARLY : coach.Tac >= 15 ? Coach.ASSIST : Coach.USUAL;
-            l.TempoAuto = coach.Tac >= 14;
-            l.Rules = Rules(coach);
-            LineOpt.Improve(c, t.Abbr, l, coach, AI_MIN, 4 + coach.Flex / 3);
-            l.FixPowerPlay(c.Data);
-            c.AiTuned[t.Abbr] = c.Today;
+            var s = Tactics.Suggest(c, l, 0.006, coach, c.Today.DayNumber);
+            for (int i = 0; i < s.Length; i++) if (s[i] != l.SysOf(i)) Tactics.Set(l, i, s[i]);
         }
     }
 

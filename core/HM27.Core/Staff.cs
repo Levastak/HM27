@@ -53,18 +53,38 @@ public static class Staff
             }
             return "Coach " + id;
         }
-        foreach (var t in c.Data.Teams)
-        {
-            bool user = t.Abbr == c.UserTeam;
-            c.Staff.Add(new StaffMember
-            {
-                Id = id++, Name = Name(), Team = t.Abbr, Role = user ? "assistant" : "head", Age = rng.Next(38, 66),
-                // главные тренеры НХЛ — в среднем сильнее помощников
-                Tac = Attr(user ? 11 : 12.5, 2.8), Judge = Attr(user ? 11 : 12.5, 2.8), Man = Attr(11.5, 3), Mot = Attr(11.5, 3), Flex = Attr(11, 3.2),
-                Press = rng.Next(3) - 1, Risk = Math.Clamp((int)Math.Round(1.1 * N(rng)), -2, 2), Youth = rng.Next(3) - 1,
-            });
-        }
+        foreach (var t in c.Data.Teams) c.Staff.Add(Make(rng, id++, t.Abbr, t.Abbr == c.UserTeam, Name));
         return c.Staff;
+    }
+
+    static StaffMember Make(Random rng, int id, string team, bool user, Func<string> name)
+    {
+        int Attr(double m, double sd) => (int)Math.Clamp(Math.Round(m + sd * N(rng)), 4, 19);
+        return new StaffMember
+        {
+            Id = id, Name = name(), Team = team, Role = user ? "assistant" : "head", Age = rng.Next(38, 66),
+            // главные тренеры НХЛ — в среднем сильнее помощников
+            Tac = Attr(user ? 11 : 12.5, 2.8), Judge = Attr(user ? 11 : 12.5, 2.8), Man = Attr(11.5, 3), Mot = Attr(11.5, 3), Flex = Attr(11, 3.2),
+            Press = rng.Next(3) - 1, Risk = Math.Clamp((int)Math.Round(1.1 * N(rng)), -2, 2), Youth = rng.Next(3) - 1,
+        };
+    }
+
+    /// <summary>Отставка главного тренера клуба ИИ: на его место — новый (свой стиль и уровень).</summary>
+    public static StaffMember Replace(Career c, string team)
+    {
+        var all = Of(c);
+        var old = all.FirstOrDefault(s => s.Team == team && s.Role == "head");
+        var rng = new Random(unchecked(c.Seed * 7121 + c.Today.DayNumber * 13 + team[0] * 31 + team[^1]));
+        var used = all.Select(s => s.Name).ToHashSet();
+        string Name()
+        {
+            for (int k = 0; k < 50; k++) { string n = First[rng.Next(First.Length)] + " " + Last[rng.Next(Last.Length)]; if (!used.Contains(n)) return n; }
+            return "Coach " + all.Count;
+        }
+        var s2 = Make(rng, all.Max(s => s.Id) + 1, team, false, Name);
+        if (old != null) { old.Role = "former"; old.Team = null; }
+        all.Add(s2);
+        return s2;
     }
 
     /// <summary>Кто решает за клуб: у ИИ — главный тренер, у клуба игрока — помощник (советует).</summary>

@@ -297,6 +297,13 @@ public sealed class Career
     public Dictionary<string, DateOnly> AiTuned { get; set; } = new();
     /// <summary>Система, которой клуб игрока играл в последнем матче (ИИ отвечает на неё в серии плей-офф).</summary>
     public int[] LastUserSys { get; set; }
+    /// <summary>Новости: настроение трибун 0–100 и посты болельщиков, рейтинг силы прошлой недели, призы, погони, кресла тренеров.</summary>
+    public float FanMood { get; set; } = 50;
+    public List<FanPost> Fans { get; set; } = new();
+    public Dictionary<string, int> PowerWeek { get; set; } = new();
+    public List<Honor> Honors { get; set; } = new();
+    public HashSet<string> Chases { get; set; } = new();
+    public Dictionary<string, int> HotSeat { get; set; } = new();
     /// <summary>Журнал тренера: свои матчи — система и то, что она дала (Journal).</summary>
     public List<JournalEntry> Journal { get; set; } = new();
     /// <summary>Тренеры: главные тренеры клубов ИИ и помощник своего клуба (Staff).</summary>
@@ -538,6 +545,7 @@ public sealed class Career
         if (mine) Orders.AfterGame(this, UserTeam, g.Home == UserTeam ? g.Result.HomeDressed : g.Result.AwayDressed);
         if (mine) Press.AfterGame(this, g);
         if (mine) HM27.Core.Journal.Record(this, g, g.Home == UserTeam ? h : a, r);
+        if (mine) Voices.AfterGame(this, g);
         Tactics.AfterGame(this, g);
         if (!mine) { r.Events = new(); r.Box = new(); }   // хронику и протокол храним только для своих матчей — сохранение не раздувается
         foreach (var (side, abbr) in new[] { (h, g.Home), (a, g.Away) })
@@ -714,6 +722,7 @@ public sealed class Career
     // ------------------------------------------------------------------ плей-офф
     void StartPlayoffs()
     {
+        News.SeasonAwards(this);
         Phase = Phase.Playoffs;
         int slot = 0;
         foreach (var conf in Conferences)

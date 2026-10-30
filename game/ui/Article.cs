@@ -16,10 +16,31 @@ public static class Article
     {
         "Матч" => Ui.Blue,
         "Лазарет" => Ui.Red,
-        "Вечер в НХЛ" or "Неделя в НХЛ" or "Лига" or "Разговор" or "Пресс-конференция" or "Раздевалка" => Ui.Gold,
+        "Вечер в НХЛ" or "Неделя в НХЛ" or "Лига" or "Разговор" or "Пресс-конференция" or "Раздевалка" or "Погоня" => Ui.Gold,
+        "Превью" or "Рейтинг силы" => Ui.Blue,
         "Цифры" or "Неделя" => Ui.Win,
         _ => Ui.Muted,
     };
+
+    /// <summary>Аватар журналиста: кружок в цвете издания с инициалами.</summary>
+    public static Control Avatar(Journalist j, int size = 28)
+    {
+        var p = new PanelContainer { CustomMinimumSize = new Vector2(size, size), TooltipText = $"{j.Name}, {j.Outlet} — {j.Bio}" };
+        var col = new Color(j.Color);
+        var sb = new StyleBoxFlat { BgColor = col.Lerp(Ui.Panel, 0.25f), BorderColor = col.Lightened(0.3f) };
+        sb.SetCornerRadiusAll(size / 2); sb.SetBorderWidthAll(1);
+        p.AddThemeStyleboxOverride("panel", sb);
+        p.AddChild(Ui.L(Voices.Initials(j.Name), Math.Max(9, size * 2 / 5), Ui.ReadableOn(col), Ui.CondBold, HorizontalAlignment.Center).Also(l => l.VerticalAlignment = VerticalAlignment.Center));
+        return p;
+    }
+
+    /// <summary>Подпись материала: аватар и имя автора с изданием (или просто «от кого»), дата.</summary>
+    public static Control Byline(Career c, Message m, int size = 12)
+    {
+        var j = Voices.ByLine(c, m.From);
+        if (j == null || j.Kind == Voices.WIRE) return Ui.L($"{m.From} · {Ui.Date(m.Date, false)}", size, Ui.Dim);
+        return Ui.H(8, Avatar(j, size * 2 + 2), Ui.V(-3, Ui.L(j.Name, size + 1, Ui.Text, Ui.Semi), Ui.L($"{j.Outlet} · {Ui.Date(m.Date, false)}", size - 1, Ui.Dim)));
+    }
 
     /// <summary>Рубрика: цветная метка и название.</summary>
     public static Control Tag(string tag, int size = 13)
@@ -46,10 +67,13 @@ public static class Article
             st.ContentMarginLeft = 18; st.ContentMarginRight = 18; st.ContentMarginTop = 12; st.ContentMarginBottom = 12;
             band.AddThemeStyleboxOverride("panel", st);
             var fg = Ui.ReadableOn(c1.Lerp(Ui.Panel, 0.15f));
-            band.AddChild(Ui.H(12, new TeamBadge(t, 44), Ui.V(-2, Ui.L(t.Name, 22, fg, Ui.CondBold), Ui.L(m.From + " · " + Ui.Date(m.Date), 12, new Color(fg, 0.75f)))));
+            var jj = Voices.ByLine(c, m.From);
+            var bh = Ui.H(12, new TeamBadge(t, 44), Ui.Expand(Ui.V(-2, Ui.L(t.Name, 22, fg, Ui.CondBold), Ui.L(m.From + " · " + Ui.Date(m.Date), 12, new Color(fg, 0.75f)))));
+            if (jj != null && jj.Kind != Voices.WIRE) bh.AddChild(Avatar(jj, 40).Also(x => x.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter));
+            band.AddChild(bh);
             col.AddChild(Ui.V(0, band, new ColorRect { Color = c2, CustomMinimumSize = new Vector2(0, 3) }));
         }
-        else col.AddChild(Ui.H(10, Ui.L(m.From, 13, Ui.Muted), Ui.Spacer(), Ui.L(Ui.Date(m.Date), 13, Ui.Dim)));
+        else col.AddChild(Ui.H(10, Byline(c, m, 13), Ui.Spacer()));
 
         var text = Ui.V(12);
         text.AddChild(Tag(m.Tag, 15));

@@ -41,7 +41,7 @@ public sealed class Message
     public string Reply { get; set; }
     [System.Text.Json.Serialization.JsonIgnore] public bool Pending => Options != null && Choice == null;
     /// <summary>Новость лиги или прессы (лента портала), а не письмо тренеру: не входит в счётчик непрочитанных.</summary>
-    [System.Text.Json.Serialization.JsonIgnore] public bool IsNews => Kind == "league" || Tag is "Вечер в НХЛ" or "Пресса" || (Tag == "Клуб" && From == "Пресса");
+    [System.Text.Json.Serialization.JsonIgnore] public bool IsNews => Kind == "league" || Tag is "Вечер в НХЛ" or "Пресса" or "Превью" or "Рейтинг силы" or "Погоня" || (Tag == "Клуб" && Link == "press:club");
 }
 
 public sealed class MsgOption
@@ -127,32 +127,8 @@ public static class InboxWriter
     }
 
     /// <summary>Обзор недели (понедельник) и игрок месяца (1-е число).</summary>
-    public static void Periodic(Career c)
-    {
-        if (c.Phase != Phase.Regular) return;
-        if (c.Today.Day == 1 && c.Today.Month != 10)
-        {
-            var from = c.Today.AddMonths(-1);
-            var pts = new Dictionary<int, int>();
-            foreach (var g in c.Games.Where(g => g.Played && !g.Playoff && g.Date >= from && g.Date < c.Today))
-                foreach (var e in g.Result.Goals.Where(e => e.Kind != "so"))
-                    foreach (var id in new[] { e.Scorer, e.A1, e.A2 }.Where(x => x != 0))
-                        pts[id] = pts.GetValueOrDefault(id) + 1;
-            if (pts.Count > 0)
-            {
-                var best = pts.OrderByDescending(kv => kv.Value).First();
-                var p = c.Data.PlayerById[best.Key];
-                string[] months = { "январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь" };
-                var top3 = pts.OrderByDescending(kv => kv.Value).Skip(1).Take(2).Select(kv => $"{c.Data.PlayerById[kv.Key].NameRu} ({kv.Value})").ToList();
-                var m = Add(c, "Лига", $"Игрок месяца: {p.NameRu}",
-                    $"Лучший бомбардир месяца по подсчёту лиги: очки в регулярном чемпионате за {months[from.Month - 1]}.\n\n" +
-                    (top3.Count > 0 ? $"Следом — {string.Join(" и ", top3)}." : ""),
-                    "league", $"player:{p.Id}");
-                m.Tag = "Лига"; m.Team = p.Team; m.Weight = 2; m.Players = new List<int> { p.Id };
-                m.Lead = $"{p.NameRu} («{c.Team(p.Team).City}») набрал {best.Value} {Plural(best.Value, "очко", "очка", "очков")} за {months[from.Month - 1]}.";
-            }
-        }
-    }
+    /// <summary>Игроки месяца и гонка за призами — теперь News.Monthly (с автором и цитатой).</summary>
+    public static void Periodic(Career c) { }
 
     public static void PlayoffsStart(Career c)
     {

@@ -101,9 +101,12 @@ public partial class HomePage : Control
         cols.AddChild(a); cols.AddChild(b); cols.AddChild(c);
         v.AddChild(cols);
         a.AddChild(Feed());
+        a.AddChild(Stands());
         b.AddChild(Mail());
         b.AddChild(Results());
+        b.AddChild(Races());
         c.AddChild(Division());
+        c.AddChild(PowerWidget());
         c.AddChild(Leaders());
     }
 
@@ -121,7 +124,7 @@ public partial class HomePage : Control
         sb.BorderColor = stripe; sb.BorderWidthLeft = 5;
         card.AddThemeStyleboxOverride("panel", sb);
         var v = Ui.V(8);
-        var head = Ui.H(10, Article.Tag(m.Tag, 15), Ui.L($"{m.From} · {Ui.Date(m.Date, false)}", 12, Ui.Dim));
+        var head = Ui.H(10, Article.Tag(m.Tag, 15), Ui.Spacer(), Article.Byline(C, m, 12));
         v.AddChild(head);
         v.AddChild(Ui.L(m.Subject, 34, Ui.Text, Ui.CondBold).Also(l => { l.AutowrapMode = TextServer.AutowrapMode.WordSmart; l.SizeFlagsHorizontal = SizeFlags.ExpandFill; }));
         v.AddChild(Ui.L(m.Lead, 15, new Color(Ui.Text, 0.85f)).Also(l => { l.AutowrapMode = TextServer.AutowrapMode.WordSmart; l.SizeFlagsHorizontal = SizeFlags.ExpandFill; }));
@@ -166,7 +169,10 @@ public partial class HomePage : Control
         row.AddThemeStyleboxOverride("panel", sb);
         var title = Ui.L(m.Subject, 14, m.Read ? Ui.Muted : Ui.Text, m.Read ? Ui.Medium : Ui.Semi);
         title.ClipText = true; title.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
-        var v = Ui.V(1, Ui.H(8, Article.Tag(m.Tag ?? "Письмо", 12), Ui.Expand(Ui.L(showFrom ? m.From : "", 11, Ui.Dim)), Ui.L(Ui.DateShort(m.Date), 11, Ui.Dim)), title);
+        var j = Voices.ByLine(C, m.From);
+        var meta = Ui.H(8, Article.Tag(m.Tag ?? "Письмо", 12), Ui.Expand(Ui.L(showFrom || j != null ? (j != null && j.Kind != Voices.WIRE ? j.Name : showFrom ? m.From : "") : "", 11, Ui.Dim)), Ui.L(Ui.DateShort(m.Date), 11, Ui.Dim));
+        Control body = Ui.V(1, meta, title);
+        var v = j != null && j.Kind != Voices.WIRE ? (Control)Ui.H(10, Article.Avatar(j, 30).Also(x => x.SizeFlagsVertical = SizeFlags.ShrinkCenter), Ui.Expand(body)) : body;
         v.MouseFilter = MouseFilterEnum.Ignore;
         SetIgnore(v);
         row.AddChild(v);
@@ -217,6 +223,12 @@ public partial class HomePage : Control
         int conf = C.Sorted(t => t.Conference == opp.Conference).FindIndex(r => r.Team == opp.Abbr) + 1;
         v.AddChild(Ui.H(8, Ui.L($"Соперник: {oppRow.W}-{oppRow.L}-{oppRow.Otl}, {conf}-е в конференции", 12, Ui.Muted), Ui.Spacer(), P.Form(opp.Abbr, 5, 16)));
         v.AddChild(Ui.L(Pundits.Forecast(C.Data, g, o), 13, Ui.Text).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart));
+        // эксперты: кто за кого
+        var picks = News.Picks(C, g);
+        var ph = Ui.H(14);
+        foreach (var pk in picks)
+            ph.AddChild(Ui.H(6, Article.Avatar(pk.Who, 26), new TeamBadge(C.Team(pk.Team), 22)).Also(x => x.TooltipText = $"{pk.Who.Name} ({pk.Who.Outlet}): {pk.Why}"));
+        v.AddChild(Ui.H(10, Ui.L("Эксперты:", 12, Ui.Muted), ph));
         bool b2b = C.PlayedYesterday(C.UserTeam, g.Date), ob2b = C.PlayedYesterday(opp.Abbr, g.Date);
         if (b2b || ob2b) v.AddChild(Ui.L(b2b && ob2b ? "Обе команды играли накануне" : b2b ? "У нас второй матч за два дня — подумайте о запасном вратаре" : "Соперник играл накануне — он устал", 12, Ui.Otl));
         return Widget.Make("Следующий матч", v, "Звенья", () => Shell.I.Go("lines"));
@@ -263,6 +275,70 @@ public partial class HomePage : Control
             new() { Title = "О", Width = 30, Cell = x => Ui.L($"{x.r.Pts}", 13, Ui.Text, Ui.Bold) },
         }, rows, x => P.OpenLink($"club:{x.r.Team}"), x => x.r.Team == C.UserTeam);
         return Widget.Make($"{t.Division} дивизион", grid.Root, "Таблица →", () => Shell.I.Go("comp", "table"), 0);
+    }
+
+    /// <summary>Трибуна: настроение болельщиков, ожидания прессы и свежие посты.</summary>
+    Control Stands()
+    {
+        var v = Ui.V(8);
+        float m = C.FanMood;
+        var col = m >= 65 ? Ui.Win : m >= 45 ? Ui.Text : m >= 30 ? Ui.Otl : Ui.Loss;
+        v.AddChild(Ui.H(10, Ui.L(Voices.MoodWord(m), 22, col, Ui.CondBold), Ui.Expand(Ui.Bar(m / 100.0, col, 160, 8).Also(x => x.SizeFlagsVertical = SizeFlags.ShrinkCenter))));
+        var t = C.Team(C.UserTeam);
+        int exp = Pundits.DivisionPick(C, C.UserTeam);
+        int now = C.Sorted(x => x.Division == t.Division).FindIndex(x => x.Team == C.UserTeam) + 1;
+        if (exp > 0) v.AddChild(Ui.L($"Пресса до сезона ставила нас {exp}-ми в дивизионе, сейчас — {now}-е.", 12, now <= exp ? Ui.Muted : Ui.Otl).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart));
+        var posts = C.Fans.Where(f => f.Team == C.UserTeam).OrderByDescending(f => f.Date).Take(5).ToList();
+        if (posts.Count == 0) v.AddChild(Ui.L("Трибуны ждут первого матча.", 12, Ui.Dim));
+        foreach (var f in posts)
+        {
+            var mc = f.Mood > 0 ? Ui.Win : f.Mood < 0 ? Ui.Loss : Ui.Muted;
+            v.AddChild(Ui.V(1,
+                Ui.H(6, new ColorRect { Color = mc, CustomMinimumSize = new Vector2(3, 14), SizeFlagsVertical = SizeFlags.ShrinkCenter }, Ui.L(f.Handle, 12, Ui.Blue, Ui.Semi), Ui.Spacer(), Ui.L($"♥ {f.Likes}", 11, Ui.Dim), Ui.L(Ui.DateShort(f.Date), 11, Ui.Dim)),
+                Ui.L(f.Text, 13, Ui.Text).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart)));
+        }
+        return Widget.Make("Трибуна", Ui.Margin(v, 14, 10, 14, 12), null, null, 0);
+    }
+
+    /// <summary>Рейтинг силы: десятка и мы, со сдвигом за неделю.</summary>
+    Control PowerWidget()
+    {
+        var pr = News.Power(C);
+        var v = Ui.V(3);
+        if (pr.Count == 0 || C.Table.Values.Min(r => r.Gp) < 3) { v.AddChild(Ui.L("Рейтинг появится через пару недель сезона.", 12, Ui.Muted)); return Widget.Make("Рейтинг силы", Ui.Margin(v, 14, 10, 14, 12), null, null, 0); }
+        bool hasPrev = C.PowerWeek.Count > 0;
+        foreach (var x in pr.Where(x => x.Rank <= 8 || x.Team == C.UserTeam))
+        {
+            bool me = x.Team == C.UserTeam;
+            string mv = !hasPrev || x.Prev == x.Rank ? "" : x.Prev > x.Rank ? $"↑{x.Prev - x.Rank}" : $"↓{x.Rank - x.Prev}";
+            var row = Ui.H(8, Ui.L($"{x.Rank}", 14, me ? Ui.Gold : Ui.Text, Ui.CondBold).Also(l => l.CustomMinimumSize = new Vector2(22, 0)), new TeamBadge(C.Team(x.Team), 18),
+                Ui.L(C.Team(x.Team).City, 13, me ? Colors.White : Ui.Text, me ? Ui.Semi : null).Also(l => l.CustomMinimumSize = new Vector2(96, 0)),
+                Ui.L(mv, 11, mv.StartsWith("↑") ? Ui.Win : Ui.Loss).Also(l => l.CustomMinimumSize = new Vector2(26, 0)),
+                Ui.Expand(Ui.L(x.Note, 11, Ui.Dim).Also(l => { l.ClipText = true; l.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis; })));
+            row.TooltipText = x.Note;
+            v.AddChild(row);
+        }
+        var j = Voices.Get(C, Voices.STATS);
+        v.AddChild(Ui.H(6, Article.Avatar(j, 18), Ui.L($"{j.Name}, {j.Outlet} · по вторникам", 11, Ui.Dim)));
+        return Widget.Make("Рейтинг силы", Ui.Margin(v, 14, 10, 14, 12), null, null, 0);
+    }
+
+    /// <summary>Гонка за призами: лидер каждого приза и наш лучший.</summary>
+    Control Races()
+    {
+        var v = Ui.V(6);
+        var races = News.Races(C);
+        if (races.All(r => r.top.Count == 0) || C.Table.Values.Max(r => r.Gp) < 5) { v.AddChild(Ui.L("Гонка за призами начнётся, когда сыграют первые матчи.", 12, Ui.Muted)); return Widget.Make("Гонка за призами", Ui.Margin(v, 14, 10, 14, 12), null, null, 0); }
+        foreach (var (award, what, top) in races)
+        {
+            if (top.Count == 0) continue;
+            var p = C.Data.PlayerById[top[0].id];
+            bool ours = p.Team == C.UserTeam;
+            v.AddChild(Ui.H(8, Ui.V(-2, Ui.L(award, 14, Ui.Gold, Ui.Cond), Ui.L(what, 10, Ui.Dim)).Also(x => x.CustomMinimumSize = new Vector2(118, 0)),
+                new TeamBadge(C.Team(p.Team), 18).Also(x => x.SizeFlagsVertical = SizeFlags.ShrinkCenter),
+                Ui.Expand(Ui.V(-2, Links.Player(C, p.Id, p.NameRu, 13, ours ? Colors.White : Ui.Text, Ui.Semi), Ui.L(top[0].line, 11, Ui.Muted)))));
+        }
+        return Widget.Make("Гонка за призами", Ui.Margin(v, 14, 10, 14, 12), null, null, 0);
     }
 
     Control Leaders()
