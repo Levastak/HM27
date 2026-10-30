@@ -6,82 +6,6 @@ using HM27.Core;
 
 namespace HM27.UI.Lab;
 
-/// <summary>Элемент, который рисует себя функцией: карточки, табло, полосы — всё, где нужна точная графика.</summary>
-public partial class Paint : Control
-{
-    public Action<Paint> OnDraw;
-    public Action<Paint, double> OnTick;
-    public float T;   // время с появления — для анимации
-    public Paint() { }
-    public Paint(Vector2 min, Action<Paint> draw) { CustomMinimumSize = min; OnDraw = draw; MouseFilter = MouseFilterEnum.Ignore; }
-    public override void _Draw() => OnDraw?.Invoke(this);
-    public override void _Process(double d) { T += (float)d; if (OnTick != null) { OnTick(this, d); QueueRedraw(); } }
-
-    public float Text(Font f, int size, float x, float top, string s, Color c, HorizontalAlignment al = HorizontalAlignment.Left, float w = -1)
-    {
-        DrawString(f, new Vector2(x, top + f.GetAscent(size)), s, al, w, size, c);
-        return f.GetStringSize(s, HorizontalAlignment.Left, -1, size).X;
-    }
-    /// <summary>Самый крупный кегль не больше max, при котором строка влезает в ширину.</summary>
-    public static int Fit(Font f, string s, int max, float w, int min = 10)
-    {
-        int fs = max;
-        while (fs > min && f.GetStringSize(s, HorizontalAlignment.Left, -1, fs).X > w) fs--;
-        return fs;
-    }
-}
-
-/// <summary>Стеклянная панель: размытый фон под ней (экранная текстура), скругление, тонкий светлый край.</summary>
-public partial class GlassBox : Container
-{
-    readonly ColorRect _bg;
-    readonly float _m;
-    public GlassBox(Kit k, float margin = 22, float radius = 20, float tintA = 0.05f, Color? glow = null)
-    {
-        _m = margin;
-        _bg = new ColorRect { MouseFilter = MouseFilterEnum.Ignore };
-        var m = new ShaderMaterial { Shader = new Shader { Code = Code } };
-        m.SetShaderParameter("radius", radius);
-        m.SetShaderParameter("tint", new Color(0.75f, 0.85f, 1f, tintA));
-        m.SetShaderParameter("glow", glow ?? new Color(0, 0, 0, 0));
-        _bg.Material = m;
-        AddChild(_bg);
-    }
-    public override Vector2 _GetMinimumSize()
-    {
-        var s = Vector2.Zero;
-        foreach (var ch in GetChildren().OfType<Control>().Where(x => x != _bg && x.Visible)) s = s.Max(ch.GetCombinedMinimumSize());
-        return s + new Vector2(_m * 2, _m * 2);
-    }
-    public override void _Notification(int what)
-    {
-        if (what != NotificationSortChildren) return;
-        FitChildInRect(_bg, new Rect2(Vector2.Zero, Size));
-        (_bg.Material as ShaderMaterial)?.SetShaderParameter("size", Size);
-        foreach (var ch in GetChildren().OfType<Control>().Where(x => x != _bg)) FitChildInRect(ch, new Rect2(new Vector2(_m, _m), Size - new Vector2(_m * 2, _m * 2)));
-    }
-
-    const string Code = @"shader_type canvas_item;
-uniform sampler2D scr : hint_screen_texture, filter_linear_mipmap;
-uniform vec2 size = vec2(100.0);
-uniform float radius = 20.0;
-uniform vec4 tint : source_color;
-uniform vec4 glow : source_color;
-float rbox(vec2 p, vec2 b, float r){ vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
-void fragment(){
-  vec2 p = UV * size - size * 0.5;
-  float d = rbox(p, size * 0.5, radius);
-  float a = 1.0 - smoothstep(-0.6, 0.6, d);
-  vec3 b = textureLod(scr, SCREEN_UV, 3.2).rgb;
-  vec3 c = mix(b, tint.rgb, tint.a) * 0.9 + tint.a * 0.35;
-  c += (1.0 - UV.y) * 0.022;
-  c = mix(c, glow.rgb, glow.a * exp(-pow(length((UV - vec2(0.15, 0.0)) * vec2(1.0, 1.4)) / 0.6, 2.0)));
-  float edge = 1.0 - smoothstep(0.0, 1.3, abs(d + 0.7));
-  c += edge * (0.13 - UV.y * 0.07);
-  COLOR = vec4(c, a);
-}";
-}
-
 /// <summary>
 /// Экран лаборатории: оболочка направления (A — табло-рейка слева, B — боковая панель) и страница «Звенья» или «Портал».
 /// Всё на настоящих данных карьеры; лица и логотипы — из вшитого пака, пока его нет — инициалы и аббревиатуры.
@@ -637,12 +561,12 @@ public partial class DesignLab : Control
         v.AddChild(TitleB("Звенья", $"Общий рейтинг {TeamOvr()}  ·  сыгранность {Math.Round(chem * 100)}%  ·  до матча 1 день", Segmented(new[] { "Пятёрки", "Доска", "Спецбригады" }, 0)));
         var h = new HBoxContainer(); h.AddThemeConstantOverride("separation", 22);
         v.AddChild(h);
-        var fg = new GlassBox(K, 24, 24, 0.05f, new Color(K.Club, 0.12f));
+        var fg = new GlassBox(24, 24, 0.05f, new Color(K.Club, 0.12f));
         var fv = new VBoxContainer(); fv.AddThemeConstantOverride("separation", 14); fg.AddChild(fv);
         fv.AddChild(K.L("Нападение", 13, K.Muted, K.BodySemi));
         for (int i = 0; i < Math.Min(4, L.F.Count); i++) fv.AddChild(UnitRowB(i + 1, L.F[i], L.RoleF(i)));
         h.AddChild(Rev(fg));
-        var dg = new GlassBox(K, 24, 24, 0.05f);
+        var dg = new GlassBox(24, 24, 0.05f);
         var dv = new VBoxContainer(); dv.AddThemeConstantOverride("separation", 14); dg.AddChild(dv);
         dv.AddChild(K.L("Оборона и вратари", 13, K.Muted, K.BodySemi));
         for (int i = 0; i < Math.Min(3, L.D.Count); i++) dv.AddChild(UnitRowB(i + 1, L.D[i], L.RoleD(i)));
@@ -693,7 +617,7 @@ public partial class DesignLab : Control
 
     Control CardB(PlayerData p)
     {
-        var box = new GlassBox(K, 0, 18, 0.06f) { CustomMinimumSize = new Vector2(BW, BH), Size = new Vector2(BW, BH) };
+        var box = new GlassBox(0, 18, 0.06f) { CustomMinimumSize = new Vector2(BW, BH), Size = new Vector2(BW, BH) };
         box.AddChild(new Paint(new Vector2(BW, BH), q =>
         {
             if (p == null) { q.Text(K.Body, 13, 0, BH / 2 - 9, "свободно", K.Dim, HorizontalAlignment.Center, BW); return; }
@@ -750,7 +674,7 @@ public partial class DesignLab : Control
         var ht = C.Team(g.Home); var at = C.Team(g.Away);
         var o = C.Preview(g);
         int dd = g.Date.DayNumber - C.Today.DayNumber;
-        var box = new GlassBox(K, 26, 24, 0.05f, new Color(Readable(g.Home == C.UserTeam ? at : ht), 0.18f));
+        var box = new GlassBox(26, 24, 0.05f, new Color(Readable(g.Home == C.UserTeam ? at : ht), 0.18f));
         box.AddChild(new Paint(new Vector2(500, 260), q =>
         {
             float w = q.Size.X;
@@ -780,7 +704,7 @@ public partial class DesignLab : Control
     Control LeadB()
     {
         var m = LeadMsg();
-        var box = new GlassBox(K, 30, 24, 0.05f);
+        var box = new GlassBox(30, 24, 0.05f);
         var v = new VBoxContainer(); v.AddThemeConstantOverride("separation", 12);
         box.AddChild(v);
         if (m == null) return box;
@@ -794,7 +718,7 @@ public partial class DesignLab : Control
 
     GlassBox CardShell(string title, Control body)
     {
-        var box = new GlassBox(K, 24, 24, 0.045f);
+        var box = new GlassBox(24, 24, 0.045f);
         var v = new VBoxContainer(); v.AddThemeConstantOverride("separation", 14);
         v.AddChild(K.L(title, 13, K.Muted, K.BodySemi));
         v.AddChild(body);

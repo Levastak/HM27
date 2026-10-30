@@ -44,6 +44,7 @@ public partial class MatchScreen : Control
     VBoxContainer Frame()
     {
         Ui.Clear(this);
+        AddChild(new IceBg(Broadcast.Fill(Home), Broadcast.Fill(Away)));
         var root = Ui.V(0);
         root.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(root);
@@ -74,35 +75,20 @@ public partial class MatchScreen : Control
     Control ScoreBar()
     {
         var bar = new PanelContainer();
-        var sb = new StyleBoxFlat { BgColor = Ui.Side, BorderColor = Ui.Line, BorderWidthBottom = 1 };
-        sb.ContentMarginLeft = sb.ContentMarginRight = 14; sb.ContentMarginTop = sb.ContentMarginBottom = 8;
+        var sb = new StyleBoxFlat { BgColor = new Color(0, 0, 0, 0.35f), BorderColor = new Color(1, 1, 1, 0.06f), BorderWidthBottom = 1 };
+        sb.ContentMarginLeft = sb.ContentMarginRight = 16; sb.ContentMarginTop = sb.ContentMarginBottom = 8;
         bar.AddThemeStyleboxOverride("panel", sb);
         var h = Ui.H(12);
         bar.AddChild(h);
         h.AddChild(Ui.B("← К клубу", Back).Also(b => b.AddThemeFontSizeOverride("font_size", 12)));
-        h.AddChild(Ui.L(_g.Playoff ? SeriesTitle() : $"Регулярный чемпионат · {Ui.Date(_g.Date)}", 12, Ui.Muted));
-        h.AddChild(Ui.Spacer());
-        h.AddChild(TeamPlate(Away, false));
-        var mid = Ui.V(-2);
-        mid.CustomMinimumSize = new Vector2(190, 0);
-        // табло: янтарные цифры в тёмном окне, как знак HM27
-        var board = new PanelContainer();
-        var bsb = new StyleBoxFlat { BgColor = new Color("040A14"), BorderColor = new Color(Ui.Gold, 0.45f) };
-        bsb.SetBorderWidthAll(1); bsb.SetCornerRadiusAll(4);
-        bsb.ContentMarginLeft = bsb.ContentMarginRight = 18; bsb.ContentMarginTop = 0; bsb.ContentMarginBottom = 0;
-        board.AddThemeStyleboxOverride("panel", bsb);
-        _scoreL = Ui.L(_g.Played ? $"{_g.Result.AwayGoals}:{_g.Result.HomeGoals}" : "–:–", 44, Ui.Gold, Ui.CondBlack, HorizontalAlignment.Center);
-        _scoreL.AddThemeColorOverride("font_shadow_color", new Color(Ui.Gold, 0.4f));
-        _scoreL.AddThemeConstantOverride("shadow_outline_size", 6);
-        _scoreL.AddThemeConstantOverride("shadow_offset_x", 0); _scoreL.AddThemeConstantOverride("shadow_offset_y", 0);
-        board.AddChild(_scoreL);
-        board.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
-        _clockL = Ui.L(_g.Played ? EndText(_g.Result) : "до матча", 12, Ui.Muted, Ui.Semi, HorizontalAlignment.Center);
-        mid.AddChild(board); mid.AddChild(_clockL);
-        h.AddChild(mid);
-        h.AddChild(TeamPlate(Home, true));
-        h.AddChild(Ui.Spacer());
-        h.AddChild(new Control { CustomMinimumSize = new Vector2(150, 0) });
+        h.AddChild(Ui.L(_g.Playoff ? SeriesTitle() : $"Регулярный чемпионат · {Ui.Date(_g.Date)}", 12, Ui.Muted).Also(l => l.CustomMinimumSize = new Vector2(200, 0)));
+        // табло трансляции: счёт и часы — подписи ниже (их меняет экран), табло рисует их в своём стиле
+        _scoreL = Ui.L(_g.Played ? $"{_g.Result.AwayGoals}:{_g.Result.HomeGoals}" : "–:–", 12);
+        _clockL = Ui.L(_g.Played ? EndText(_g.Result) : "до матча", 12);
+        _scoreL.Visible = _clockL.Visible = false;
+        h.AddChild(_scoreL); h.AddChild(_clockL);
+        h.AddChild(Ui.Expand(new Scorebug(Away, Home, _scoreL, _clockL)));
+        h.AddChild(new Control { CustomMinimumSize = new Vector2(260, 0) });
         h.Alignment = BoxContainer.AlignmentMode.Center;
         return bar;
     }
@@ -383,9 +369,46 @@ public partial class MatchScreen : Control
         _evIdx = 0; _paused = false;
         BuildLive();
         _clock = 0;
+        Intro();
+    }
+
+    // ------------------------------------------------------------------ трансляция: заставка и гол
+    double _introLeft;
+    void Intro()
+    {
+        AddChild(new MatchIntro(Away, Home, _g.Playoff ? SeriesTitle() : "Регулярный чемпионат", Ui.Date(_g.Date, false).ToUpperInvariant()));
+        _introLeft = MatchIntro.LEN - 0.3;
+    }
+
+    /// <summary>Гол в трансляции: полоса в цветах клуба с автором (на самой быстрой скорости — без полосы).</summary>
+    void Celebrate(MatchEvent e)
+    {
+        if (e.Kind != "goal" || _speed >= 200 || e.Team == null) return;
+        foreach (var old in GetChildren().OfType<GoalBanner>()) old.QueueFree();
+        var gl = Res.Goals.FirstOrDefault(x => x.Scorer == e.P1 && (x.Period - 1) * 1200 + x.Sec == e.T);
+        var assists = gl == null ? new List<string>() : new[] { gl.A1, gl.A2 }.Where(x => x != 0).Select(C.Short).ToList();
+        string tag = e.Note switch { "pp" => "в большинстве", "sh" => "в меньшинстве", "en" => "в пустые ворота", "ev6" => "с шестым полевым", _ => "" };
+        string sub = $"{(e.T % 1200) / 60:00}:{e.T % 60:00}  ·  " + (assists.Count > 0 ? "передачи: " + string.Join(", ", assists) : "без передач");
+        AddChild(new GoalBanner(C.Team(e.Team), C.Data.PlayerById.GetValueOrDefault(e.P1), sub, tag));
     }
 
     public void StartLive(double atSec) { StartMatch(); _clock = atSec; }
+
+    /// <summary>Снимки: полоса гола (по голу из прошлого матча клуба), без заставки.</summary>
+    public void DebugGoal()
+    {
+        _introLeft = 0;
+        foreach (var x in GetChildren().OfType<MatchIntro>()) x.QueueFree();
+        var last = C.LastGame(C.UserTeam);
+        var gl = last?.Result?.Goals.FirstOrDefault(x => x.Team == C.UserTeam && x.Kind != "so") ?? last?.Result?.Goals.FirstOrDefault();
+        if (gl == null) return;
+        var keep = _speed; _speed = 20;
+        var b = new MatchEvent { T = (gl.Period - 1) * 1200 + gl.Sec, Team = gl.Team, Kind = "goal", P1 = gl.Scorer, Note = gl.Kind };
+        var assists = new[] { gl.A1, gl.A2 }.Where(x => x != 0).Select(C.Short).ToList();
+        AddChild(new GoalBanner(C.Team(gl.Team), C.Data.PlayerById.GetValueOrDefault(gl.Scorer), $"{gl.Sec / 60:00}:{gl.Sec % 60:00}  ·  " + (assists.Count > 0 ? "передачи: " + string.Join(", ", assists) : "без передач"), gl.Kind == "pp" ? "в большинстве" : ""));
+        _speed = keep;
+        _paused = true;
+    }
 
     /// <summary>Снимки: пауза и панель тренера на вкладке.</summary>
     public void DebugCoach(string tab) { if (_live == null) return; _tab = tab; if (!_paused) TogglePause(); else FillCoach(); }
@@ -889,8 +912,9 @@ public partial class MatchScreen : Control
         if (_live != null) { ProcessLive(delta); return; }
         if (_clock < 0 || _g.Result == null || _ev == null) return;
         var r = _g.Result;
+        if (_introLeft > 0) { _introLeft -= delta; return; }
         _clock += delta * _speed;
-        while (_shown < _ev.Count && _ev[_shown].T <= _clock) AddFeed(_ev[_shown++]);
+        while (_shown < _ev.Count && _ev[_shown].T <= _clock) { Celebrate(_ev[_shown]); AddFeed(_ev[_shown++]); }
         int hg = _ev.Take(_shown).Count(e => e.Kind == "goal" && e.Team == _g.Home), ag = _ev.Take(_shown).Count(e => e.Kind == "goal" && e.Team == _g.Away);
         _scoreL.Text = $"{ag}:{hg}";
         int t = (int)Math.Min(_clock, 3600);
@@ -907,6 +931,7 @@ public partial class MatchScreen : Control
     void ProcessLive(double delta)
     {
         if (_clock < 0 || _paused || _live.AtBreak) return;
+        if (_introLeft > 0) { _introLeft -= delta; return; }
         var sim = _live.Sim;
         if (sim.Finished)
         {
@@ -927,7 +952,7 @@ public partial class MatchScreen : Control
             if (e.Kind is "fo" or "hit" or "tk" or "gv") continue;
             _ev.Add(e); added = true;
         }
-        while (_shown < _ev.Count) AddFeed(_ev[_shown++]);
+        while (_shown < _ev.Count) { Celebrate(_ev[_shown]); AddFeed(_ev[_shown++]); }
         _scoreL.Text = $"{sim.AwayGoals}:{sim.HomeGoals}";
         int t = sim.Clock, per = sim.Period, inPer = t - (per - 1) * 1200;
         _clockL.Text = !sim.InPeriod && _live.AtBreak ? $"Перерыв после {(per <= 3 ? per + "-го периода" : "овертайма")}" : per <= 3 ? $"{per}-й период · {inPer / 60:00}:{inPer % 60:00}" : $"Овертайм · {inPer / 60:00}:{inPer % 60:00}";

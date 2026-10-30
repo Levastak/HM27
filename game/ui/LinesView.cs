@@ -94,9 +94,20 @@ public partial class LinesView : HBoxContainer
     void Build()
     {
         Ui.Clear(this);
-        AddChild(StylePanel());
+        if (_mode is "cards" or "special") { BuildCards(); return; }
+        if (_mode == "settings")
+        {
+            var sv = Ui.V(18, ModeBar());
+            var sp = StylePanel();
+            sp.CustomMinimumSize = new Vector2(560, 0);
+            sp.SizeFlagsVertical = SizeFlags.ExpandFill;
+            sv.AddChild(Ui.H(0, sp, Ui.Spacer()).Also(x => x.SizeFlagsVertical = SizeFlags.ExpandFill));
+            AddChild(Ui.Expand(sv, true, true));
+            return;
+        }
         var center = Ui.Expand(Ui.V(10), true, true);
         AddChild(center);
+        center.AddChild(ModeBar());
         center.AddChild(new Segmented(Units.Select(u => u.name).ToArray(), Array.FindIndex(Units, u => u.key == _unit), k => { _unit = Units[k].key; _slot = 0; CallDeferred(nameof(Rebuild)); }));
         center.AddChild(FamStrip());
         if (_unit.StartsWith("F")) center.AddChild(RoleStrip(_unit[1] - '0'));
@@ -164,7 +175,7 @@ public partial class LinesView : HBoxContainer
         auto.AddThemeFontSizeOverride("font_size", 12); nhl.AddThemeFontSizeOverride("font_size", 12);
         v.AddChild(Ui.H(8, Ui.Expand(auto), Ui.Expand(nhl)));
         var panel = new PanelContainer { CustomMinimumSize = new Vector2(250, 0) };
-        panel.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 4, null, 12));
+        panel.AddThemeStyleboxOverride("panel", Ds.GlassBoxStyle(Ds.R_L, 20, 0.05f));
         panel.AddChild(Ui.Scroll(v));
         return panel;
     }
@@ -394,8 +405,8 @@ public partial class LinesView : HBoxContainer
         v.AddChild(Ui.L($"Кандидаты: {label}, {(kind == "G" ? "вратарь" : unitName)}", 16, Ui.Text, Ui.Cond));
         v.AddChild(Ui.L(kind.StartsWith("P") ? "В спецбригады — только игроки, заявленные на матч." : "Щёлкните игрока, чтобы поставить его на выбранное место.", 11, Ui.Dim).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart));
         v.AddChild(Ui.Expand(Ui.Scroll(grid.Root), true, true));
-        var panel = new PanelContainer { CustomMinimumSize = new Vector2(350, 0) };
-        panel.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 4, null, 10));
+        var panel = new PanelContainer { CustomMinimumSize = new Vector2(340, 0) };
+        panel.AddThemeStyleboxOverride("panel", Ds.GlassBoxStyle(Ds.R_L, 14, 0.05f));
         panel.AddChild(v);
         return panel;
     }

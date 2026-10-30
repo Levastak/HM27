@@ -128,14 +128,14 @@ public static class Widget
     public static PanelContainer Make(string title, Control content, string link = null, Action onLink = null, int pad = 12)
     {
         var p = new PanelContainer();
-        p.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 4, null, 0).Also(s => { s.ContentMarginTop = s.ContentMarginBottom = 0; s.BorderColor = Ui.Line; s.BorderWidthTop = 1; }));
+        p.AddThemeStyleboxOverride("panel", Ds.GlassBoxStyle(Ds.R_L, 0, 0.05f).Also(s => { s.BgColor = Ui.Panel; }));
         var v = Ui.V(0);
         p.AddChild(v);
         var head = new PanelContainer();
-        var hs = new StyleBoxFlat { BgColor = new Color(0, 0, 0, 0), BorderColor = Ui.Line, BorderWidthBottom = 1 };
-        hs.ContentMarginLeft = hs.ContentMarginRight = 14; hs.ContentMarginTop = 8; hs.ContentMarginBottom = 7;
+        var hs = new StyleBoxFlat { BgColor = new Color(0, 0, 0, 0) };
+        hs.ContentMarginLeft = hs.ContentMarginRight = 20; hs.ContentMarginTop = 16; hs.ContentMarginBottom = 4;
         head.AddThemeStyleboxOverride("panel", hs);
-        var hh = Ui.H(8, Ui.Expand(Ui.L(title, 18, Ui.Text, Ui.Cond)));
+        var hh = Ui.H(8, Ui.Expand(Ui.L(title, 14, Ui.Muted, Ui.Semi)));
         if (link != null)
         {
             var b = new Button { Text = link, Flat = true, FocusMode = Control.FocusModeEnum.None, MouseDefaultCursorShape = Control.CursorShape.PointingHand };
@@ -149,7 +149,7 @@ public static class Widget
         }
         head.AddChild(hh);
         v.AddChild(head);
-        var body = pad > 0 ? Ui.Margin(content, pad, pad - 2, pad, pad) : content;
+        var body = pad > 0 ? Ui.Margin(content, pad + 6, pad - 2, pad + 6, pad + 4) : Ui.Margin(content, 0, 4, 0, 8);
         if ((content.SizeFlagsVertical & Control.SizeFlags.Expand) != 0) { body.SizeFlagsVertical = Control.SizeFlags.ExpandFill; v.SizeFlagsVertical = Control.SizeFlags.ExpandFill; }
         v.AddChild(body);
         return p;

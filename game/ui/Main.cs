@@ -116,9 +116,11 @@ public partial class Main : Control
                 ShowMatch(g);
                 if (args.ContainsKey("played")) (_screen as MatchScreen)?.PlayInstant();
                 if (args.ContainsKey("live")) (_screen as MatchScreen)?.StartLive(double.Parse(args["live"]));
+                if (args.ContainsKey("goal")) GetTree().CreateTimer(0.2).Timeout += () => (_screen as MatchScreen)?.DebugGoal();
                 if (args.TryGetValue("coach", out var ct)) GetTree().CreateTimer(0.4).Timeout += () => (_screen as MatchScreen)?.DebugCoach(ct);
                 break;
             default:
+                if (args.TryGetValue("lines", out var lm)) LinesView.Mode = lm;
                 if (args.TryGetValue("read", out var rd) && rd == "all") foreach (var m in Career.Messages) m.Read = true;
                 ShowHub(args.GetValueOrDefault("tab", "overview"), args.GetValueOrDefault("arg"));
                 break;

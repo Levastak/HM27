@@ -72,25 +72,34 @@ public partial class Segmented : HBoxContainer
     readonly List<Button> _buttons = new();
     public Segmented(string[] items, int selected, Action<int> onSelect)
     {
-        AddThemeConstantOverride("separation", 4);
+        AddThemeConstantOverride("separation", 2);
         for (int i = 0; i < items.Length; i++)
         {
             int k = i;
             var b = Ui.B(items[i], () => { Select(k); onSelect(k); });
             b.AddThemeFontSizeOverride("font_size", 12);
+            b.CustomMinimumSize = new Vector2(0, 32);
             _buttons.Add(b);
             AddChild(b);
         }
         Select(selected);
     }
     public Segmented() { }
+
+    /// <summary>Подложка-таблетка под всеми вариантами (дизайн-система: Ds.Pill).</summary>
+    public override void _Draw() => DrawStyleBox(Ds.Pill(new Color(1, 1, 1, 0.04f), 0, 0, Ds.Edge), new Rect2(Vector2.Zero, Size));
+
     void Select(int k)
     {
         for (int i = 0; i < _buttons.Count; i++)
         {
             bool on = i == k;
-            _buttons[i].AddThemeStyleboxOverride("normal", Ui.Box(on ? new Color(Ui.Accent, 0.28f) : Ui.Panel2, 6, on ? Ui.AccentBright : Ui.Line, 9));
-            _buttons[i].AddThemeColorOverride("font_color", on ? Colors.White : Ui.Muted);
+            var b = _buttons[i];
+            b.AddThemeStyleboxOverride("normal", Ds.Pill(on ? new Color(1, 1, 1, 0.13f) : new Color(0, 0, 0, 0), 14, 4));
+            b.AddThemeStyleboxOverride("hover", Ds.Pill(new Color(1, 1, 1, on ? 0.16f : 0.06f), 14, 4));
+            b.AddThemeStyleboxOverride("pressed", Ds.Pill(new Color(1, 1, 1, 0.16f), 14, 4));
+            b.AddThemeColorOverride("font_color", on ? Colors.White : Ui.Muted);
+            b.AddThemeFontOverride("font", on ? Ui.Semi : Ui.Medium);
         }
     }
 }

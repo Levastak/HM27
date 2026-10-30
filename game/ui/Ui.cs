@@ -13,15 +13,16 @@ namespace HM27.UI;
 /// </summary>
 public static class Ui
 {
-    public static readonly Color Bg = new("0B1626");       // лёд под светом арены: глубокий тёмно-синий
-    public static readonly Color Side = new("081120");     // верхняя полоса навигации
-    public static readonly Color Panel = new("12223A");    // панели-виджеты
-    public static readonly Color Panel2 = new("1A2D4A");   // кнопки, шапки таблиц
-    public static readonly Color Line = new("233A5C");     // разделители
-    public static readonly Color Text = new("EAF1FA");     // белый лёд
-    public static readonly Color Muted = new("97A9C3");
-    public static readonly Color Dim = new("5F7494");
-    public static readonly Color Blue = new("3D8BFF");     // синяя линия: всё интерактивное
+    // «Премиум» (Ds.cs): тёмный лёд, стекло; панели полупрозрачны — сквозь них виден фон со свечением клуба
+    public static readonly Color Bg = Ds.Bg;
+    public static readonly Color Side = new("080D14");     // боковая панель, всплывающие окна
+    public static readonly Color Panel = new(0.135f, 0.17f, 0.22f, 0.62f);   // панели-виджеты (стекло)
+    public static readonly Color Panel2 = new(0.2f, 0.245f, 0.305f, 0.7f);  // кнопки, шапки таблиц
+    public static readonly Color Line = new(1, 1, 1, 0.08f);                // разделители
+    public static readonly Color Text = new("EEF2F7");     // белый лёд
+    public static readonly Color Muted = new("9AA6B6");
+    public static readonly Color Dim = new("5F6B7C");
+    public static readonly Color Blue = new("5B9BFF");     // синяя линия: всё интерактивное
     public static readonly Color Gold = new("FFB627");     // янтарь табло: звёзды, главное
     public static readonly Color Red = new("FF4A4A");      // свет за воротами: голы и тревоги
     public static readonly Color Win = new("35C985");
@@ -42,12 +43,14 @@ public static class Ui
     }
 
     static Font _regular, _medium, _semi, _bold, _black, _cond, _condBold, _condBlack;
-    public static Font Regular => _regular ??= Load("Inter-Regular");
-    public static Font Medium => _medium ??= Load("Inter-Medium");
-    public static Font Semi => _semi ??= Load("Inter-SemiBold");
-    public static Font Bold => _bold ??= Load("Inter-Bold");
-    public static Font Black => _black ??= Load("InterDisplay-Black");
-    /// <summary>Узкий шрифт табло: заголовки, счёт, числа.</summary>
+    // текст — Onest, заголовки страниц — Unbounded (Ds.Display), числа и таблицы — Fira Sans Extra Condensed
+    // (у Sofia Sans строчная кириллица болгарская — она только для трансляции: заглавные и цифры)
+    public static Font Regular => _regular ??= Ds.V("Onest-VF", 400);
+    public static Font Medium => _medium ??= Ds.V("Onest-VF", 500);
+    public static Font Semi => _semi ??= Ds.V("Onest-VF", 600);
+    public static Font Bold => _bold ??= Ds.V("Onest-VF", 700);
+    public static Font Black => _black ??= Ds.V("Unbounded-VF", 700);
+    /// <summary>Узкий шрифт табло: заголовки виджетов, счёт, числа.</summary>
     public static Font Cond => _cond ??= Load("FiraSansExtraCondensed-SemiBold");
     public static Font CondBold => _condBold ??= Load("FiraSansExtraCondensed-Bold");
     public static Font CondBlack => _condBlack ??= Load("FiraSansExtraCondensed-ExtraBold");
@@ -72,12 +75,15 @@ public static class Ui
         t.SetColor("font_pressed_color", "Button", Colors.White);
         t.SetColor("font_disabled_color", "Button", Dim);
         t.SetFont("font", "Button", Semi);
-        t.SetStylebox("normal", "Button", Box(Panel2, 3, Line));
-        t.SetStylebox("hover", "Button", Box(Panel2.Lightened(0.06f), 3, Blue));
-        t.SetStylebox("pressed", "Button", Box(Blue.Darkened(0.45f), 3, Blue));
-        t.SetStylebox("disabled", "Button", Box(Panel, 3, Line));
-        t.SetStylebox("focus", "Button", new StyleBoxEmpty());
-        t.SetStylebox("panel", "PanelContainer", Box(Panel, 4));
+        t.SetStylebox("normal", "Button", Box(Panel2, 10, Line));
+        t.SetStylebox("hover", "Button", Box(new Color(0.26f, 0.31f, 0.38f, 0.8f), 10, new Color(Blue, 0.6f)));
+        t.SetStylebox("pressed", "Button", Box(new Color(Blue, 0.28f), 10, Blue));
+        t.SetStylebox("disabled", "Button", Box(new Color(1, 1, 1, 0.03f), 10, Line));
+        t.SetStylebox("focus", "Button", new StyleBoxFlat { BgColor = Colors.Transparent, DrawCenter = false });
+        t.SetStylebox("panel", "PanelContainer", Box(Panel, 14, Ds.Edge));
+        // флажки — без рамки кнопки: только значок и подпись
+        foreach (var st in new[] { "normal", "pressed", "hover", "hover_pressed", "focus", "disabled" })
+            t.SetStylebox(st, "CheckBox", new StyleBoxEmpty { ContentMarginLeft = 2, ContentMarginRight = 4, ContentMarginTop = 4, ContentMarginBottom = 4 });
         t.SetStylebox("panel", "TooltipPanel", Box(Side, 3, Line));
         t.SetStylebox("panel", "PopupPanel", Box(Side, 3, Line, 6));
         t.SetStylebox("panel", "PopupMenu", Box(Side, 3, Line, 6));
@@ -102,7 +108,7 @@ public static class Ui
     public static StyleBoxFlat Box(Color bg, int radius = 8, Color? border = null, int pad = 12)
     {
         var s = new StyleBoxFlat { BgColor = bg };
-        s.SetCornerRadiusAll(Math.Min(radius, 4));   // почти прямые углы, как борта
+        s.SetCornerRadiusAll(radius == 0 ? 0 : radius <= 4 ? 8 : radius);   // мягкие углы: мелкие плашки 8, панели 14–20
         if (border.HasValue) { s.BorderColor = border.Value; s.SetBorderWidthAll(1); }
         s.ContentMarginLeft = s.ContentMarginRight = pad;
         s.ContentMarginTop = s.ContentMarginBottom = Math.Max(4, pad - 4);
@@ -148,7 +154,8 @@ public static class Ui
     /// <summary>Характеристика 1–20 (как в FM) из перцентиля 1–99.</summary>
     public static int Attr20(int pct) => Math.Clamp((int)Math.Round(1 + (pct - 1) * 19 / 98.0), 1, 20);
 
-    public static Color AttrColor(int v20) => v20 >= 16 ? new Color("5DD879") : v20 >= 11 ? new Color("B7E06A") : v20 >= 6 ? new Color("E8C25A") : new Color("E0705A");
+    /// <summary>Цвет характеристики 1–20 — общая шкала дизайн-системы (Ds.Attr).</summary>
+    public static Color AttrColor(int v20) => Ds.Attr(v20);
 
     /// <summary>Характеристика по шкале 1–20 (модель игрока).</summary>
     public static Label AttrV(double v, int size = 13)
@@ -236,7 +243,7 @@ public static class Ui
 
     public static ScrollContainer Scroll(Control content)
     {
-        var s = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+        var s = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.Auto };   // широкие таблицы листаются вбок
         s.SizeFlagsHorizontal = s.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
         content.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
         s.AddChild(content);
@@ -246,7 +253,7 @@ public static class Ui
     /// <summary>Цветная плашка рейтинга 1–99.</summary>
     public static PanelContainer Rating(int v, int size = 13, int width = 34)
     {
-        var c = v >= 85 ? new Color("2FBF71") : v >= 70 ? new Color("7BC043") : v >= 50 ? new Color("D9B23C") : v >= 30 ? new Color("E07B39") : new Color("D9534F");
+        var c = v >= 85 ? Ds.Elite : v >= 70 ? new Color("5BE0A0") : v >= 50 ? Ds.GoldT : v >= 30 ? Ds.Bronze : new Color("FF5A5F");
         var l = L(v.ToString(), size, Ui.ReadableOn(c), Bold, HorizontalAlignment.Center);
         var p = new PanelContainer { CustomMinimumSize = new Vector2(width, 0) };
         p.AddThemeStyleboxOverride("panel", Box(c, 4, null, 4));

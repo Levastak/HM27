@@ -13,7 +13,7 @@ public static class P
 
     public static MarginContainer Page(Control content, bool scroll = true)
     {
-        var m = Ui.Margin(scroll ? Ui.Scroll(content) : content, 16, 14, 16, 14);
+        var m = Ui.Margin(scroll ? Ui.Scroll(content) : content, 24, 8, 24, 20);
         m.SizeFlagsHorizontal = m.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
         return m;
     }
