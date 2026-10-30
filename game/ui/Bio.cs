@@ -53,6 +53,38 @@ public static class Links
     public static Label Player(Career c, int id, string text = null, int size = 14, Color? color = null, Font font = null) =>
         c.Data.PlayerById.TryGetValue(id, out var p) ? Player(p, text, size, color, font) : Ui.L(text ?? "—", size, color ?? Ui.Muted, font);
 
+    /// <summary>Ссылка на игрока внутри текста BBCode (для Rich).</summary>
+    public static string Bb(int id, string name) => $"[url=p:{id}]{Esc(name)}[/url]";
+    public static string Esc(string s) => s?.Replace("[", "[lb]") ?? "";
+
+    /// <summary>
+    /// Текст с ссылками на игроков (BBCode, [url=p:id]): щелчок — карточка игрока, курсор-рука над именем.
+    /// Для ленты матча и других мест, где имена стоят внутри фразы.
+    /// </summary>
+    public static RichTextLabel Rich(Node owner, string bb, int size, Color color, Font font = null)
+    {
+        var l = new RichTextLabel
+        {
+            BbcodeEnabled = true, FitContent = true, ScrollActive = false, AutowrapMode = TextServer.AutowrapMode.WordSmart,
+            SelectionEnabled = false, MetaUnderlined = false, MouseFilter = Control.MouseFilterEnum.Pass,
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+        };
+        l.AddThemeFontOverride("normal_font", font ?? Ui.Regular);
+        l.AddThemeFontOverride("bold_font", Ui.Semi);
+        l.AddThemeFontSizeOverride("normal_font_size", size);
+        l.AddThemeFontSizeOverride("bold_font_size", size);
+        l.AddThemeColorOverride("default_color", color);
+        l.Text = bb;
+        l.MetaClicked += meta =>
+        {
+            string m = meta.AsString();
+            if (m.StartsWith("p:") && int.TryParse(m[2..], out var id) && Main.I?.Career?.Data.PlayerById.TryGetValue(id, out var p) == true) OpenPlayer(owner, p);
+        };
+        l.MetaHoverStarted += _ => l.MetaUnderlined = true;
+        l.MetaHoverEnded += _ => l.MetaUnderlined = false;
+        return l;
+    }
+
     public static Label Club(TeamData t, string text = null, int size = 14, Color? color = null, Font font = null) =>
         Link(text ?? t.Name, () => OpenClub(t.Abbr), size, color, font);
 

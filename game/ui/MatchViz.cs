@@ -33,29 +33,35 @@ public static class MatchColors
         return Mathf.Sqrt((2 + rm) * dr * dr + 4 * dg * dg + (3 - rm) * db * db) / 3f;
     }
 
-    const float MIN = 0.28f;
+    /// <summary>Какой цвет формы у гостей: 0 — основной, 1 — второй, −1 — белый (оба похожи на основной цвет хозяев).
+    /// Один выбор на весь матч — табло, заставка, «На льду», карта бросков и графики в одних цветах.</summary>
+    public static int AwayKit(TeamData away, TeamData home)
+    {
+        var h = Broadcast.Fill(home);
+        for (int i = 0; i < Math.Min(2, away.Colors.Count); i++)
+        {
+            var c = new Color(away.Colors[i]);
+            if (c.Luminance < 0.05f) c = c.Lightened(0.18f);
+            if (Diff(c, h) >= 0.2f && Diff(Vis(c), Vis(new Color(home.Colors[0]))) >= 0.2f) return i;
+        }
+        return -1;
+    }
 
     /// <summary>Цвета для линий, полос и текста на тёмном фоне.</summary>
     public static (Color away, Color home) Of(TeamData away, TeamData home)
     {
-        var h = Vis(new Color(home.Colors[0]));
-        foreach (var c in away.Colors.Take(2).Select(x => Vis(new Color(x))))
-            if (Diff(c, h) >= MIN && c.Luminance < 0.92f) return (c, h);
-        return (Away, h);
+        int k = AwayKit(away, home);
+        return (k < 0 ? Away : Vis(new Color(away.Colors[k])), Vis(new Color(home.Colors[0])));
     }
     public static (Color away, Color home) Of(Career c, ScheduledGame g) => Of(c.Team(g.Away), c.Team(g.Home));
 
     /// <summary>Заливки плашек (табло, заставка, финал): насыщенные цвета формы, гости — по тому же правилу.</summary>
     public static (Color away, Color home) Fill(TeamData away, TeamData home)
     {
-        var h = Broadcast.Fill(home);
-        foreach (var x in away.Colors.Take(2))
-        {
-            var c = new Color(x);
-            if (c.Luminance < 0.05f) c = c.Lightened(0.18f);
-            if (Diff(c, h) >= 0.2f) return (c, h);
-        }
-        return (new Color("D9DFE7"), h);
+        int k = AwayKit(away, home);
+        var c = k < 0 ? new Color("D9DFE7") : new Color(away.Colors[k]);
+        if (k >= 0 && c.Luminance < 0.05f) c = c.Lightened(0.18f);
+        return (c, Broadcast.Fill(home));
     }
 }
 
@@ -145,7 +151,8 @@ public partial class XgChart : Control
 }
 
 /// <summary>
-/// Карта бросков: площадка 200 × 85 футов, хозяева атакуют вправо, гости — влево. Зона броска — из движка
+/// Карта бросков: площадка 200 × 85 футов, как на табло — гости слева (атакуют вправо), хозяева справа (атакуют влево).
+/// Наведение на бросок — кто, когда и с каким xG; щелчок — карточка игрока. Зона броска — из движка
 /// (у ворот / средняя / издали), точка внутри зоны — детерминированно от события. Размер — xG, золото — гол.
 /// </summary>
 public partial class ShotMap : Control
@@ -166,6 +173,33 @@ public partial class ShotMap : Control
     public void SetClock(double t) { _clock = t; QueueRedraw(); }
     public void SetEvents(List<MatchEvent> ev) { _ev = ev.Where(e => e.Z >= 0 && e.Kind is "shot" or "goal" or "miss" or "block").ToList(); QueueRedraw(); }
 
+    readonly List<(Vector2 pt, MatchEvent e)> _pts = new();
+    MatchEvent Near(Vector2 at)
+    {
+        MatchEvent best = null; float bd = 10;
+        foreach (var (pt, e) in _pts) { float d = pt.DistanceTo(at) - (e.Kind == "goal" ? 3 : 0); if (d < bd) { bd = d; best = e; } }
+        return best;
+    }
+
+    public override string _GetTooltip(Vector2 at)
+    {
+        var e = Near(at);
+        if (e == null || Main.I?.Career == null) return "";
+        var c = Main.I.Career;
+        string what = e.Kind switch { "goal" => "ГОЛ", "shot" => "сейв", "miss" => "мимо", _ => "заблокирован" };
+        int t = e.T % 1200;
+        return $"{c.Short(e.P1)} — {what}\n{Math.Min(4, e.T / 1200 + 1)}-й период, {t / 60:00}:{t % 60:00}" + (e.Xg > 0 ? $" · xG {e.Xg:0.00}" : "");
+    }
+
+    public override void _GuiInput(InputEvent ev)
+    {
+        if (ev is InputEventMouseMotion mm) { MouseDefaultCursorShape = Near(mm.Position) != null ? CursorShape.PointingHand : CursorShape.Arrow; return; }
+        if (ev is not InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left } mb) return;
+        var e = Near(mb.Position);
+        if (e != null && Main.I?.Career?.Data.PlayerById.TryGetValue(e.P1, out var p) == true) { Links.OpenPlayer(this, p); AcceptEvent(); }
+    }
+
+
     /// <summary>Точка броска в футах: x от центра (−100…100), y поперёк (−42…42), атака вправо.</summary>
     static Vector2 Spot(MatchEvent e)
     {
@@ -179,52 +213,62 @@ public partial class ShotMap : Control
         return new Vector2((float)Math.Max(26, x), (float)Math.Clamp(y, -40, 40));
     }
 
-    public override void _Draw()
+    /// <summary>Площадка 200 × 85 футов: центр o, масштаб k пикселей на фут (общая для карты бросков и «На льду»).</summary>
+    public static void DrawRink(CanvasItem ci, Vector2 o, float k)
     {
-        var s = Size;
-        float k = Math.Min((s.X - 8) / 200f, (s.Y - 28) / 85f);
-        var o = new Vector2(s.X / 2, (s.Y - 20) / 2 + 2);
         Vector2 P(float x, float y) => o + new Vector2(x * k, y * k);
         // площадка
         var ice = new Color("0F2036");
         var rink = new Rect2(P(-100, -42.5f), new Vector2(200 * k, 85 * k));
         var sb = new StyleBoxFlat { BgColor = ice, BorderColor = new Color(Ui.Muted, 0.5f) };
         sb.SetBorderWidthAll(2); sb.SetCornerRadiusAll((int)(28 * k));
-        DrawStyleBox(sb, rink);
+        ci.DrawStyleBox(sb, rink);
         var red = new Color("C8102E", 0.55f); var blue = new Color("2F6BD8", 0.7f);
-        DrawLine(P(0, -42.5f), P(0, 42.5f), red, 2);
-        foreach (float bx in new[] { -25f, 25f }) DrawLine(P(bx, -42.5f), P(bx, 42.5f), blue, 3);
+        ci.DrawLine(P(0, -42.5f), P(0, 42.5f), red, 2);
+        foreach (float bx in new[] { -25f, 25f }) ci.DrawLine(P(bx, -42.5f), P(bx, 42.5f), blue, 3);
         foreach (float gx in new[] { -89f, 89f })
         {
             float half = (float)Math.Sqrt(Math.Max(0, 42.5 * 42.5 - Math.Pow(Math.Max(0, Math.Abs(gx) - 72), 2) * 0.9));
-            DrawLine(P(gx, -half + 4), P(gx, half - 4), red, 1.2f);
+            ci.DrawLine(P(gx, -half + 4), P(gx, half - 4), red, 1.2f);
             float dir = gx > 0 ? -1 : 1;
-            DrawArc(P(gx, 0), 6 * k, gx > 0 ? Mathf.Pi / 2 : -Mathf.Pi / 2, gx > 0 ? 3 * Mathf.Pi / 2 : Mathf.Pi / 2, 16, new Color("5BA4E6", 0.5f), 1.5f);
-            DrawRect(new Rect2(P(gx - (gx > 0 ? 0 : 3.3f), -3), new Vector2(3.3f * k, 6 * k)), new Color(1, 1, 1, 0.35f), false, 1);
+            ci.DrawArc(P(gx, 0), 6 * k, gx > 0 ? Mathf.Pi / 2 : -Mathf.Pi / 2, gx > 0 ? 3 * Mathf.Pi / 2 : Mathf.Pi / 2, 16, new Color("5BA4E6", 0.5f), 1.5f);
+            ci.DrawRect(new Rect2(P(gx - (gx > 0 ? 0 : 3.3f), -3), new Vector2(3.3f * k, 6 * k)), new Color(1, 1, 1, 0.35f), false, 1);
             _ = dir;
         }
-        DrawArc(P(0, 0), 15 * k, 0, Mathf.Tau, 40, blue, 1.2f);
+        ci.DrawArc(P(0, 0), 15 * k, 0, Mathf.Tau, 40, blue, 1.2f);
         foreach (float fx in new[] { -69f, 69f })
             foreach (float fy in new[] { -22f, 22f })
             {
-                DrawArc(P(fx, fy), 15 * k, 0, Mathf.Tau, 40, red, 1.2f);
-                DrawCircle(P(fx, fy), 1.4f * k, red);
+                ci.DrawArc(P(fx, fy), 15 * k, 0, Mathf.Tau, 40, red, 1.2f);
+                ci.DrawCircle(P(fx, fy), 1.4f * k, red);
             }
+    }
+
+    public override void _Draw()
+    {
+        var s = Size;
+        float k = Math.Min((s.X - 8) / 200f, (s.Y - 28) / 85f);
+        var o = new Vector2(s.X / 2, (s.Y - 20) / 2 + 2);
+        Vector2 P(float x, float y) => o + new Vector2(x * k, y * k);
+        DrawRink(this, o, k);
         // кто куда атакует
-        DrawString(Ui.Cond, P(-97, -44.5f) + new Vector2(0, -2), $"← {_g.Away}", HorizontalAlignment.Left, -1, 13, _ca);
-        DrawString(Ui.Cond, P(60, -44.5f) + new Vector2(0, -2), $"{_g.Home} →", HorizontalAlignment.Left, -1, 13, _ch);
+        // как на табло: гости слева (защищают левые ворота, атакуют вправо), хозяева справа
+        DrawString(Ui.Cond, P(-97, -44.5f) + new Vector2(0, -2), $"{_g.Away} →", HorizontalAlignment.Left, -1, 13, _ca);
+        DrawString(Ui.Cond, P(97, -44.5f) + new Vector2(-80, -2), $"← {_g.Home}", HorizontalAlignment.Right, 80, 13, _ch);
         if (Empty)
         {
-            DrawString(Ui.Regular, o + new Vector2(-150, 4), "Карта бросков есть у матчей, сыгранных в версии 0.4+", HorizontalAlignment.Left, -1, 12, Ui.Muted);
+            DrawString(Ui.Regular, o + new Vector2(-100, 4), "Бросков пока не было", HorizontalAlignment.Center, 200, 12, Ui.Muted);
             return;
         }
         // броски: промахи и блоки — мелко, сейвы — кольцо, голы — золото
+        _pts.Clear();
         foreach (var e in _ev.Where(e => e.T <= _clock).OrderBy(e => e.Kind == "goal" ? 2 : e.Kind == "shot" ? 1 : 0))
         {
             bool home = e.Team == _g.Home;
             var sp = Spot(e);
-            if (!home) sp = new Vector2(-sp.X, -sp.Y);
+            if (home) sp = new Vector2(-sp.X, -sp.Y);
             var pt = P(sp.X, sp.Y);
+            _pts.Add((pt, e));
             var col = home ? _ch : _ca;
             float r = 2.5f + (float)Math.Sqrt(Math.Max(0, e.Xg)) * 13f;
             switch (e.Kind)

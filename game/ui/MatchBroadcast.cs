@@ -340,8 +340,8 @@ public static class FinalBoard
                 Broadcast.Txt(q, Ui.Semi, 12, sk - 4, 62, parts.Length > 1 ? parts[0] : "", new Color(fg, 0.8f));
                 Broadcast.Txt(q, Ds.Tv, ls, sk - 8, 78, last, fg);
                 Broadcast.Txt(q, Ui.Semi, 13, sk - 16, 118, line + (rt > 0 ? $"  ·  оценка {rt:0.0}" : ""), new Color(fg, 0.85f));
-            }) { MouseFilter = Control.MouseFilterEnum.Stop, MouseDefaultCursorShape = Control.CursorShape.PointingHand, TooltipText = $"{p.NameRu} — профиль", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
-            tile.GuiInput += e => { if (e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left }) { Main.I.ShowHub("player", id.ToString()); } };
+            }) { MouseFilter = Control.MouseFilterEnum.Stop, MouseDefaultCursorShape = Control.CursorShape.PointingHand, TooltipText = $"{p.NameRu} — карточка игрока", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+            tile.GuiInput += e => { if (e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left }) Links.OpenPlayer(tile, p); };
             h.AddChild(tile);
         }
         return h;

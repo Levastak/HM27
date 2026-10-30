@@ -112,17 +112,25 @@ public static class PlayerCard
         if (Shell.I != null) { Shell.I.Go("player", null, p.Id.ToString()); return; }
         var t = c.Team(p.Team);
         var pop = new PopupPanel();
-        pop.AddThemeStyleboxOverride("panel", Ui.Box(Ui.Panel, 12, Ui.Line, 22));
+        pop.AddThemeStyleboxOverride("panel", Ui.Box(new Color("111823"), 18, Ds.Edge, 22).Also(x => { x.ShadowColor = new Color(0, 0, 0, 0.5f); x.ShadowSize = 24; }));
         var v = Ui.V(10);
-        v.CustomMinimumSize = new Vector2(460, 0);
+        v.CustomMinimumSize = new Vector2(480, 0);
         pop.AddChild(v);
-        var head = Ui.H(14);
-        head.AddChild(new TeamBadge(t, 58));
+        // шапка как в карточке-постере: фото в кольце рейтинга (видимая КА клуба), имя, позиция и клуб
+        int ovr = Ds.Ovr(c, p);
+        var face = new Paint(new Vector2(92, 92), q =>
+        {
+            var ctr = q.Size / 2;
+            Face.Glow(q, ctr, 62, Ds.ClubBright(t), 0.05f);
+            Face.Player(q, p, t, new Rect2(ctr.X - 38, ctr.Y - 38, 76, 76), Face.Circle(ctr, 38));
+            Face.Ring(q, ctr, 43, ovr, 3);
+        });
         var age = p.Age(c.Today);
-        head.AddChild(Ui.Expand(Ui.V(2, Ui.L(p.NameRu, 22, Ui.Text, Ui.Bold),
-            Ui.H(0, Ui.L($"#{p.Num} · {PosLong(p.Pos)} · ", 13, Ui.Muted), Links.Club(t, t.Name, 13, Ui.Muted)),
-            Ui.L($"{(age.HasValue ? $"{age} {Ui.Plural(age.Value, "год", "года", "лет")} · " : "")}{p.Height} см · {p.Weight} кг · {Country(p.Country)}", 13, Ui.Muted))));
-        head.AddChild(Ui.Rating(p.Ovr, 22, 58));
+        var head = Ui.H(16, face, Ui.Expand(Ui.V(3,
+            Ui.L(p.NameRu, 21, Ui.Text, Ui.Semi),
+            Ui.H(6, new TeamBadge(t, 18).Also(x => x.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter), Ui.L($"{t.Name} · #{p.Num} · {Ui.PosRu(p.Pos)}", 13, Ui.Muted)),
+            Ui.L($"{(age.HasValue ? $"{age} {Ui.Plural(age.Value, "год", "года", "лет")} · " : "")}{p.Height} см · {p.Weight} кг · {Country(p.Country)}", 12, Ui.Dim))));
+        foreach (var x in head.GetChildren().OfType<Control>()) x.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
         v.AddChild(head);
         v.AddChild(Ui.Rule());
         var keys = p.IsGoalie ? new[] { ("rfx", "Реакция"), ("gpos", "Позиция"), ("reb", "Контроль отскока"), ("gcon", "Стабильность") } :
@@ -131,23 +139,23 @@ public static class PlayerCard
         {
             double a = PlayerModel.Visible(c, p, k);
             var h = Ui.H(10);
-            h.AddChild(Ui.Expand(Ui.L(name, 14)));
-            h.AddChild(Ui.Bar(Ds.Show(a) / 20.0, Ui.AttrColor(Ds.ShowI(a)), 160, 6));
+            h.AddChild(Ui.Expand(Ui.L(name, 13, Ui.Text)));
+            h.AddChild(Ui.Bar(Ds.Show(a) / 20.0, Ds.Attr(Ds.ShowI(a)), 170, 6).Also(x => x.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter));
             h.AddChild(Ui.AttrV(a, 14));
             v.AddChild(h);
         }
         v.AddChild(Ui.Rule());
         if (p.IsGoalie)
         {
-            v.AddChild(Ui.L($"Сейвы сверх ожидаемого: {p.Gsax * 100:+0.0;-0.0}% от ожидаемых голов (за последние сезоны)", 13, Ui.Muted));
+            v.AddChild(Ui.L($"Сейвы сверх ожидаемого: {p.Gsax * 100:+0.0;-0.0}% от ожидаемых голов (за последние сезоны)", 12, Ui.Muted));
             var s = c.Goalies.GetValueOrDefault(p.Id);
-            if (s != null) v.AddChild(Ui.L($"В карьере HM27: {s.Gp} И · {s.W}-{s.L}-{s.Otl} · {s.SvPct:0.000} · КН {s.Gaa:0.00} · {s.So} «сухих»", 14));
+            if (s != null) v.AddChild(Ui.L($"Сезон в игре: {s.Gp} И · {s.W}-{s.L}-{s.Otl} · {s.SvPct:0.000} · КН {s.Gaa:0.00} · {s.So} «сухих»", 13));
         }
         else
         {
-            v.AddChild(Ui.L($"Личный xG: {p.IxgPg:0.00} за матч · {p.Ixg60:0.00} за 60 минут · время в НХЛ {p.Toi:0.0} мин", 13, Ui.Muted));
+            v.AddChild(Ui.L($"Личный xG: {p.IxgPg:0.00} за матч · {p.Ixg60:0.00} за 60 минут · время в НХЛ {p.Toi:0.0} мин", 12, Ui.Muted));
             var s = c.Skaters.GetValueOrDefault(p.Id);
-            if (s != null) v.AddChild(Ui.L($"В карьере HM27: {s.Gp} И · {s.G} Г · {s.A} П · {s.Pts} О · {s.Ppg} в большинстве", 14));
+            if (s != null) v.AddChild(Ui.L($"Сезон в игре: {s.Gp} И · {s.G} Г · {s.A} П · {s.Pts} О · {s.Ppg} в большинстве", 13));
         }
         if (c.Injured.Contains(p.Id)) v.AddChild(Ui.L("Травмирован", 14, Ui.Loss, Ui.Semi));
         parent.AddChild(pop);

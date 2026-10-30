@@ -562,6 +562,10 @@ public static class ShiftEngine
         /// <summary>Пропущено вратарём на льду (без пустых ворот) и броски по нему: хозяева / гости.</summary>
         public (int ga, int sa) GoalieLine(bool home) { var t = home ? H : A; return (t.GBox.Ga, t.GBox.Sa); }
         public int GoalieOn(bool home) => (home ? H : A).Goalie;
+        /// <summary>Вратарь снят (шестой полевой), протокол вратаря на льду и стоит ли полевой в звене защиты.</summary>
+        public bool IsPulled(bool home) => (home ? H : A).Pulled;
+        public PlayerBox GoalieBox(bool home) => (home ? H : A).GBox;
+        public bool IsD(bool home, int id) => (home ? H : A).All.TryGetValue(id, out var sk) && sk.D;
         /// <summary>Кто на льду сейчас (полевые) и их энергия 0–1.</summary>
         public IReadOnlyList<int> OnIce(bool home) => (home ? H : A).On.Select(x => x.Id).ToList();
         public double Energy(bool home, int id) => (home ? H : A).All.TryGetValue(id, out var sk) ? sk.Energy(T) : 1;

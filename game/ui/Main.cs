@@ -119,6 +119,7 @@ public partial class Main : Control
                 if (args.ContainsKey("live")) (_screen as MatchScreen)?.StartLive(double.Parse(args["live"]));
                 if (args.ContainsKey("goal")) GetTree().CreateTimer(0.2).Timeout += () => (_screen as MatchScreen)?.DebugGoal();
                 if (args.TryGetValue("coach", out var ct)) GetTree().CreateTimer(0.4).Timeout += () => (_screen as MatchScreen)?.DebugCoach(ct);
+                if (args.ContainsKey("card")) GetTree().CreateTimer(0.6).Timeout += () => PlayerCard.Show(_screen, Data.Roster(Career.UserTeam).First(p => !p.IsGoalie), Career);
                 break;
             default:
                 if (args.TryGetValue("lines", out var lm)) LinesView.Mode = lm;

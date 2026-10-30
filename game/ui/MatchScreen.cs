@@ -379,7 +379,8 @@ public partial class MatchScreen : Control
     Career.LiveGame _live;
     bool _paused;
     int _evIdx;
-    VBoxContainer _adviceBox, _iceBox;
+    VBoxContainer _adviceBox;
+    MatchRink _rink;
     Button _pauseBtn;
     readonly List<Button> _speedBtns = new();
     /// <summary>Игровых секунд в реальную секунду: ×1 — матч примерно за три минуты.</summary>
@@ -436,7 +437,7 @@ public partial class MatchScreen : Control
     }
 
     /// <summary>Снимки: пауза и панель тренера на вкладке.</summary>
-    public void DebugCoach(string tab) { if (_live == null) return; _tab = tab; if (!_paused) TogglePause(); else FillCoach(); }
+    public void DebugCoach(string tab) { if (_live == null) return; _tab = tab; if (_live.Sim.Clock < _clock) { _live.Sim.RunTo((int)_clock); SyncFeed(); UpdateStats(_live.Sim.Clock); UpdateIce(); _map?.SetEvents(_live.Sim.Result.Events); _map?.SetClock(_live.Sim.Clock); _xg?.SetEvents(_live.Sim.Result.Events); _xg?.SetClock(_live.Sim.Clock); } if (!_paused) TogglePause(); else FillCoach(); }
 
     public void PlayInstant()
     {
@@ -471,12 +472,18 @@ public partial class MatchScreen : Control
         var row = Ui.Expand(Ui.H(12), true, true);
         body.AddChild(row);
         var left = StatsPanel();
-        _iceBox = Ui.V(4);
-        if (_live != null) ((VBoxContainer)left).AddChild(Widget.Make("На льду", _iceBox));
         row.AddChild(left);
         var center = Ui.Expand(Ui.V(10), true, true);
         _xg = new XgChart(AllEvents, _g, C) { CustomMinimumSize = new Vector2(0, 140) };
-        if (_live != null || _xg.HasXg) { _xg.SetClock(0); center.AddChild(Widget.Make("Ожидаемые голы по ходу матча", _xg, null, null, 8)); }
+        if (_live != null)
+        {
+            // трансляция: в центре — кто на льду; ожидаемые голы — вкладкой рядом с картой бросков
+            _rink = new MatchRink(C, _g);
+            _rink.Set(_live.Sim);
+            center.AddChild(StandsPage.Glass(_rink, 10));
+            _xg.SetClock(0);
+        }
+        else if (_xg.HasXg) { _xg.SetClock(0); center.AddChild(Widget.Make("Ожидаемые голы по ходу матча", _xg, null, null, 8)); }
         else
         {
             _xg = null;
@@ -530,7 +537,14 @@ public partial class MatchScreen : Control
         var rightCol = Ui.V(12); rightCol.CustomMinimumSize = new Vector2(420, 0);
         _map = new ShotMap(AllEvents, _g, C) { CustomMinimumSize = new Vector2(0, 220) };
         _map.SetClock(0);
-        if (_live != null || !_map.Empty) rightCol.AddChild(Widget.Make("Карта бросков", _map, null, null, 8));
+        if (_live != null)
+        {
+            _xg.Visible = false;
+            _xg.CustomMinimumSize = new Vector2(0, 220);
+            var tabs = new Segmented(new[] { "Карта бросков", "Ожидаемые голы" }, 0, k => { _map.Visible = k == 0; _xg.Visible = k == 1; });
+            rightCol.AddChild(Widget.Make("Моменты", Ui.V(8, tabs, _map, _xg), null, null, 8));
+        }
+        else if (!_map.Empty) rightCol.AddChild(Widget.Make("Карта бросков", _map, null, null, 8));
         else _map = null;
         if (_live != null)
         {
@@ -635,7 +649,7 @@ public partial class MatchScreen : Control
         Ui.Clear(_coachBody);
         var sim = _live.Sim;
         int per = sim.Period;
-        string title = _live.AtBreak ? $"Перерыв после {(per <= 3 ? per + "-го периода" : "овертайма")}" : $"Пауза · {(per <= 3 ? per + "-й период" : "овертайм")}";
+        string title = _live.AtBreak ? $"Перерыв после {(per <= 3 ? per + "-го периода" : "овертайма")}" : per == 0 ? "До начала матча" : $"Пауза · {(per <= 3 ? per + "-й период" : "овертайм")}";
         var head = Ui.H(10, Ui.L(title, 18, Ui.Gold, Ui.Bold), Ui.Spacer());
         if (_live.AtBreak)
             head.AddChild(Ui.B(sim.Period >= 3 ? "Начать овертайм" : $"Начать {sim.Period + 1}-й период", () => { _live.AtBreak = false; _paused = false; ShowCoach(false); FillAdvice(false); }, true, 14));
@@ -733,6 +747,8 @@ public partial class MatchScreen : Control
             }, false, 12);
             if (_pick == id) b.AddThemeColorOverride("font_color", Ui.Gold);
             b.CustomMinimumSize = new Vector2(120, 0);
+            b.ClipText = true; b.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
+            b.TooltipText = C.Data.PlayerById.TryGetValue(id, out var pp) ? $"{pp.NameRu} · свежесть {100 * e:0}%" : "";
             return Ui.V(2, b, Ui.Bar(e, EnergyColor(e), 120, 4));
         }
         for (int i = 0; i < l.F.Count; i++)
@@ -864,24 +880,8 @@ public partial class MatchScreen : Control
 
     void UpdateIce()
     {
-        if (_iceBox == null || _live == null) return;
-        Ui.Clear(_iceBox);
-        var sim = _live.Sim;
-        foreach (bool home in new[] { false, true })
-        {
-            var t = home ? Home : Away;
-            var ids = sim.OnIce(home);
-            var row = Ui.H(4, new TeamBadge(t, 16));
-            foreach (var id in ids)
-            {
-                double e = sim.Energy(home, id);
-                var c = e >= 0.7 ? Ui.Text : e >= 0.45 ? Ui.Otl : Ui.Loss;
-                row.AddChild(Ui.L(C.Short(id), 11, c));
-            }
-            _iceBox.AddChild(row);
-        }
-        string st = sim.Strength;
-        if (st != "" && st != "5×5") _iceBox.AddChild(Ui.L(st, 12, Ui.Gold, Ui.Semi));
+        if (_rink == null || _live == null) return;
+        _rink.Set(_live.Sim);
     }
 
     Control StatsPanel()
@@ -1037,7 +1037,7 @@ public partial class MatchScreen : Control
         var h = Ui.H(10);
         h.AddChild(Ui.L(clock, 12, Ui.Dim).Also(l => l.CustomMinimumSize = new Vector2(44, 0)));
         h.AddChild(e.Team != null ? new TeamBadge(C.Team(e.Team), 18) : (Control)Ui.Icon(icon, 16, Ui.Muted));
-        h.AddChild(Ui.Expand(Ui.L(text, e.Kind == "goal" ? 14 : 13, color, font).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart)));
+        h.AddChild(Ui.Expand(Links.Rich(this, text, e.Kind == "goal" ? 14 : 13, color, font)));
         var row = new PanelContainer();
         var sb = Ui.Box(e.Kind == "goal" ? new Color(Ui.Gold, 0.13f) : e.Kind == "period" || e.Kind == "start" ? new Color(1, 1, 1, 0.04f) : new Color(0, 0, 0, 0), 2, null, 8);
         sb.ContentMarginTop = sb.ContentMarginBottom = e.Kind == "goal" ? 7 : 3;
@@ -1048,15 +1048,16 @@ public partial class MatchScreen : Control
         _feed.MoveChild(row, 0);   // свежее — сверху
     }
 
+    /// <summary>Текст события в разметке BBCode: имена — ссылки на карточку игрока ([url=p:id]).</summary>
     (string, Color, Font, string) Describe(MatchEvent e)
     {
-        string N(int id) => id != 0 && C.Data.PlayerById.TryGetValue(id, out var p) ? p.NameRu : "—";
-        string S(int id) => C.Short(id);
+        string N(int id) => id != 0 && C.Data.PlayerById.TryGetValue(id, out var p) ? Links.Bb(id, p.NameRu) : "—";
+        string S(int id) => id != 0 && C.Data.PlayerById.ContainsKey(id) ? Links.Bb(id, C.Short(id)) : C.Short(id);
         int h = e.T % 7;
         switch (e.Kind)
         {
             case "start": return ($"Вбрасывание! «{Home.City}» принимает «{Away.City}».", Ui.Muted, Ui.Semi, "activity");
-            case "period": return (e.Note, Ui.Muted, Ui.Semi, "activity");
+            case "period": return (Links.Esc(e.Note), Ui.Muted, Ui.Semi, "activity");
             case "goal":
                 var gl = Res.Goals.FirstOrDefault(x => x.Scorer == e.P1 && (x.Period - 1) * 1200 + x.Sec == e.T);
                 var assists = gl == null ? new List<string>() : new[] { gl.A1, gl.A2 }.Where(x => x != 0).Select(S).ToList();
@@ -1069,7 +1070,7 @@ public partial class MatchScreen : Control
             case "miss": return ($"{S(e.P1)} бросает — {e.Note}", Ui.Muted, null, "");
             case "block": return ($"{S(e.P1)} бросает — блокирует {S(e.P2)}", Ui.Muted, null, "");
             case "pen": int pm = e.P2 is 4 or 5 ? e.P2 : 2; return ($"Удаление: {N(e.P1)}, {pm} {(pm == 5 ? "минут" : "минуты")} ({e.Note})", Ui.Otl, Ui.Semi, "");
-            case "coach": return ($"Тренер «{C.Team(e.Team).City}»: {e.Note}", Ui.Gold, Ui.Semi, "clipboard-list");
+            case "coach": return ($"Тренер «{C.Team(e.Team).City}»: {Links.Esc(e.Note)}", Ui.Gold, Ui.Semi, "clipboard-list");
             case "nogoal": return ($"Гол {N(e.P1)} отменён после видеопросмотра", Ui.Muted, Ui.Semi, "video");
             case "goalie": return ($"Замена вратаря у «{C.Team(e.Team).City}»: вместо {S(e.P2)} выходит {N(e.P1)}", Ui.Gold, Ui.Semi, "");
             default: return (e.Kind, Ui.Muted, null, "");
@@ -1082,8 +1083,16 @@ public partial class MatchScreen : Control
         Ui.Clear(_lineupBox);
         var goals = _ev.Take(_shown).Where(e => e.Kind == "goal").ToList();
         if (goals.Count == 0) { _lineupBox.AddChild(Ui.L("Пока без голов", 12, Ui.Muted)); return; }
+        var res = _live?.Sim.Result ?? _g.Result;
         foreach (var e in goals)
-            _lineupBox.AddChild(Ui.H(6, new TeamBadge(C.Team(e.Team), 16), Ui.L($"{(e.T % 1200) / 60:00}:{e.T % 60:00}", 11, Ui.Dim), Links.Player(C, e.P1, C.Short(e.P1), 13, Ui.Text, Ui.Semi)));
+        {
+            var gl = res?.Goals.FirstOrDefault(x => x.Scorer == e.P1 && (x.Period - 1) * 1200 + x.Sec == e.T);
+            var ast = gl == null ? new List<int>() : new[] { gl.A1, gl.A2 }.Where(x => x != 0).ToList();
+            string bb = $"[b]{Links.Bb(e.P1, C.Short(e.P1))}[/b]" + (ast.Count > 0 ? $"  [color=#{Ui.Muted.ToHtml(false)}]({string.Join(", ", ast.Select(a => Links.Bb(a, C.Short(a))))})[/color]" : "");
+            _lineupBox.AddChild(Ui.H(8, new TeamBadge(C.Team(e.Team), 18).Also(x => x.SizeFlagsVertical = SizeFlags.ShrinkBegin),
+                Ui.L($"{(e.T % 1200) / 60:00}:{e.T % 60:00}", 12, Ui.Dim).Also(l => l.CustomMinimumSize = new Vector2(40, 0)),
+                Ui.Expand(Links.Rich(this, bb, 13, Ui.Text).Also(r => r.AddThemeFontOverride("bold_font", Ui.Semi)))));
+        }
     }
 
     // ------------------------------------------------------------------ итог
@@ -1202,14 +1211,14 @@ public partial class MatchScreen : Control
         if (rows.Count == 0) return Ui.Margin(Ui.L("Оценки есть только у матчей, сыгранных в этой версии", 12, Ui.Muted), 10, 8, 10, 8);
         return new Grid<PlayerData>(new List<Col<PlayerData>>
         {
-            new() { Title = "Игрок", Width = 0, Align = HorizontalAlignment.Left, Cell = p => Ui.L(p.NameRu, 12) },
+            new() { Title = "Игрок", Width = 0, Align = HorizontalAlignment.Left, Cell = p => Links.Player(p, null, 12) },
             new() { Title = "Поз", Width = 28, Cell = p => Ui.L(Ui.PosRu(p.Pos), 11, Ui.Muted) },
             new() { Title = "Г+П", Width = 40, Cell = p => { int g = r.Goals.Count(e => e.Scorer == p.Id && e.Kind != "so"), a = r.Goals.Count(e => e.A1 == p.Id || e.A2 == p.Id); return Ui.L(g + a > 0 ? $"{g}+{a}" : "", 12, Ui.Text, Ui.Semi); } },
             new() { Title = "Вр", Width = 44, Cell = p => Ui.L(r.Box.TryGetValue(p.Id, out var b) ? Ui.Toi(b.Toi) : "", 11, Ui.Muted) },
             new() { Title = "Бр", Width = 26, Cell = p => Ui.L(r.Box.TryGetValue(p.Id, out var b) && !p.IsGoalie ? $"{b.S}" : "", 11, Ui.Muted) },
             new() { Title = "+/−", Width = 32, Cell = p => Ui.L(r.Box.TryGetValue(p.Id, out var b) && !p.IsGoalie ? Ui.Signed(b.Pm, "0") : "", 11, Ui.Muted) },
             new() { Title = "Оц.", Width = 40, Cell = p => { var v = r.Ratings[p.Id]; return Ui.L($"{v:0.0}", 13, v >= 7.5 ? new Color("43D17A") : v >= 6.8 ? Ui.Text : v >= 6.3 ? Ui.Otl : Ui.Loss, Ui.Bold); } },
-        }, rows, p => Shell.I?.Go("player", null, p.Id.ToString())).Root;
+        }, rows, p => Links.OpenPlayer(this, p)).Root;
     }
 
     Control GoalRow(GoalEvent e)
