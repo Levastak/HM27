@@ -10,3 +10,6 @@ obj/
 build/
 *.zip
 data/__pycache__/
+
+# пак логотипов и лиц: собирается в GitHub Actions при каждой сборке (цель FetchArt), локально кладётся вручную
+game/art/

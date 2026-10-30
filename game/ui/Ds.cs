@@ -283,9 +283,13 @@ public static class Face
         if (tex != null)
         {
             var ts = tex.GetSize();
-            float sc = Math.Max(box.Size.X / ts.X, box.Size.Y / ts.Y) * 1.08f;
+            // квадратная рамка (круг, аватар) — крупный план лица; вытянутая (полоса гола) — портрет по плечи
+            bool close = Math.Abs(box.Size.X - box.Size.Y) < box.Size.Y * 0.2f;
+            float sc = Math.Max(box.Size.X / ts.X, box.Size.Y / ts.Y) * (close ? 1.5f : 1.08f);
             var sz = ts * sc;
-            var place = new Rect2(box.Position + new Vector2((box.Size.X - sz.X) / 2, box.Size.Y - sz.Y + sz.Y * 0.04f), sz);
+            var place = close
+                ? new Rect2(box.Position + new Vector2((box.Size.X - sz.X) / 2, -sz.Y * 0.07f), sz)
+                : new Rect2(box.Position + new Vector2((box.Size.X - sz.X) / 2, box.Size.Y - sz.Y + sz.Y * 0.04f), sz);
             ci.DrawColoredPolygon(poly, new Color(t.Colors[0]).Lerp(Ds.Bg, 0.6f));
             TexInPoly(ci, tex, place, poly);
             return;
