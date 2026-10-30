@@ -188,27 +188,42 @@ public partial class PlayerPage : Control
     // ---------------------------------------------------------------- шапка
     Control Hero(PlayerData p, TeamData t)
     {
-        var c1 = new Color(t.Colors[0]); var c2 = new Color(t.Colors.Count > 1 ? t.Colors[1] : t.Colors[0]);
-        var row = Ui.H(12);
+        var c1 = Broadcast.Fill(t); var c2 = Broadcast.Trim(t);
+        var row = Ui.H(0);
 
-        // портрет на фоне огромного номера
-        var portrait = new Control { CustomMinimumSize = new Vector2(220, 176), ClipContents = true };
-        var g = new Gradient(); g.SetColor(0, c1.Lightened(0.06f)); g.SetColor(1, c1.Lerp(Ui.Bg, 0.7f));
-        portrait.AddChild(new TextureRect { Texture = new GradientTexture2D { Gradient = g, FillFrom = new Vector2(0, 0), FillTo = new Vector2(1, 1), Width = 64, Height = 64 },
-            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.Scale }.Also(r => r.SetAnchorsPreset(LayoutPreset.FullRect)));
-        var num = Ui.L(p.Num?.ToString() ?? "", 200, new Color(c2.Luminance > 0.8f ? Colors.White : c2, 0.5f), Ui.CondBlack, HorizontalAlignment.Center);
-        num.SetAnchorsPreset(LayoutPreset.FullRect); num.OffsetTop = -40; num.OffsetLeft = -40;
-        portrait.AddChild(num);
-        var photo = new PlayerPhoto(p, 166, new Color(0, 0, 0, 0)) { Position = new Vector2(54, 12) };
-        portrait.AddChild(photo);
-        row.AddChild(Frame(portrait, 0));
+        // постер: цвет клуба со штриховкой, огромный номер, фото по плечи, эмблема; правый край — косой срез
+        var poster = new Paint(new Vector2(310, 236), q =>
+        {
+            float w = q.Size.X, h = q.Size.Y, sk = 46, r = Ds.R_L;
+            var pts = new List<Vector2>();
+            for (int k = 0; k <= 8; k++) { float an = Mathf.Pi + Mathf.Pi / 2 * k / 8; pts.Add(new Vector2(r + r * Mathf.Cos(an), r + r * Mathf.Sin(an))); }
+            pts.Add(new Vector2(w, 0)); pts.Add(new Vector2(w - sk, h));
+            for (int k = 0; k <= 8; k++) { float an = Mathf.Pi / 2 + Mathf.Pi / 2 * k / 8; pts.Add(new Vector2(r + r * Mathf.Cos(an), h - r + r * Mathf.Sin(an))); }
+            var poly = pts.ToArray();
+            q.DrawPolygon(poly, poly.Select(v2 => c1.Lerp(c1.Darkened(0.55f), Math.Clamp(v2.Y / h * 0.8f + v2.X / w * 0.3f, 0, 1))).ToArray());
+            for (float x = -h; x < w; x += 14) q.DrawLine(new Vector2(x, h), new Vector2(x + h, 0), new Color(1, 1, 1, 0.035f), 5);
+            string num = p.Num?.ToString() ?? "";
+            if (num.Length > 0)
+            {
+                int fs = 230; float tw = Ds.Tv.GetStringSize(num, HorizontalAlignment.Left, -1, fs).X;
+                q.Text(Ds.Tv, fs, w * 0.5f - tw / 2 - 14, -40, num, new Color(c2.Luminance > 0.85f ? Colors.White : c2, 0.33f));
+            }
+            Face.Player(q, p, t, new Rect2(30, 6, w - 70, h - 6), poly, Ds.Tv, false);
+            Face.Logo(q, t, new Rect2(16, h - 54, 42, 42));
+            q.DrawLine(new Vector2(w, 0), new Vector2(w - sk, h), new Color(1, 1, 1, 0.7f), 2, true);
+        });
+        row.AddChild(poster);
+        row.AddChild(Ui.Spacer(false, 26));
 
         // имя и факты
         var age = p.Age(C.Today);
         var facts = Ui.V(2);
-        facts.AddChild(Ui.L(p.NameRu, 40, Ui.Text, Ui.CondBold));
+        var nameParts = p.NameRu.Split(' ', 2);
+        facts.AddChild(Ui.Spacer(false, 16));
+        if (nameParts.Length > 1) facts.AddChild(Ui.L(nameParts[0], 16, Ui.Muted, Ui.Medium));
+        facts.AddChild(Ui.L(nameParts.Length > 1 ? nameParts[1] : nameParts[0], 34, Ui.Text, Ds.Display));
         facts.AddChild(Ui.H(6, Ui.L($"#{p.Num} · {Capital(PlayerCard.PosLong(p.Pos))} ·", 14, Ui.Muted), new TeamBadge(t, 18), Links.Club(t, t.Name, 14, Ui.Text)));
-        facts.AddChild(Ui.Spacer(false, 10));
+        facts.AddChild(Ui.Spacer(false, 14));
         var grid = new GridContainer { Columns = 4 };
         grid.AddThemeConstantOverride("h_separation", 34); grid.AddThemeConstantOverride("v_separation", 8);
         void Fact(string k, string val, Color? col = null, string tip = null) =>
@@ -229,11 +244,22 @@ public partial class PlayerPage : Control
                 $"{PlayerModel.PersonalityInfo(PlayerModel.Personality(st))}\n\nПрофессионализм: {PlayerModel.Word(st.Prof)}\nАмбиции: {PlayerModel.Word(st.Amb)}\nЛояльность: {PlayerModel.Word(st.Loy)}\n" +
                 $"Лидерство: {PlayerModel.Word(st.Lead)}\nСамообладание: {PlayerModel.Word(st.Temp)}\nАдаптивность: {PlayerModel.Word(st.Adapt)}\nТравмоустойчивость: {PlayerModel.Word(st.Inj)}");
         facts.AddChild(grid);
-        row.AddChild(Ui.Expand(Frame(facts, 18)));
+        row.AddChild(Ui.Expand(facts));
 
         // способности: янтарь табло
         var ab = Ui.V(2);
         double ca = PlayerModel.Visible(C, p, "ca");
+        int ovr = Ds.Ovr(C, p);
+        ab.AddChild(new Paint(new Vector2(260, 128), q =>
+        {
+            var cc = new Vector2(62, 64);
+            Face.Glow(q, cc, 70, Ds.Tier(ovr), 0.025f);
+            Face.Ring(q, cc, 54, ovr, 5, false);
+            q.Text(Ds.Display, 38, cc.X - 60, cc.Y - 26, ovr.ToString(), Ds.Tier(ovr), HorizontalAlignment.Center, 120);
+            q.Text(Ui.Regular, 11, cc.X - 60, cc.Y + 20, "рейтинг", Ui.Dim, HorizontalAlignment.Center, 120);
+            q.Text(Ui.Semi, 14, 136, 40, Ds.TierName(ovr), Ds.Tier(ovr));
+            q.Text(Ui.Regular, 11, 136, 62, "по шкале лиги 50–99", Ui.Dim);
+        }) { MouseFilter = MouseFilterEnum.Stop, TooltipText = "Рейтинг — текущие способности глазами штаба: бронза до 65, серебро 65–74, золото 75–84, элита 85+" });
         var (pcLo, pcHi) = PlayerModel.PotentialRange(C, p);
         double plo = StarScale.Stars(C, p, pcLo), phi = StarScale.Stars(C, p, pcHi);
         ab.AddChild(Ui.L("Способности", 12, Ui.Dim));
@@ -247,8 +273,10 @@ public partial class PlayerPage : Control
             Ui.L(plo == phi ? "" : $"{plo:0.#}–{phi:0.#} ★", 12, Ui.Muted)).Also(x => x.TooltipText = "Оценка скаутов: чем лучше клуб знает игрока, тем уже диапазон"));
         ab.AddChild(Ui.L($"потолок: {StarScale.Class(C.Data, p, (pcLo + pcHi) / 2).ToLowerInvariant()}", 13, Ui.Muted));
         ab.CustomMinimumSize = new Vector2(260, 0);
-        row.AddChild(Frame(ab, 18));
-        return row;
+        row.AddChild(Ui.Margin(ab, 10, 14, 22, 10));
+        var box = new GlassBox(0, Ds.R_L, 0.05f, new Color(Ds.ClubBright(t), 0.14f));
+        box.AddChild(row);
+        return box;
     }
 
     static PanelContainer Frame(Control c, int pad)

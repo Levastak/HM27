@@ -88,16 +88,17 @@ public partial class HomePage : Control
         if (C.Phase == Phase.Finished && C.Champion != null)
             v.AddChild(Widget.Make("Кубок Стэнли 2027", Ui.H(14, new TeamBadge(C.Team(C.Champion), 56), Ui.V(2, Links.Club(C.Team(C.Champion), C.Team(C.Champion).Name, 24, Ui.Text, Ui.CondBold),
                 Ui.L(C.Champion == C.UserTeam ? "Это ваш клуб!" : "Многосезонная карьера — в следующих версиях.", 13, Ui.Muted)))));
-        var top = Ui.H(12);
+        var top = Ui.H(16);
+        top.AddChild(NextMatch());
         var lead = Lead();
-        if (lead != null) { lead.SizeFlagsStretchRatio = 1.55f; top.AddChild(Ui.Expand(lead)); }
-        top.AddChild(Ui.Expand(NextMatch()));
+        if (lead != null) top.AddChild(Ui.Expand(lead));
         v.AddChild(top);
+        v.AddChild(LeadersStrip());
 
-        var cols = Ui.H(12);
-        var a = Ui.Expand(Ui.V(12)); a.SizeFlagsStretchRatio = 1.2f;
-        var b = Ui.Expand(Ui.V(12));
-        var c = Ui.Expand(Ui.V(12));
+        var cols = Ui.H(16);
+        var a = Ui.Expand(Ui.V(16)); a.SizeFlagsStretchRatio = 1.2f;
+        var b = Ui.Expand(Ui.V(16));
+        var c = Ui.Expand(Ui.V(16));
         cols.AddChild(a); cols.AddChild(b); cols.AddChild(c);
         v.AddChild(cols);
         a.AddChild(Feed());
@@ -107,7 +108,10 @@ public partial class HomePage : Control
         b.AddChild(Races());
         c.AddChild(Division());
         c.AddChild(PowerWidget());
-        c.AddChild(Leaders());
+        var cards = new List<CanvasItem>();
+        foreach (var n in new Node[] { top, v.GetChild(v.GetChildCount() - 2), cols })
+            foreach (var ch in n.GetChildren().OfType<CanvasItem>()) cards.Add(ch);
+        Ds.Reveal(this, cards, 0.04f);
     }
 
     /// <summary>Главная новость: самый весомый свежий материал (за 3 дня).</summary>
@@ -116,42 +120,55 @@ public partial class HomePage : Control
         var m = C.Messages.Where(x => x.Lead != null && C.Today.DayNumber - x.Date.DayNumber <= 3)
             .OrderByDescending(x => x.Weight * 10 + (x.Read ? 0 : 3) - (C.Today.DayNumber - x.Date.DayNumber) * 2).ThenByDescending(x => x.Id).FirstOrDefault();
         if (m == null) return null;
-        var card = new PanelContainer { MouseDefaultCursorShape = CursorShape.PointingHand, MouseFilter = MouseFilterEnum.Stop };
-        var sb = Ui.Box(Ui.Panel, 4, null, 22);
-        sb.ContentMarginTop = 18; sb.ContentMarginBottom = 18;
-        Color stripe = Ui.Blue;
-        if (m.Team != null && C.Data.TeamByAbbr.TryGetValue(m.Team, out var t)) stripe = new Color(t.Colors[0]).Luminance < 0.08f && t.Colors.Count > 1 ? new Color(t.Colors[1]) : new Color(t.Colors[0]);
-        sb.BorderColor = stripe; sb.BorderWidthLeft = 5;
-        card.AddThemeStyleboxOverride("panel", sb);
-        var v = Ui.V(8);
-        var head = Ui.H(10, Article.Tag(m.Tag, 15), Ui.Spacer(), Article.Byline(C, m, 12));
-        v.AddChild(head);
-        v.AddChild(Ui.L(m.Subject, 34, Ui.Text, Ui.CondBold).Also(l => { l.AutowrapMode = TextServer.AutowrapMode.WordSmart; l.SizeFlagsHorizontal = SizeFlags.ExpandFill; }));
-        v.AddChild(Ui.L(m.Lead, 15, new Color(Ui.Text, 0.85f)).Also(l => { l.AutowrapMode = TextServer.AutowrapMode.WordSmart; l.SizeFlagsHorizontal = SizeFlags.ExpandFill; }));
+        // герой материала — большое фото справа; если героя нет — эмблема клуба
+        PlayerData hero = m.Players is { Count: > 0 } && C.Data.PlayerById.TryGetValue(m.Players[0], out var hp) ? hp : null;
+        TeamData team = hero != null ? C.Team(hero.Team) : m.Team != null && C.Data.TeamByAbbr.TryGetValue(m.Team, out var mt) ? mt : null;
+        var glow = team != null ? Ds.ClubBright(team) : Ui.Blue;
+        var card = new GlassBox(0, Ds.R_L, 0.05f, new Color(glow, 0.16f)) { MouseDefaultCursorShape = CursorShape.PointingHand, MouseFilter = MouseFilterEnum.Stop, CustomMinimumSize = new Vector2(0, 300) };
+        var row = Ui.H(0);
+        var v = Ui.V(10);
+        v.AddChild(Ui.H(10, Article.Tag(m.Tag, 14), Ui.Spacer(), Article.Byline(C, m, 12)));
+        v.AddChild(Ui.L(m.Subject, 26, Ui.Text, Ds.Display).Also(l => { l.AutowrapMode = TextServer.AutowrapMode.WordSmart; l.SizeFlagsHorizontal = SizeFlags.ExpandFill; l.MaxLinesVisible = 3; }));
+        v.AddChild(Ui.L(m.Lead, 15, new Color(Ui.Text, 0.78f)).Also(l => { l.AutowrapMode = TextServer.AutowrapMode.WordSmart; l.SizeFlagsHorizontal = SizeFlags.ExpandFill; l.MaxLinesVisible = 4; }));
         if (m.Facts is { Count: > 0 })
         {
-            var f = Ui.H(26);
+            var f = Ui.H(28);
             foreach (var x in m.Facts.Take(4))
             {
                 var col = x.Tone == "good" ? Ui.Win : x.Tone == "bad" ? Ui.Loss : Ui.Text;
-                f.AddChild(Ui.V(-3, Ui.L(x.Value, 24, col, Ui.CondBold), Ui.L(x.Label, 11, Ui.Muted)));
+                f.AddChild(Ui.V(-3, Ui.L(x.Value, 26, col, Ui.CondBold), Ui.L(x.Label, 11, Ui.Muted)));
             }
-            v.AddChild(Ui.Spacer(false, 2));
             v.AddChild(f);
         }
-        else if (m.Players is { Count: > 0 })
-        {
-            var ps = Ui.H(8);
-            foreach (var pid in m.Players.Take(2))
-                if (C.Data.PlayerById.TryGetValue(pid, out var pl)) ps.AddChild(Article.PlayerChip(C, pl));
-            v.AddChild(Ui.Spacer(false, 2));
-            v.AddChild(ps);
-        }
-        v.AddChild(Ui.Spacer(false, 2));
+        else if (m.Players is { Count: > 1 } && C.Data.PlayerById.TryGetValue(m.Players[1], out var p2))
+            v.AddChild(Article.PlayerChip(C, p2).Also(x => x.SizeFlagsHorizontal = SizeFlags.ShrinkBegin));
+        v.AddChild(Ui.Spacer());
         v.AddChild(Ui.L("Читать полностью", 13, Ui.Blue, Ui.Semi));
+        row.AddChild(Ui.Expand(Ui.Margin(v, 28, 24, 18, 22), true, true));
+        if (hero != null || team != null)
+            row.AddChild(new Paint(new Vector2(250, 0), q =>
+            {
+                float w = q.Size.X, h = q.Size.Y;
+                if (hero != null)
+                {
+                    // фото по плечи, растворяется влево в стекло
+                    // косой срез слева, справа — скругление карточки (радиус R_L)
+                    var pts = new List<Vector2> { new Vector2(40, 0) };
+                    float rr = Ds.R_L;
+                    for (int k = 0; k <= 8; k++) { float an = -Mathf.Pi / 2 + Mathf.Pi / 2 * k / 8; pts.Add(new Vector2(w - rr + rr * Mathf.Cos(an), rr + rr * Mathf.Sin(an))); }
+                    for (int k = 0; k <= 8; k++) { float an = Mathf.Pi / 2 * k / 8; pts.Add(new Vector2(w - rr + rr * Mathf.Cos(an), h - rr + rr * Mathf.Sin(an))); }
+                    pts.Add(new Vector2(0, h));
+                    var poly = pts.ToArray();
+                    Face.Glow(q, new Vector2(w * 0.6f, h * 0.45f), h * 0.5f, glow, 0.03f);
+                    Face.Player(q, hero, team, new Rect2(10, 10, w - 10, h - 10), poly, null, false);
+                    q.DrawLine(new Vector2(40, 0), new Vector2(0, h), new Color(1, 1, 1, 0.5f), 2, true);
+                    Face.Logo(q, team, new Rect2(w - 58, h - 58, 44, 44));
+                }
+                else Face.Logo(q, team, new Rect2(30, h / 2 - 90, 190, 180), 0.5f);
+            }) { SizeFlagsVertical = SizeFlags.ExpandFill, ClipContents = true });
+        card.AddChild(row);
         v.MouseFilter = MouseFilterEnum.Ignore;
         SetIgnore(v);
-        card.AddChild(v);
         int id = m.Id;
         card.GuiInput += e => { if (e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left }) Shell.I.Go("inbox", null, id.ToString()); };
         return card;
@@ -199,39 +216,91 @@ public partial class HomePage : Control
         return Widget.Make(t, v, "Входящие", () => Shell.I.Go("inbox"), 0);
     }
 
+    /// <summary>Следующий матч: эмблемы со свечением цветов клубов, шансы полосой в цветах клубов, эксперты.</summary>
     Control NextMatch()
     {
         var g = C.NextGame(C.UserTeam);
-        if (g == null) return Widget.Make("Следующий матч", Ui.L("Матчей больше нет", 13, Ui.Muted));
+        if (g == null) return Widget.Make("Следующий матч", Ui.L("Матчей больше нет", 13, Ui.Muted)).Also(x => x.CustomMinimumSize = new Vector2(520, 0));
         bool home = g.Home == C.UserTeam;
         var opp = C.Team(home ? g.Away : g.Home);
-        var o = C.Preview(g);
-        double p = home ? o.PHome : 1 - o.PHome;
-        var oppRow = C.Table[opp.Abbr];
-        var v = Ui.V(12);
-        int dd = g.Date.DayNumber - C.Today.DayNumber;
-        v.AddChild(Ui.L($"{(dd == 0 ? "Сегодня" : dd == 1 ? "Завтра" : Ui.Date(g.Date))}{(dd <= 1 ? ", " + Ui.Date(g.Date, false) : "")} · {(home ? "дома" : "в гостях")}{(g.Playoff ? " · плей-офф" : "")}", 13, Ui.Muted));
-        var h = Ui.H(14);
-        h.Alignment = BoxContainer.AlignmentMode.Center;
         var my = C.Team(C.UserTeam);
-        h.AddChild(Ui.V(4, new TeamBadge(home ? my : opp, 72) { SizeFlagsHorizontal = SizeFlags.ShrinkCenter }, Ui.L((home ? my : opp).City, 14, Ui.Text, Ui.Cond, HorizontalAlignment.Center)));
-        h.AddChild(Ui.V(0, Ui.L("—", 30, Ui.Dim, Ui.CondBold, HorizontalAlignment.Center)).Also(x => x.Alignment = BoxContainer.AlignmentMode.Center));
-        h.AddChild(Ui.V(4, new TeamBadge(home ? opp : my, 72) { SizeFlagsHorizontal = SizeFlags.ShrinkCenter }, Ui.L((home ? opp : my).City, 14, Ui.Text, Ui.Cond, HorizontalAlignment.Center)));
-        v.AddChild(h);
-        // шансы — полоса
-        v.AddChild(Ui.H(8, Ui.L($"{Math.Round(p * 100)}%", 18, Ui.Text, Ui.CondBold), Ui.Expand(new SplitBar(p, Ui.Blue, Ui.Line)), Ui.L($"{Math.Round((1 - p) * 100)}%", 18, Ui.Muted, Ui.CondBold)).Also(x => x.TooltipText = "Шансы на победу по оценке аналитиков (с овертаймом и буллитами)"));
-        int conf = C.Sorted(t => t.Conference == opp.Conference).FindIndex(r => r.Team == opp.Abbr) + 1;
-        v.AddChild(Ui.H(8, Ui.L($"Соперник: {oppRow.W}-{oppRow.L}-{oppRow.Otl}, {conf}-е в конференции", 12, Ui.Muted), Ui.Spacer(), P.Form(opp.Abbr, 5, 16)));
-        v.AddChild(Ui.L(Pundits.Forecast(C.Data, g, o), 13, Ui.Text).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart));
-        // эксперты: кто за кого
+        var o = C.Preview(g);
+        var ht = C.Team(g.Home); var at = C.Team(g.Away);
+        int dd = g.Date.DayNumber - C.Today.DayNumber;
+        var box = new GlassBox(24, Ds.R_L, 0.05f, new Color(Ds.ClubBright(opp), 0.16f)) { CustomMinimumSize = new Vector2(540, 300) };
+        var v = Ui.V(10);
+        box.AddChild(v);
+        v.AddChild(Ui.H(8, Ui.L("Следующий матч", 14, Ui.Muted, Ui.Semi), Ui.Spacer(),
+            Ui.L($"{(dd == 0 ? "сегодня" : dd == 1 ? "завтра" : Ui.Date(g.Date))}  ·  {(home ? "дома" : "в гостях")}{(g.Playoff ? "  ·  плей-офф" : "")}", 13, Ui.Text, Ui.Semi)));
+        // гости слева, хозяева справа — как на табло
+        v.AddChild(new Paint(new Vector2(0, 150), q =>
+        {
+            float w = q.Size.X;
+            foreach (var (t, cx) in new[] { (at, w * 0.2f), (ht, w * 0.8f) })
+            {
+                Face.Glow(q, new Vector2(cx, 56), 70, Ds.ClubBright(t), 0.03f);
+                Face.Logo(q, t, new Rect2(cx - 52, 6, 104, 100));
+                var r = C.Table[t.Abbr];
+                q.Text(t == my ? Ui.Bold : Ui.Semi, 15, cx - 120, 112, t.Name, Ui.Text, HorizontalAlignment.Center, 240);
+                q.Text(Ui.Regular, 12, cx - 120, 132, $"{r.W}-{r.L}-{r.Otl}", Ui.Muted, HorizontalAlignment.Center, 240);
+            }
+            q.Text(Ds.DisplayLight, 16, 0, 46, "против", Ui.Dim, HorizontalAlignment.Center, w);
+        }));
+        double ph = o.PHome;
+        v.AddChild(new Paint(new Vector2(0, 26), q =>
+        {
+            float w = q.Size.X;
+            q.Text(Ds.DisplayLight, 17, 0, 2, $"{Math.Round((1 - ph) * 100)}%", Ui.Text);
+            q.Text(Ds.DisplayLight, 17, 0, 2, $"{Math.Round(ph * 100)}%", Ui.Text, HorizontalAlignment.Right, w);
+            float bx = 64, bw = w - 128, split = (float)(1 - ph);
+            q.DrawLine(new Vector2(bx, 13), new Vector2(bx + bw * split - 2, 13), Ds.ClubBright(at), 5, true);
+            q.DrawLine(new Vector2(bx + bw * split + 2, 13), new Vector2(bx + bw, 13), Ds.ClubBright(ht), 5, true);
+        }) { TooltipText = "Шансы на победу по оценке аналитиков (с овертаймом и буллитами)", MouseFilter = MouseFilterEnum.Stop });
+        v.AddChild(Ui.L(Pundits.Forecast(C.Data, g, o), 13, Ui.Muted).Also(l => l.AutowrapMode = TextServer.AutowrapMode.WordSmart));
         var picks = News.Picks(C, g);
-        var ph = Ui.H(14);
+        var ph2 = Ui.H(14);
         foreach (var pk in picks)
-            ph.AddChild(Ui.H(6, Article.Avatar(pk.Who, 26), new TeamBadge(C.Team(pk.Team), 22)).Also(x => x.TooltipText = $"{pk.Who.Name} ({pk.Who.Outlet}): {pk.Why}"));
-        v.AddChild(Ui.H(10, Ui.L("Эксперты:", 12, Ui.Muted), ph));
+            ph2.AddChild(Ui.H(6, Article.Avatar(pk.Who, 26), new TeamBadge(C.Team(pk.Team), 22)).Also(x => x.TooltipText = $"{pk.Who.Name} ({pk.Who.Outlet}): {pk.Why}"));
+        var foot = Ui.H(10, Ui.L("Эксперты", 12, Ui.Dim), ph2, Ui.Spacer(), Ui.B("Звенья", () => Shell.I.Go("lines"), size: 12), Ui.B("Соперник", () => Shell.I.Go("club", null, opp.Abbr), size: 12));
+        v.AddChild(foot);
         bool b2b = C.PlayedYesterday(C.UserTeam, g.Date), ob2b = C.PlayedYesterday(opp.Abbr, g.Date);
         if (b2b || ob2b) v.AddChild(Ui.L(b2b && ob2b ? "Обе команды играли накануне" : b2b ? "У нас второй матч за два дня — подумайте о запасном вратаре" : "Соперник играл накануне — он устал", 12, Ui.Otl));
-        return Widget.Make("Следующий матч", v, "Звенья", () => Shell.I.Go("lines"));
+        return box;
+    }
+
+    /// <summary>Лидеры клуба лицами: очки, голы, передачи, форма; основной вратарь — % отражённых.</summary>
+    Control LeadersStrip()
+    {
+        var rows = C.Skaters.Where(kv => C.Data.PlayerById.TryGetValue(kv.Key, out var p) && p.Team == C.UserTeam)
+            .OrderByDescending(kv => kv.Value.Pts).ThenByDescending(kv => kv.Value.G).Take(5).Select(kv => (p: C.Data.PlayerById[kv.Key], s: kv.Value)).ToList();
+        if (rows.Count == 0) rows = C.Roster(C.UserTeam).Where(p => !p.IsGoalie).OrderByDescending(p => Ds.Ovr(C, p)).Take(5).Select(p => (p, new SkaterLine())).ToList();
+        var h = Ui.H(14);
+        foreach (var (p, s) in rows)
+        {
+            var t = C.Team(p.Team);
+            var tile = new Paint(new Vector2(0, 92), q =>
+            {
+                float w = q.Size.X, hh = q.Size.Y;
+                var sb = new StyleBoxFlat { BgColor = new Color(1, 1, 1, 0.045f), BorderColor = Ds.Edge }; sb.SetCornerRadiusAll(18); sb.SetBorderWidthAll(1);
+                q.DrawStyleBox(sb, new Rect2(0, 0, w, hh));
+                var c = new Vector2(48, hh / 2);
+                Face.Player(q, p, t, new Rect2(c.X - 30, c.Y - 30, 60, 60), Face.Circle(c, 30));
+                Face.Ring(q, c, 35, Ds.Ovr(C, p), 2.5f, false);
+                float tx = 98;
+                var parts = p.NameRu.Split(' ', 2);
+                q.Text(Ui.Regular, 11, tx, 16, parts.Length > 1 ? parts[0] : "", Ui.Muted);
+                string last = parts.Length > 1 ? parts[1] : parts[0];
+                int ls = Paint.Fit(Ui.Semi, last, 16, w - tx - 64, 12);
+                q.Text(Ui.Semi, ls, tx, 31, last, Ui.Text);
+                q.Text(Ui.Regular, 12, tx, 56, s.Gp > 0 ? $"{s.G} г  ·  {s.A} п" : Ds.PosShort(p.Pos), Ui.Muted);
+                q.Text(Ds.DisplayLight, 30, w - 66, 22, s.Gp > 0 ? s.Pts.ToString() : "", Ui.Text, HorizontalAlignment.Right, 50);
+                if (s.Gp > 0) q.Text(Ui.Regular, 10, w - 66, 62, "очков", Ui.Dim, HorizontalAlignment.Right, 50);
+            }) { MouseFilter = MouseFilterEnum.Stop, MouseDefaultCursorShape = CursorShape.PointingHand, TooltipText = $"{p.NameRu} — профиль" };
+            var id = p.Id;
+            tile.GuiInput += e => { if (e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left }) Shell.I.Go("player", null, id.ToString()); };
+            h.AddChild(Ui.Expand(tile));
+        }
+        return h;
     }
 
     Control Upcoming()

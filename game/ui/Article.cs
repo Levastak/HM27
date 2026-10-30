@@ -239,7 +239,7 @@ public static class Article
     {
         var t = c.Team(p.Team);
         var b = new PanelContainer { MouseDefaultCursorShape = Control.CursorShape.PointingHand, MouseFilter = Control.MouseFilterEnum.Stop };
-        var sb = Ui.Box(Ui.Panel2, 3, null, 10);
+        var sb = Ui.Box(new Color(1, 1, 1, 0.05f), 14, Ds.Edge, 10);
         sb.ContentMarginTop = sb.ContentMarginBottom = 8;
         b.AddThemeStyleboxOverride("panel", sb);
         string line;
@@ -253,7 +253,7 @@ public static class Article
             var s = c.Skaters.GetValueOrDefault(p.Id);
             line = s == null ? Ui.PosRu(p.Pos) : $"{s.Gp} И · {s.G}+{s.A}={s.Pts}";
         }
-        var h = Ui.H(10, new TeamBadge(t, 30), Ui.V(-2, Ui.L(p.NameRu, 14, Ui.Text, Ui.Semi), Ui.L($"{Ui.PosRu(p.Pos)} · {t.City} · {line}", 11, Ui.Muted)));
+        var h = Ui.H(10, new FaceDot(c, p, 40), Ui.V(-2, Ui.L(p.NameRu, 14, Ui.Text, Ui.Semi), Ui.L($"{Ui.PosRu(p.Pos)} · {t.City} · {line}", 11, Ui.Muted)));
         h.MouseFilter = Control.MouseFilterEnum.Ignore;
         foreach (var ch in h.GetChildren()) if (ch is Control cc) cc.MouseFilter = Control.MouseFilterEnum.Ignore;
         b.AddChild(h);

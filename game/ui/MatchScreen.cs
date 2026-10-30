@@ -1067,6 +1067,9 @@ public partial class MatchScreen : Control
         _ev = Events();
         var body = Frame();
         var r = _g.Result;
+        // финальное табло и три звезды — во всю ширину, как графика трансляции после матча
+        body.AddChild(FinalBoard.Hero(C, _g));
+        if (r.Ratings.Count > 0 || r.Goals.Count > 0) body.AddChild(FinalBoard.Stars(C, r));
         var row = Ui.Expand(Ui.H(12), true, true);
         body.AddChild(row);
 
@@ -1089,10 +1092,9 @@ public partial class MatchScreen : Control
             pg.AddChild(Ui.L($"{(t == _g.Home ? r.HomeGoals : r.AwayGoals)}", 14, Ui.Text, Ui.Bold, HorizontalAlignment.Center));
         }
         left.AddChild(Widget.Make("По периодам", pg));
-        left.AddChild(Widget.Make("Три звезды", Ui.V(6, Stars(r).ToArray())));
-        row.AddChild(Ui.Scroll(left).Also(s => s.CustomMinimumSize = new Vector2(310, 0)));
+        row.AddChild(Ui.Scroll(left).Also(s => { s.CustomMinimumSize = new Vector2(310, 0); s.SizeFlagsHorizontal = SizeFlags.Fill; }));
 
-        var center = Ui.Expand(Ui.V(10), true, true);
+        var center = Ui.Expand(Ui.V(12), true, true);
         var xg = new XgChart(r.Events, _g, C);
         if (xg.HasXg)
         {
@@ -1123,7 +1125,7 @@ public partial class MatchScreen : Control
         var right = Ui.V(12); right.CustomMinimumSize = new Vector2(440, 0);
         foreach (var (t, dressed) in new[] { (_g.Away, r.AwayDressed), (_g.Home, r.HomeDressed) })
             right.AddChild(Widget.Make($"Протокол: {C.Team(t).City}", RatingsTable(dressed), null, null, 0));
-        row.AddChild(Ui.Scroll(right).Also(s => s.CustomMinimumSize = new Vector2(450, 0)));
+        row.AddChild(Ui.Scroll(right).Also(s => { s.CustomMinimumSize = new Vector2(450, 0); s.SizeFlagsHorizontal = SizeFlags.Fill; }));
     }
 
     /// <summary>

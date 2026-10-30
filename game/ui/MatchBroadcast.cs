@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Godot;
 using HM27.Core;
@@ -245,5 +246,103 @@ public partial class GoalBanner : Control
             Broadcast.Txt(this, Ui.Semi, 15, nx, y + hgt * 0.32f + ls + 6, _sub, new Color(fg, 0.8f));
             if (!string.IsNullOrEmpty(_tag)) Broadcast.Txt(this, Ui.CondBold, 18, nx, y + 14, _tag.ToUpperInvariant(), Ui.Gold);
         }
+    }
+}
+
+/// <summary>Итог матча в стиле трансляции: финальное табло и три звезды с лицами.</summary>
+public static class FinalBoard
+{
+    public static Control Hero(Career c, ScheduledGame g)
+    {
+        var r = g.Result;
+        var at = c.Team(g.Away); var ht = c.Team(g.Home);
+        string end = r.End == "OT" ? "ФИНАЛ · ОТ" : r.End == "SO" ? "ФИНАЛ · БУЛЛИТЫ" : "ФИНАЛ";
+        bool mine = g.Home == c.UserTeam || g.Away == c.UserTeam;
+        bool won = mine && (g.Home == c.UserTeam ? r.HomeGoals > r.AwayGoals : r.AwayGoals > r.HomeGoals);
+        return new Paint(new Vector2(0, 170), q =>
+        {
+            float w = q.Size.X, h = q.Size.Y, mid = w / 2, sk = 40, r0 = Ds.R_L;
+            var ca = Broadcast.Fill(at); var ch = Broadcast.Fill(ht);
+            // две половины в цветах клубов, между ними счёт на чёрном
+            var sb = new StyleBoxFlat { BgColor = Ds.Ink }; sb.SetCornerRadiusAll((int)r0);
+            q.DrawStyleBox(sb, new Rect2(0, 0, w, h));
+            float sw = 300;
+            var left = new[] { new Vector2(r0, 0), new Vector2(mid - sw / 2 + sk / 2, 0), new Vector2(mid - sw / 2 - sk / 2, h), new Vector2(r0, h) };
+            var right = new[] { new Vector2(mid + sw / 2 + sk / 2, 0), new Vector2(w - r0, 0), new Vector2(w - r0, h), new Vector2(mid + sw / 2 - sk / 2, h) };
+            q.DrawPolygon(left, new[] { ca.Darkened(0.15f), ca, ca.Darkened(0.5f), ca.Darkened(0.6f) });
+            q.DrawPolygon(right, new[] { ch, ch.Darkened(0.15f), ch.Darkened(0.6f), ch.Darkened(0.5f) });
+            // скругления краёв — те же цвета
+            q.DrawCircle(new Vector2(r0, r0), r0, ca.Darkened(0.1f)); q.DrawRect(new Rect2(0, r0, r0, h - 2 * r0), ca.Darkened(0.3f)); q.DrawCircle(new Vector2(r0, h - r0), r0, ca.Darkened(0.55f));
+            q.DrawCircle(new Vector2(w - r0, r0), r0, ch.Darkened(0.1f)); q.DrawRect(new Rect2(w - r0, r0, r0, h - 2 * r0), ch.Darkened(0.3f)); q.DrawCircle(new Vector2(w - r0, h - r0), r0, ch.Darkened(0.55f));
+            Broadcast.Stripes(q, new Rect2(0, 0, w, h), 16, 0.035f);
+            Face.Logo(q, at, new Rect2(w * 0.09f, h / 2 - 52, 104, 104));
+            Face.Logo(q, ht, new Rect2(w * 0.91f - 104, h / 2 - 52, 104, 104));
+            Broadcast.Txt(q, Ds.Tv, 42, w * 0.09f + 120, h / 2 - 34, at.Abbr, Ui.ReadableOn(ca));
+            Broadcast.Txt(q, Ui.Semi, 13, w * 0.09f + 122, h / 2 + 14, at.Name, new Color(Ui.ReadableOn(ca), 0.75f));
+            float hx = w * 0.91f - 120;
+            Broadcast.Txt(q, Ds.Tv, 42, hx - 200, h / 2 - 34, ht.Abbr, Ui.ReadableOn(ch), HorizontalAlignment.Right, 200);
+            Broadcast.Txt(q, Ui.Semi, 13, hx - 260, h / 2 + 14, ht.Name, new Color(Ui.ReadableOn(ch), 0.75f), HorizontalAlignment.Right, 258);
+            // счёт
+            Broadcast.Txt(q, Ds.TvNum, 92, mid - sw / 2, h / 2 - 66, $"{r.AwayGoals}", r.AwayGoals > r.HomeGoals ? Colors.White : new Color(1, 1, 1, 0.55f), HorizontalAlignment.Center, sw / 2 - 16);
+            Broadcast.Txt(q, Ds.TvNum, 92, mid + 16, h / 2 - 66, $"{r.HomeGoals}", r.HomeGoals > r.AwayGoals ? Colors.White : new Color(1, 1, 1, 0.55f), HorizontalAlignment.Center, sw / 2 - 16);
+            q.DrawRect(new Rect2(mid - 2, h / 2 - 30, 4, 40), new Color(1, 1, 1, 0.25f));
+            Broadcast.Txt(q, Ui.CondBold, 18, mid - sw / 2, h - 40, end, Ui.Gold, HorizontalAlignment.Center, sw);
+            if (mine) Broadcast.Txt(q, Ui.Semi, 12, mid - sw / 2, 14, won ? "победа" : r.End == "OT" && !g.Playoff ? "очко в овертайме" : r.End == "SO" ? "очко по буллитам" : "поражение", won ? Ui.Win : Ui.Muted, HorizontalAlignment.Center, sw);
+        });
+    }
+
+    /// <summary>Три звезды матча: фото по плечи в косом срезе, фамилия, вклад.</summary>
+    public static Control Stars(Career c, MatchResult r)
+    {
+        var top = r.Ratings.Count > 0
+            ? r.Ratings.OrderByDescending(kv => kv.Value).Take(3).Select(kv => kv.Key).ToList()
+            : r.Goals.Where(e => e.Scorer != 0).GroupBy(e => e.Scorer).OrderByDescending(x => x.Count()).Take(3).Select(x => x.Key).ToList();
+        var h = new HBoxContainer();
+        h.AddThemeConstantOverride("separation", 14);
+        int i = 0;
+        foreach (var id in top)
+        {
+            var p = c.Data.PlayerById[id];
+            var t = c.Team(p.Team);
+            string line;
+            if (p.IsGoalie)
+            {
+                bool home = id == r.HomeGoalie;
+                int sh = home ? r.AwayShots : r.HomeShots, ga = home ? r.AwayGoals : r.HomeGoals;
+                line = $"{sh - ga} сейвов";
+            }
+            else
+            {
+                int gls = r.Goals.Count(e => e.Scorer == id && e.Kind != "so"), ast = r.Goals.Count(e => e.A1 == id || e.A2 == id);
+                line = gls + ast == 0 ? "без очков" : $"{gls} г · {ast} п";
+            }
+            double rt = r.Ratings.GetValueOrDefault(id);
+            int k = i++;
+            var tile = new Paint(new Vector2(0, 150), q =>
+            {
+                float w = q.Size.X, hh = q.Size.Y, sk = 30;
+                var col = Broadcast.Fill(t);
+                var poly = new[] { new Vector2(sk, 0), new Vector2(w, 0), new Vector2(w - sk, hh), new Vector2(0, hh) };
+                q.DrawPolygon(poly, new[] { col.Darkened(0.2f), col.Darkened(0.45f), col.Darkened(0.7f), col.Darkened(0.5f) });
+                Broadcast.Stripes(q, new Rect2(0, 0, w, hh), 14, 0.03f);
+                float pw = hh * 0.95f, px = w - pw - sk * 0.4f;
+                var pp = new[] { new Vector2(px + sk * 0.7f, 0), new Vector2(w, 0), new Vector2(w - sk, hh), new Vector2(px, hh) };
+                Face.Player(q, p, t, new Rect2(px, 0, w - px, hh), pp, Ds.Tv, false);
+                q.DrawLine(pp[0], pp[3], new Color(1, 1, 1, 0.8f), 2, true);
+                var fg = Ui.ReadableOn(col.Darkened(0.4f));
+                // звёзды
+                for (int s = 0; s < 3 - k; s++) q.DrawTextureRect(Icons.Get("star", true), new Rect2(sk + 4 + s * 20, 14, 18, 18), false, Ui.Gold);
+                Broadcast.Txt(q, Ui.CondBold, 13, sk + 4, 36, k == 0 ? "ПЕРВАЯ ЗВЕЗДА" : k == 1 ? "ВТОРАЯ ЗВЕЗДА" : "ТРЕТЬЯ ЗВЕЗДА", new Color(fg, 0.7f));
+                var parts = p.NameRu.Split(' ', 2);
+                string last = (parts.Length > 1 ? parts[1] : parts[0]).ToUpperInvariant();
+                int ls = Paint.Fit(Ds.Tv, last, 34, px - sk - 14, 18);
+                Broadcast.Txt(q, Ui.Semi, 12, sk - 4, 62, parts.Length > 1 ? parts[0] : "", new Color(fg, 0.8f));
+                Broadcast.Txt(q, Ds.Tv, ls, sk - 8, 78, last, fg);
+                Broadcast.Txt(q, Ui.Semi, 13, sk - 16, 118, line + (rt > 0 ? $"  ·  оценка {rt:0.0}" : ""), new Color(fg, 0.85f));
+            }) { MouseFilter = Control.MouseFilterEnum.Stop, MouseDefaultCursorShape = Control.CursorShape.PointingHand, TooltipText = $"{p.NameRu} — профиль", SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+            tile.GuiInput += e => { if (e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left }) { Main.I.ShowHub("player", id.ToString()); } };
+            h.AddChild(tile);
+        }
+        return h;
     }
 }

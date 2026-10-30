@@ -352,3 +352,36 @@ public static class Face
         ci.DrawString(font, new Vector2(c.X - tw / 2, rect.Position.Y + (h - fs) / 2 + font.GetAscent(fs) * 0.92f), s, HorizontalAlignment.Left, -1, fs, tier);
     }
 }
+
+/// <summary>Лицо игрока в круге (с кольцом рейтинга или цветом клуба) и маленькой эмблемой клуба внизу справа.</summary>
+public partial class FaceDot : Control
+{
+    readonly Career C;
+    readonly PlayerData _p;
+    readonly bool _ring, _logo;
+    public FaceDot() { }
+    public FaceDot(Career c, PlayerData p, int size, bool ring = false, bool logo = true)
+    {
+        C = c; _p = p; _ring = ring; _logo = logo;
+        CustomMinimumSize = new Vector2(size, size);
+        MouseFilter = MouseFilterEnum.Ignore;
+        SizeFlagsVertical = SizeFlags.ShrinkCenter;
+    }
+    public override void _Draw()
+    {
+        if (_p == null) return;
+        float d = Math.Min(Size.X, Size.Y);
+        var c = Size / 2; float r = d / 2 - (_ring ? 4 : 1.5f);
+        var t = C.Team(_p.Team);
+        Face.Player(this, _p, t, new Rect2(c.X - r, c.Y - r, r * 2, r * 2), Face.Circle(c, r));
+        if (_ring) Face.Ring(this, c, d / 2 - 1.5f, Ds.Ovr(C, _p), 2.5f, false);
+        else DrawArc(c, r + 0.5f, 0, Mathf.Tau, 48, new Color(Ds.ClubBright(t), 0.7f), 1.5f, true);
+        if (_logo && d >= 34)
+        {
+            float s = d * 0.36f;
+            var lc = new Vector2(Size.X - s / 2 - 1, Size.Y - s / 2 - 1);
+            DrawCircle(lc, s / 2 + 1, Ds.Bg);
+            Face.Logo(this, t, new Rect2(lc - new Vector2(s, s) * 0.42f, new Vector2(s, s) * 0.84f));
+        }
+    }
+}
